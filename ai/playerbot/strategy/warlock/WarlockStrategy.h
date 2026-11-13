@@ -218,6 +218,7 @@ namespace ai
 
     protected:
         virtual void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        static void InitChoiceCurseTriggers(std::list<TriggerNode*>& triggers);
     };
 
     class WarlockCursesPvpStrategy

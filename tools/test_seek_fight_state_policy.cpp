@@ -214,9 +214,9 @@ int main()
     CHECK(SeekSiphonAtLabel(9007) == "at=+9007ms");
 
     // SeekHealerClockTick: a read only sees the Sons inside its own reach, so a Son it did not list says nothing. The
-    // clock of a Son on a healer reaches 8 s through reads of bots that did not see it in between (the old code erased
-    // every guid the current read lacked, so the clock never filled with 20 bots reading); only a Son seen dead, out
-    // of combat or on a tank leaves, and an entry nobody has seen for kSeekHealerStaleMs is swept.
+    // clock of a Son on a healer reaches its take through reads of bots that did not see it in between (the old code
+    // erased every guid the current read lacked, so the clock never filled with 20 bots reading); only a Son seen dead,
+    // out of combat or on a tank leaves, and an entry nobody has seen for kSeekHealerStaleMs is swept.
     {
         std::map<std::uint64_t, SeekHeldSon> held;
         const SeekSonSeen onHealer{7, true, true, false, true};
@@ -227,11 +227,11 @@ int main()
         CHECK(held.count(7) == 1);
         SeekHealerClockTick(held, {SeekSonSeen{9, true, true, false, false}}, 5000);
         CHECK(held.count(7) == 1);
-        // A bot that sees it again refreshes seenMs and keeps sinceMs, so the 8 s clock runs from the first read.
+        // A bot that sees it again refreshes seenMs and keeps sinceMs, so the take clock runs from the first read.
         SeekHealerClockTick(held, {onHealer}, 7000);
         CHECK(held[7].sinceMs == 1000 && held[7].seenMs == 7000);
-        CHECK(SeekHealerTakeGuid(held, 8999) == 0);
-        CHECK(SeekHealerTakeGuid(held, 9000) == 7);
+        CHECK(SeekHealerTakeGuid(held, 3999) == 0);
+        CHECK(SeekHealerTakeGuid(held, 4000) == 7);
         // The non-tank time the hold reads (0 for a Son not on a non-tank).
         CHECK(SeekNonTankHeldMs(held, 7, 9000) == 8000);
         CHECK(SeekNonTankHeldMs(held, 8, 9000) == 0);
@@ -254,7 +254,7 @@ int main()
         CHECK(held.count(7) == 1);
         SeekHealerClockTick(held, {}, 20000 + kSeekHealerStaleMs + 1);
         CHECK(held.empty());
-        // Codex: 6 s on a healer, then seen on a tank, then back on a healer: the 12 s release counts from the new
+        // Codex: 6 s on a healer, then seen on a tank, then back on a healer: the release counts from the new
         // start, never from the first one.
         SeekHealerClockTick(held, {onHealer}, 100000);
         SeekHealerClockTick(held, {SeekSonSeen{7, true, true, true, false}}, 106000);
@@ -266,6 +266,318 @@ int main()
         SeekHealerClockTick(held, {SeekSonSeen{12, true, true, false, true}, SeekSonSeen{5, true, true, false, true}}, 40000);
         CHECK(SeekHealerTakeGuid(held, 48000) == 5);
     }
+
+    // SeekHoldClockTick, interleaved reads: the hold record is fight-wide, so a read that does not tick this Son must
+    // not erase or restart it. Bot A ticks Son X every second while bot B, which selected another Son (or none), reads
+    // X as alive and not held every half second. B's reads only refresh the seen stamp and X reaches the 20 s cap.
+    // A read that erased or restarted a below-cap record here (the old per-read rule) leaves X at 0 s.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        for (std::uint32_t nowMs = 1000; nowMs <= 21000; nowMs += 500)
+        {
+            const bool aTicks = nowMs % 1000 == 0 && SeekHeldMs(held, 7, nowMs) < kSeekHoldMaxMs;
+            SeekHoldClockTick(held, {SeekHoldSeen{7, true, aTicks}}, nowMs);
+            CHECK(held.count(7) == 1);
+        }
+        CHECK(held[7].sinceMs == 1000);
+        CHECK(SeekHeldMs(held, 7, 21000) == 20000);
+        // Past the cap nothing ticks any more, but the Son is alive and seen: the record stays and still releases.
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, false}}, 22000);
+        CHECK(held.count(7) == 1);
+        CHECK(SeekHeldMs(held, 7, 22000) == 21000);
+        CHECK(!SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 7, 22000)));
+    }
+
+    // A below-cap record no read ticked for kSeekHoldUntickedMs is dropped (the fight stopped holding the Son), and
+    // the next tick starts a clean clock. With no record the idle Son is held by the rule again, not released.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, true}}, 1000);
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs);
+        CHECK(held.count(7) == 1);
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs + 1);
+        CHECK(held.empty());
+        CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0,
+                               SeekHeldMs(held, 7, 1000 + kSeekHoldUntickedMs + 1)));
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, true}}, 7000);
+        CHECK(held[7].sinceMs == 7000);
+    }
+
+    // SeekHoldClockCountsEngagedTimeOnly: only a Son fighting a victim feeds the cap, so an idle spare standing at its
+    // spawn never enters the clock and the 20 s release cannot empty the reservoir the area veto protects. The cap
+    // reaches the selected source and a Son on a tank inside the window; a Son on a non-tank is the healer clock's.
+    {
+        CHECK(!SeekHoldClockTicks(false, false, false, true));  // a spare at its spawn: out of combat
+        CHECK(!SeekHoldClockTicks(false, false, true, true));   // no victim
+        CHECK(!SeekHoldClockTicks(false, true, false, true));   // engaged on a non-tank: never the hold's cap
+        CHECK(!SeekHoldClockTicks(true, false, false, false));  // the selected source still needs a victim
+        CHECK(SeekHoldClockTicks(true, true, false, false));    // the selected source off-window still counts
+        CHECK(!SeekHoldClockTicks(false, true, true, false));   // a Son on a tank waits out a shut window
+        CHECK(SeekHoldClockTicks(false, true, true, true));     // ... and counts inside it
+    }
+    {
+        // An idle unselected Son read once a second for 25 s stays held: no read ticks it (an idle spare never gets a
+        // record), so the cap has nothing to release. Dropping the `ticks` term in the helper turns this red.
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::uint32_t nowMs = 1000;
+        for (; nowMs <= 25000; nowMs += 1000)
+        {
+            const bool ticks = SeekSonTicks(true, SeekHoldClockTicks(false, false, false, true), true);
+            SeekHoldClockTick(held, {SeekHoldSeen{9, true, ticks}}, nowMs);
+        }
+        CHECK(held.empty());
+        CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5,
+                               SeekNonTankHeldMs({}, 9, nowMs), SeekHeldMs(held, 9, nowMs)));
+    }
+    {
+        // An engaged Son on a tank inside the window is released at 20 s and the release sticks.
+        std::map<std::uint64_t, SeekHeldSon> held;
+        for (std::uint32_t nowMs = 1000; nowMs <= 21000; nowMs += 1000)
+        {
+            const bool holds = SeekHoldDecision(false, true, true, true, 90.0f, 30.0f, 5.0f, 5, 0,
+                                                SeekHeldMs(held, 9, nowMs));
+            const bool ticks = SeekSonTicks(true, SeekHoldClockTicks(false, true, true, true), holds);
+            SeekHoldClockTick(held, {SeekHoldSeen{9, true, ticks}}, nowMs);
+            if (nowMs == 20000)
+                CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, nowMs)));
+            if (nowMs == 21000)
+                CHECK(!SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, nowMs)));
+        }
+    }
+    {
+        // Once capped, a Son on a tank stays released when the window shuts: alive and seen, its record is kept even
+        // though this read does not tick, so the close cannot start a fresh 20 s hold. It is swept after
+        // kSeekHoldStaleMs unseen, and a Son seen dead is erased at once.
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{9, true, true}}, 1000);
+        for (std::uint32_t nowMs = 2000; nowMs <= 21000; nowMs += 1000)
+        {
+            const bool holds = SeekHoldDecision(false, true, true, true, 90.0f, 30.0f, 5.0f, 5, 0,
+                                                SeekHeldMs(held, 9, nowMs));
+            const bool ticks = SeekSonTicks(true, SeekHoldClockTicks(false, true, true, true), holds);
+            SeekHoldClockTick(held, {SeekHoldSeen{9, true, ticks}}, nowMs);
+        }
+        CHECK(SeekHeldMs(held, 9, 21000) == 20000);
+        // The window shuts: SeekHoldClockTicks is false now, the capped record survives and still releases.
+        SeekHoldClockTick(held, {SeekHoldSeen{9, true, false}}, 22000);
+        CHECK(held.count(9) == 1);
+        CHECK(SeekHeldMs(held, 9, 22000) == 21000);
+        CHECK(!SeekHoldDecision(false, false, false, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, 22000)));
+        // Alive and seen once past the cap keeps it; kSeekHoldStaleMs with no read at all sweeps it.
+        SeekHoldClockTick(held, {}, 22000 + kSeekHoldStaleMs);
+        CHECK(held.count(9) == 1);
+        SeekHoldClockTick(held, {}, 22000 + kSeekHoldStaleMs + 1);
+        CHECK(held.empty());
+        // A Son seen dead is erased before either sweep.
+        SeekHoldClockTick(held, {SeekHoldSeen{9, true, true}}, 50000);
+        SeekHoldClockTick(held, {SeekHoldSeen{9, false, false}}, 50001);
+        CHECK(held.empty());
+    }
+
+    // SeekHoldClockOutOfOrder: a bot keeps its nowMs sample while waiting for the lock, so samples arrive out of
+    // order. An age against a later stamp reads 0 (no unsigned wrap), an older sample never moves a stamp back, and
+    // neither sweep drops the record.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, true}}, 10000);
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, false}}, 5000);
+        CHECK(held.count(7) == 1);
+        CHECK(held[7].sinceMs == 10000);
+        CHECK(held[7].tickedMs == 10000);
+        CHECK(held[7].seenMs == 10000);
+        CHECK(SeekHeldMs(held, 7, 5000) == 0);
+        SeekHoldClockTick(held, {}, 0);
+        CHECK(held.count(7) == 1);
+        CHECK(SeekHeldMs(held, 7, 0) == 0);
+    }
+
+    // SeekHoldClockDropsWhatNobodySees: an entry no read ticked for the grace is dropped, so the map cannot grow with
+    // Sons that left every bot's reach or died out of it, and a Son respawning under the same guid starts a clean hold
+    // instead of inheriting the old release.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{11, true, true}}, 1000);
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs);
+        CHECK(held.count(11) == 1);
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs + 1);
+        CHECK(held.empty());
+        SeekHoldClockTick(held, {SeekHoldSeen{11, true, true}}, 30000);
+        CHECK(held.size() == 1 && held[11].sinceMs == 30000);
+    }
+
+    // SeekHoldEvents: the clock reports each transition. A start carries the guid and a 0 age; a below-cap record no read
+    // ticked for kSeekHoldUntickedMs ends as Unticked with the record's age at the erase.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, true}}, 1000, &events);
+        CHECK(events.size() == 1 && events[0].guid == 7 && events[0].start && events[0].heldMs == 0);
+        events.clear();
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs + 100, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Unticked);
+        CHECK(events[0].heldMs == kSeekHoldUntickedMs + 100);
+        CHECK(held.empty());
+    }
+
+    // A Son seen dead ends as Died with its age at the read.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(held, {SeekHoldSeen{9, true, true}}, 1000, &events);
+        events.clear();
+        SeekHoldClockTick(held, {SeekHoldSeen{9, false, false}}, 3000, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Died);
+        CHECK(events[0].heldMs == 2000);
+        CHECK(held.empty());
+    }
+
+    // A capped record no read saw alive for kSeekHoldStaleMs ends as Unseen; the unticked sweep must not take it first
+    // (a capped entry sweeps on the seen stamp, not the tick stamp).
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        for (std::uint32_t nowMs = 1000; nowMs <= 21000; nowMs += 1000)
+            SeekHoldClockTick(held, {SeekHoldSeen{11, true, true}}, nowMs, &events);
+        CHECK(events.size() == 1 && events[0].start);
+        events.clear();
+        SeekHoldClockTick(held, {}, 21000 + kSeekHoldStaleMs + 100, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Unseen);
+        CHECK(events[0].heldMs == kSeekHoldStaleMs + 100 + 20000);
+        CHECK(held.empty());
+    }
+
+    // A null collector changes nothing: the map takes the same path, and the same events would have been reported.
+    {
+        std::map<std::uint64_t, SeekHeldSon> with;
+        std::map<std::uint64_t, SeekHeldSon> without;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(with, {SeekHoldSeen{3, true, true}}, 1000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{3, true, true}}, 1000);
+        CHECK(events.size() == 1);
+        SeekHoldClockTick(with, {SeekHoldSeen{3, false, false}}, 4000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{3, false, false}}, 4000);
+        CHECK(with.empty() && without.empty());
+        CHECK(events.size() == 2 && events[1].reason == SeekHoldEndReason::Died);
+        SeekHoldClockTick(with, {SeekHoldSeen{5, true, true}}, 10000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{5, true, true}}, 10000, nullptr);
+        SeekHoldClockTick(with, {}, 10000 + kSeekHoldUntickedMs + 1, &events);
+        SeekHoldClockTick(without, {}, 10000 + kSeekHoldUntickedMs + 1, nullptr);
+        CHECK(with.empty() && without.empty());
+        CHECK(events.size() == 4 && events[3].reason == SeekHoldEndReason::Unticked);
+    }
+
+    // SeekShouldLogRelease: only a Son the fight still holds a record for can be released, and one row per hold record
+    // (the first read that sees the release logs it). A Son never held is not "released after 0.0 s".
+    {
+        CHECK(!SeekShouldLogRelease(false, false));
+        CHECK(!SeekShouldLogRelease(false, true));
+        CHECK(SeekShouldLogRelease(true, false));
+        CHECK(!SeekShouldLogRelease(true, true));
+    }
+
+    // The release latch lives no longer than the record it was logged for. A NonTank release on a healer-only record
+    // latches; the healer clock removing that record (with no hold record covering the Son) drops the latch, and the
+    // next hold's own release logs again. A latch the hold record still covers survives the healer clock's end, so a
+    // hold's release is not logged twice.
+    {
+        bool latch = false;
+        CHECK(SeekShouldLogRelease(true, latch));
+        latch = true;
+        CHECK(!SeekShouldLogRelease(true, latch));
+        const bool healerRecordEnded = true;
+        const bool heldByHold = false;
+        if (healerRecordEnded && !heldByHold)
+            latch = false;
+        // The next hold's start drops the latch too (it belongs to the new record).
+        latch = false;
+        CHECK(SeekShouldLogRelease(true, latch));
+
+        bool holdLatch = true;
+        const bool holdCoversIt = true;
+        if (healerRecordEnded && !holdCoversIt)
+            holdLatch = false;
+        CHECK(!SeekShouldLogRelease(true, holdLatch));
+    }
+
+    // SeekDeathCandidates: a Son seen alive and missing from this read's living list is looked up once, whether or not
+    // a hold record ever existed for it; a Son still alive and a Son already logged are not.
+    {
+        const std::set<std::uint64_t> seen = {1, 2, 3, 4};
+        const std::set<std::uint64_t> live = {1, 3};
+        const std::set<std::uint64_t> logged = {2};
+        const std::vector<std::uint64_t> candidates = SeekDeathCandidates(seen, live, logged);
+        CHECK(candidates.size() == 1 && candidates[0] == 4);
+        const std::vector<std::uint64_t> neverHeld = SeekDeathCandidates({9}, {}, {});
+        CHECK(neverHeld.size() == 1 && neverHeld[0] == 9);
+        CHECK(SeekDeathCandidates({}, {1, 2}, {}).empty());
+    }
+
+    // Cause Insanity's edge: a new charmed guid starts its clock and its row is due once, 1.5 s later. A scan that finds
+    // nobody charmed forgets the guid, so the same player charmed again after a gap logs a new row.
+    {
+        SeekCycleRecord record;
+        SeekCharmScan(record, 0, 1000);
+        CHECK(record.charmGuid == 0 && !SeekCharmRowDue(record, 9000));
+        SeekCharmScan(record, 42, 2000);
+        CHECK(record.charmGuid == 42 && record.charmSeenMs == 2000 && !record.charmLogged);
+        CHECK(!SeekCharmRowDue(record, 3499)); // not before the 1.5 s wait
+        CHECK(SeekCharmRowDue(record, 3500));
+        CHECK(!SeekCharmRowDue(record, 3600)); // one row per charm
+        SeekCharmScan(record, 42, 4000);       // still charmed: the same charm, no new clock
+        CHECK(record.charmSeenMs == 2000 && record.charmLogged);
+        CHECK(!SeekCharmRowDue(record, 9000));
+        SeekCharmScan(record, 0, 5000);        // the gap: nobody charmed
+        CHECK(record.charmGuid == 0 && record.charmSeenMs == 0 && !record.charmLogged);
+        SeekCharmScan(record, 42, 8000);       // the same player charmed again
+        CHECK(record.charmGuid == 42 && record.charmSeenMs == 8000 && !record.charmLogged);
+        CHECK(!SeekCharmRowDue(record, 9499));
+        CHECK(SeekCharmRowDue(record, 9500));  // a new row
+        SeekCharmScan(record, 43, 10000);      // another player charmed with no gap: a new clock too
+        CHECK(record.charmGuid == 43 && record.charmSeenMs == 10000 && !record.charmLogged);
+    }
+
+    // DungeonRunSeekCycleRoll: a missed sighting rolls the cycle count with the due time. kSeekOverdueGraceMs is 8000.
+    CHECK(SeekRolledCycles(9000 + 8000, 9000, 90000) == 0);
+    CHECK(SeekRolledCycles(9000 + 8001, 9000, 90000) == 1);
+    CHECK(SeekRolledCycles(9000 + 90000 + 8001, 9000, 90000) == 2);
+    CHECK(SeekRolledCycles(9000, 0, 90000) == 0);
+    CHECK(SeekRolledCycles(9000, 9000, 0) == 0);
+    {
+        SeekCycleRecord rolled;
+        rolled.engageMs = 1000;
+        rolled.cycleMs = 90000;
+        CHECK(SeekRollMissedCycles(rolled, 1000 + 90000 + 9000) == 1);
+        CHECK(rolled.cycleNo == 1);
+        CHECK(rolled.lastCycleMs == 91000); // the estimated sighting, not left at 0 nor moved to now
+        CHECK(SeekCycleAccepts(rolled.lastCycleMs, 181000, 90000));
+        // A due time inside the grace rolls nothing.
+        CHECK(SeekRollMissedCycles(rolled, 181000 + 8000) == 0);
+        CHECK(rolled.cycleNo == 1 && rolled.lastCycleMs == 91000);
+    }
+    // A real sighting after the roll: the estimate was a few seconds off, so the clock re-anchors on the sighting and
+    // the cycle number the roll counted stays. due = engage 1000 + 90000; roll at due + 8001, sighting at due + 9000.
+    {
+        SeekCycleRecord late;
+        late.engageMs = 1000;
+        late.cycleMs = 90000;
+        CHECK(SeekRollMissedCycles(late, 91000 + 8001) == 1);
+        CHECK(late.cycleNo == 1 && late.lastCycleMs == 91000 && late.lastCycleEstimated);
+        CHECK(SeekCycleSightingOf(true, late.lastCycleMs, 100000, late.cycleMs, late.lastCycleEstimated) ==
+              SeekCycleSighting::Resync);
+        SeekCycleResync(late, 100000);
+        CHECK(late.cycleNo == 1); // no second cycle
+        CHECK(late.lastCycleMs == 100000);
+        CHECK(!late.lastCycleEstimated);
+        CHECK(late.siphonAtMs == 101000 && late.siphonSecondAtMs == 103000 && late.siphonThirdAtMs == 109000);
+        CHECK(late.siphonSeenMs == 100000 && late.siphonCycle == 1);
+        // The raid's second sighting 300 ms later changes nothing.
+        CHECK(SeekCycleSightingOf(true, late.lastCycleMs, 100300, late.cycleMs, late.lastCycleEstimated) ==
+              SeekCycleSighting::None);
+    }
+    // Only a sighting of the row's spell on the rolled clock re-syncs; a real next cycle still counts.
+    CHECK(SeekCycleSightingOf(false, 91000, 100000, 90000, true) == SeekCycleSighting::None);
+    CHECK(SeekCycleSightingOf(true, 91000, 100000, 90000, false) == SeekCycleSighting::None);
+    CHECK(SeekCycleSightingOf(true, 91000, 136000, 90000, false) == SeekCycleSighting::Next);
 
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;

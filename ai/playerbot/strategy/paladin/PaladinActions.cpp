@@ -3,6 +3,8 @@
 #include "PaladinActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GroupMembers.h"
+#include "PaladinBlessingOrderPolicy.h"
+#include "../generic/ClassChoicePolicy.h"
 
 using namespace ai;
 
@@ -61,6 +63,13 @@ bool CastPaladinAuraAction::isUseful()
 
 bool CastPaladinAuraAction::Execute(Event& event)
 {
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty() && !ai->HasAura(ordered, bot))
+    {
+        if (ai->CastSpell(ordered, bot, nullptr, false))
+            SetDuration(1.0f);
+        return true;
+    }
     std::vector<std::string> altAuras;
     std::vector<std::string> haveAuras;
     altAuras.push_back("devotion aura");
@@ -101,6 +110,137 @@ bool CastPaladinAuraAction::Execute(Event& event)
     return false;
 }
 
+bool CastDevotionAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "devotion aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastRetributionAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "retribution aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastConcentrationAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "concentration aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastShadowResistanceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "shadow resistance aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastFrostResistanceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "frost resistance aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastFireResistanceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "fire resistance aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastCrusaderAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "crusader aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastSanctityAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "sanctity aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+std::string ai::OrderedAuraFor(PlayerbotAI* ai)
+{
+    std::string const spell = ChoiceSpell(0,
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ChoiceOrderKey(0))->Get());
+    if (spell.empty() || !ai->HasSpell(spell))
+        return std::string();
+    return spell;
+}
+
+bool CastChoiceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (ordered.empty() || ai->HasMyAura(ordered, bot))
+        return false;
+    SetSpellName(ordered);
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastChoiceAuraAction::isPossible()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (ordered.empty())
+        return false;
+    SetSpellName(ordered);
+    return CastBuffSpellAction::isPossible();
+}
+
+bool CastChoiceAuraAction::Execute(Event& event)
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (ordered.empty())
+        return false;
+    bool const cast = ai->CastSpell(ordered, bot, nullptr, false);
+    if (cast)
+        SetDuration(1.0f);
+    return cast;
+}
+
+std::string ai::OrderedBlessingFor(PlayerbotAI* ai, Unit* target)
+{
+    if (!target || !target->IsPlayer())
+        return std::string();
+    Player* const player = static_cast<Player*>(target);
+    int const classIndex = BlessingOrderClassIndexById(player->GetClass());
+    if (classIndex < 0)
+        return std::string();
+    std::string const playersStored = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", BlessingOrderPlayersKey())->Get();
+    std::string const classStored = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", BlessingOrderKey(classIndex))->Get();
+    std::string const spell = ResolveBlessingOrderSpell(playersStored, player->GetName(), classStored);
+    if (spell.empty() || !ai->HasSpell(spell))
+        return std::string();
+    // A tank bot cancels Salvation at once, so the order would be recast forever.
+    PlayerbotAI* const targetAi = PlayerbotAIStorage::Instance().GetAI(player);
+    if (spell == "blessing of salvation" && targetAi && targetAi->ContainsStrategy(STRATEGY_TYPE_TANK))
+        return std::string();
+    return spell;
+}
+
+std::string ai::OrderedBlessingCast(PlayerbotAI* ai, Unit* target, std::string const& ordered, bool greater)
+{
+    std::string const greaterOrdered = "greater " + ordered;
+    if (ai->HasAura(ordered, target) || ai->HasAura(greaterOrdered, target))
+        return std::string();
+    std::string const spell = greater ? greaterOrdered : ordered;
+    return ai->CanCastSpell(spell, target, 0, nullptr, true) ? spell : std::string();
+}
+
 Unit* CastBlessingAction::GetTarget()
 {
     return bot;
@@ -130,6 +270,10 @@ std::string CastBlessingAction::GetBlessingForTarget(Unit* target)
     std::string chosenBlessing = "";
     if (target)
     {
+        std::string const ordered = OrderedBlessingFor(ai, target);
+        if (!ordered.empty())
+            return OrderedBlessingCast(ai, target, ordered, greater);
+
         static char const* const kBlessings[] =
         {
             "blessing of might", "blessing of wisdom", "blessing of kings",
@@ -412,6 +556,12 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
     // member lacks it, whatever else the member holds from others.
     if (!target)
         return std::string();
+
+    // A player order replaces the automatic pick, and may replace this bot's
+    // own live blessing with the ordered one.
+    std::string const ordered = OrderedBlessingFor(ai, target);
+    if (!ordered.empty())
+        return OrderedBlessingCast(ai, target, ordered, greater);
 
     static char const* const kBlessings[] =
     {

@@ -1,8 +1,10 @@
-
 #include "playerbot/playerbot.h"
 #include "playerbot/BoostReadinessPolicy.h"
 #include "PriestTriggers.h"
 #include "PriestActions.h"
+#include "PriestMultipliers.h"
+#include "playerbot/policy/heal/ShadowformHealPolicy.h"
+#include "playerbot/strategy/values/HealerCoverage.h"
 #include "../../../runtime/policy/class/PriestFadePolicy.h"
 
 using namespace ai;
@@ -179,7 +181,15 @@ bool PriestWandBlocksCastTrigger::IsActive()
         if (member && member->IsAlive())
         {
             uint8 const health = AI_VALUE2(uint8, "health", "party member to heal");
-            if (health < sPlayerbotAIConfig.mediumHealth)
+            if (ShadowformOffhealYields(ai->HasAura("shadowform", bot), healerSpec,
+                member->GetHealthPercent() < float(sPlayerbotAIConfig.lowHealth),
+                AnotherHealerCoversAlly(ai, member, HealReachLimit(ai))))
+            {
+                // D1 leaves this Renew to the covering healer, so the wand
+                // keeps running: stopping it would only restart it one swing
+                // later. The self branch above is unchanged.
+            }
+            else if (health < sPlayerbotAIConfig.mediumHealth)
                 healTarget = member;
             // Between medium and almost full only the "party member almost
             // full health -> renew on party" row fires, so probe Renew there:
@@ -193,7 +203,8 @@ bool PriestWandBlocksCastTrigger::IsActive()
     // Shadowform first ("remove shadowform" prerequisite).
     WandSpellProbe bestHeal = WandSpellProbe::Blocked;
     if (healTarget)
-        bestHeal = BetterWandSpellProbe(ProbeSpell("flash heal", healTarget, false), ProbeSpell("lesser heal", healTarget, false));
+        bestHeal = BetterWandSpellProbe(ProbeSpell("flash heal", healTarget, false),
+            ProbeSpell(PriestSlowHealProbeSpell(PriestShouldSuppressLesserHeal(ai)), healTarget, false));
     else if (renewTarget)
         bestHeal = ProbeSpell("renew", renewTarget, false);
 
@@ -234,4 +245,14 @@ bool PriestWandBlocksCastTrigger::IsActive()
     // missing Renew, and a wand renews the GCD that every heal row needs.
     state.healerMustStop = healerSpec && !HealerWandAllowed(ai, target);
     return ShouldStopWandToCast(state);
+}
+
+bool PriestHealerWandNotAllowedTrigger::IsActive()
+{
+    Spell* autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    if (!autoRepeat || !autoRepeat->m_spellInfo || autoRepeat->m_spellInfo->Category != WAND_SHOOT_CATEGORY)
+        return false;
+    if (!IsGroupedHealer(ai))
+        return false;
+    return !HealerWandAllowed(ai, AI_VALUE(Unit*, "current target"));
 }

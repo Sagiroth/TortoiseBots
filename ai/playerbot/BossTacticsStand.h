@@ -17,6 +17,7 @@ namespace ai
     struct BossStandTarget
     {
         bool valid = false;  // a stand row applies to this bot and seats it
+        bool stay = false;   // S2's stay chose the bot's own position instead of a seat: it is not a seat to yield a post to
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;      // the row's floor; the mover snaps it to the ground again

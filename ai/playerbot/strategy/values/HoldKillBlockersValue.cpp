@@ -1,7 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "HoldKillBlockersValue.h"
 #include <cstdlib>
-#include "playerbot/BossTacticsPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/ServerFacade.h"
 #include "TargetValue.h"
@@ -50,6 +50,27 @@ uint32 HoldKillBlockersValue::Calculate()
         if (!creature->IsAlive())
             continue;
         if (CountsAsBlocker(creature->IsInCombat(), creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)))
+            ++count;
+    }
+    return count;
+}
+
+// The qualifier of the gate value is "<entry>::<radius>": the blocker entry and the row's search radius in yards.
+uint32 GateHoldFightingBlockersValue::Calculate()
+{
+    std::vector<std::string> const parts = Qualified::getMultiQualifiers(qualifier, "::");
+    const uint32 entry = parts.empty() ? 0 : static_cast<uint32>(std::strtoul(parts[0].c_str(), nullptr, 10));
+    const float radius = parts.size() > 1 ? static_cast<float>(std::strtod(parts[1].c_str(), nullptr))
+                                          : kGateHoldRadiusYd;
+    std::list<Creature*> found;
+    ScanEntry(bot, entry, found, radius > 0.0f ? radius : kGateHoldRadiusYd);
+    uint32 count = 0;
+    for (Creature* creature : found)
+    {
+        if (!creature->IsAlive())
+            continue;
+        if (CountsAsFightingBlocker(creature->IsInCombat(), creature->IsInEvadeMode(),
+                creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)))
             ++count;
     }
     return count;
@@ -140,4 +161,71 @@ std::vector<KillFirstGridUnit> KillFirstGridUnitsValue::Calculate()
         units.push_back(unit);
     }
     return units;
+}
+
+// The awaited units of a tank_post row: every creature of the entry within kTankPostSearchYd of the bot, alive or
+// dead (a dead one still ends the post), with the flags the arrival read needs. The same grid search as the blocker
+// count; the pick is PickTankPostUnit's.
+std::vector<TankPostUnit> TankPostUnitsValue::Calculate()
+{
+    std::vector<TankPostUnit> units;
+    std::list<Creature*> found;
+    ScanEntry(bot, QualifierEntry(qualifier), found, kTankPostSearchYd);
+    for (Creature* creature : found)
+    {
+        if (!creature)
+            continue;
+        TankPostUnit unit;
+        unit.guid = creature->GetObjectGuid().GetRawValue();
+        unit.x = creature->GetPositionX();
+        unit.y = creature->GetPositionY();
+        unit.z = creature->GetPositionZ();
+        unit.alive = creature->IsAlive();
+        unit.selectable = !creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        unit.evading = creature->IsInEvadeMode();
+        units.push_back(unit);
+    }
+    return units;
+}
+
+// AiPlayerbot.DungeonRunAddCrew: this bot's place once the row's switch unit is dead. The switch unit is read through
+// the same grid search as the tank_post (alive or dead; an empty list counts as dead: a corpse that despawned), and
+// the raid's AoE ranged damage dealers through the group's live members and their own AIs.
+uint8 AddCrewValue::Calculate()
+{
+    if (!sPlayerbotAIConfig.dungeonRunAddCrew)
+        return static_cast<uint8>(AddCrewState::Waiting);
+    uint32 switchEntry = 0;
+    uint8 crewSize = 0;
+    if (!GetBossTactics().AddCrewOf(bot->GetMapId(), QualifierEntry(qualifier), switchEntry, crewSize))
+        return static_cast<uint8>(AddCrewState::Waiting);
+    bool switchAlive = false;
+    for (const TankPostUnit& unit :
+        AI_VALUE2(std::vector<TankPostUnit>, "tank post units", static_cast<int32>(switchEntry)))
+    {
+        if (unit.alive)
+        {
+            switchAlive = true;
+            break;
+        }
+    }
+    std::vector<AddCrewCandidate> candidates;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member || !sServerFacade.IsAlive(member) || member->GetMapId() != bot->GetMapId() ||
+            member->GetInstanceId() != bot->GetInstanceId())
+            continue;
+        if (PlayerbotAI::IsTank(member) || PlayerbotAI::IsHeal(member))
+            continue;
+        PlayerbotAI* const memberAi = GET_PLAYERBOT_AI(member);
+        if (!memberAi || !memberAi->IsRanged(member))
+            continue;
+        int const order = AddCrewClassOrder(member->GetClass());
+        if (order < 0)
+            continue;
+        candidates.push_back(AddCrewCandidate{member->GetObjectGuid().GetRawValue(), order});
+    }
+    bool const member = AddCrewMember(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot),
+        AddCrewRank(candidates, bot->GetObjectGuid().GetRawValue()), crewSize);
+    return static_cast<uint8>(AddCrewStateFor(true, true, switchAlive, member));
 }

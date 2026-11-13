@@ -442,7 +442,8 @@ class HoldLivesInTheTargetChoice(unittest.TestCase):
         self.assertIn('GetValue<ObjectGuid>("explicit attack target")', fn)
         # The rows of the candidate's own entry, and the blocker count: KillHeld on plain inputs.
         self.assertIn("table.Rows(bot->GetMapId(), unit->GetEntry())", fn)
-        self.assertIn("DpsLeavesAlone(true, active, unit->GetEntry(), countNear)", fn)
+        self.assertIn("DpsLeavesAlone(true, active, unit->GetEntry(), static_cast<int>(unit->GetHealthPercent()), "
+                      "countNear,", fn)
         self.assertIn("HoldKillBlockers(ai, entry)", fn)
         # Every picker drops a held candidate: the three tournaments and the AoE pick, the group tank's victim and the
         # raid mark. With nothing unheld left the value returns null instead of the held pick.
@@ -639,7 +640,8 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         # any-row HasMap.
         self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&", fn)
         self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && "
-                      "!seeksRow)", fn)
+                      "!seeksRow &&", fn)
+        self.assertIn("!gateHold)", fn)
         self.assertNotIn("HasMap(bot->GetMapId())",
                          fn.replace("HasHoldMap(bot->GetMapId())", "").replace("HasLinkedDeathMap(bot->GetMapId())", ""))
         self.assertLess(fn.index("HasHoldMap(bot->GetMapId())"), fn.index("ScanBossTactics(ai, bot)"))
@@ -694,7 +696,7 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         self.assertIn("std::numeric_limits<float>::max()", at)
         unit_near = body(ACTIONS, "bool HeldUnitNear(")
         self.assertIn("HeldSubjectNear(ai, around, fight, countNear, nullptr)", unit_near)
-        isa = body(ACTIONS, "bool IsBattleDps(")
+        isa = body(ACTIONS, "bool ai::IsBattleDps(")
         self.assertIn("!PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot)", isa)
         free = body(ACTIONS, "bool IsFreeDps(", "\n}\n")
         self.assertIn("if (!IsBattleDps(bot))", free)
@@ -807,7 +809,7 @@ class HoldKillIsLogged(unittest.TestCase):
         self.assertEqual(fn.count("LogHoldKillPick("), 3)
         pick = body(ACTIONS, "void LogHoldKillPick(")
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", info1, info2);', pick)
-        self.assertIn('"held=%u:%u,hp=%u"', pick)
+        self.assertIn('"held=%u:%u,hp=%u,held_ms=%u"', pick)
         self.assertIn('"blockers="', pick)
         self.assertIn('info2 += "none";', pick)
         self.assertIn('info2 += ",to=" + std::to_string(destination->GetEntry())', pick)
@@ -825,7 +827,7 @@ class HoldKillIsLogged(unittest.TestCase):
         self.assertIn('held == HoldReason::Sole ? "sole" : veto', fn)
         veto = body(ACTIONS, "void LogHoldKillVeto(")
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);', veto)
-        self.assertIn('"held=%u:%u,hp=%u"', veto)
+        self.assertIn('"held=%u:%u,hp=%u,held_ms=%u"', veto)
         self.assertIn('"held=none"', veto)
 
     def test_one_row_per_bot_per_kind_per_five_seconds(self):
@@ -1000,9 +1002,11 @@ class AuraGateAndKillFirstGridWiring(unittest.TestCase):
     def test_the_gate_is_free_with_the_key_off(self):
         # The key is read before the row lookup: a bot with the gate off pays one bool, not a map table lookup.
         fn = body(POSSIBLE_TARGETS, "bool PossibleAttackTargetsValue::IsValid(")
-        self.assertIn("if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)", fn)
+        self.assertIn("requiredAura = (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)", fn)
         self.assertLess(fn.index("sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player"),
                         fn.index("GetBossTactics().RequiredAura("))
+        # The key-off path yields 0 (no row), so the ternary's else branch must directly follow the call.
+        self.assertIn("GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry()) : 0;", fn)
         self.assertIn("AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura))", fn)
 
     def test_both_taunt_picks_leave_a_gated_subject_alone(self):

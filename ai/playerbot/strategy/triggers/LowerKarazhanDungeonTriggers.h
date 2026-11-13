@@ -51,8 +51,10 @@ public:
     MoroesEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end moroes fight", "moroes", 61225) {}
 };
 
-// Araxxna spiderling swarm (core SpawnEggs, entry 30008): any live
-// spiderling in aggro range means cleave them down.
+// Araxxna swarm (core SpawnEggs): a live Skitterweb Egg (30008, hatches
+// after 20s) or hatched spider (Crawler 61206 / Darkfang 61207 / Leaper
+// 61209) near the bot means cleave them down. DPS only. Reads cached
+// values; the egg proximity list is rescanned at most once per 5s.
 class AraxxnaSwarmTrigger : public Trigger
 {
 public:
@@ -60,13 +62,13 @@ public:
     bool IsActive() override;
 };
 
-// Moroes smoke bomb (57096) blinds sight lines: re-target via tank assist
-// while the cloud is up on the bot.
+// Moroes smoke bomb (57096) blinds sight lines: tanks re-target via tank
+// assist while the cloud is up on them (DPS must not pick up loose mobs).
 class MoroesVanishedTrigger : public Trigger
 {
 public:
     MoroesVanishedTrigger(PlayerbotAI* ai) : Trigger(ai, "moroes vanished", 1) {}
     std::string GetTargetName() override { return "self target"; }
-    bool IsActive() override { return ai->HasAura(57096, bot); }
+    bool IsActive() override { return PlayerbotAI::IsTank(bot) && ai->HasAura(57096, bot); }
 };
 }

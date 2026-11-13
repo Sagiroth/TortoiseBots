@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/BossTacticsPolicy.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/Trigger.h"
 
@@ -40,12 +41,35 @@ namespace ai
     };
 
     // A kill_first creature is alive and this DPS bot is not on it. Checked every second under
-    // AiPlayerbot.DungeonRunTotemFocus (a totem's whole life is 1-2 s), every two seconds otherwise.
+    // AiPlayerbot.DungeonRunTotemFocus (a totem's whole life is 1-2 s) or AiPlayerbot.DungeonRunCarrierHold (the
+    // re-pick after a Shade dies), every two seconds otherwise. The base interval is 1 (the engine asks every tick) and
+    // Check() applies KillFirstCheckDue with both keys read at every check, so a `.reload config` changes the cadence
+    // of a trigger that is already built.
     class BossTacticsKillFirstTrigger : public Trigger
     {
     public:
-        BossTacticsKillFirstTrigger(PlayerbotAI* ai)
-            : Trigger(ai, "boss tactics kill first", sPlayerbotAIConfig.dungeonRunTotemFocus ? 1 : 2) {}
+        BossTacticsKillFirstTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics kill first", 1)
+        {
+            lastDueSec_ = static_cast<std::int64_t>(time(0)) - rand() % 2;
+        }
+        Event Check() override
+        {
+            if (!triggered && !KillFirstCheckDue(sPlayerbotAIConfig.dungeonRunTotemFocus,
+                    sPlayerbotAIConfig.dungeonRunCarrierHold, static_cast<std::int64_t>(time(0)), lastDueSec_))
+                return Event();
+            return Trigger::Check();
+        }
+        bool IsActive() override;
+    private:
+        std::int64_t lastDueSec_ = 0;
+    };
+
+    // A cursed healer or off-tank whose Shade is in reach and whose raid can spare it (AiPlayerbot.DungeonRunCarrierStrike;
+    // the guard is CarrierStrikeAllowed). Checked every second while a carrier row is open.
+    class BossTacticsCarrierStrikeTrigger : public Trigger
+    {
+    public:
+        BossTacticsCarrierStrikeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics carrier strike", 1) {}
         bool IsActive() override;
     };
 
@@ -159,6 +183,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A ranged bot owns a fixed slot between the doses and has to hold it or walk back to it
+    // (DungeonRunBossSpreadSlots).
+    class BossTacticsSpreadSlotTrigger : public Trigger
+    {
+    public:
+        BossTacticsSpreadSlotTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics spread slot", 1) {}
+        bool IsActive() override;
+    };
+
     // The second off-tank has a source to take, to pull, or to drag back to the row's spot.
     class BossTacticsSeekTankTrigger : public Trigger
     {
@@ -197,6 +230,15 @@ namespace ai
     {
     public:
         BossTacticsTauntAfterTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics taunt after", 1) {}
+        bool IsActive() override;
+    };
+
+    // A tank_post row names this bot's raid tank slot and a unit of its awaited entry is not in the fight yet: the
+    // tank walks to the row's spot and holds there until the unit arrives.
+    class BossTacticsTankPostTrigger : public Trigger
+    {
+    public:
+        BossTacticsTankPostTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tank post", 1) {}
         bool IsActive() override;
     };
 

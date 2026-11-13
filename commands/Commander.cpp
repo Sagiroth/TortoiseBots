@@ -45,6 +45,7 @@
 #include "../ai/playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/strategy/values/LastMovementValue.h"
+#include "../ai/playerbot/strategy/values/PartyMemberToHeal.h"
 #include "../ai/playerbot/MoveFailNotePolicy.h"
 #include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 #include "../ai/playerbot/strategy/actions/EquipAction.h"
@@ -3306,6 +3307,10 @@ static bool FocusIsTankHoldTarget(Unit* target)
     return false;
 }
 
+namespace {
+Player* RunJudge(Player*, std::vector<Player*> const&); // HandleCommanderOrder; defined with the run's fact reads
+} // namespace
+
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
 // group, every bot attacks its Skull target. `automatedKillFirst`: the run leader's own kill-first order (an order the
 // run issued), the only focus the totem key may make DPS-only; a player's explicit focus arms every bot.
@@ -6521,13 +6526,31 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     }
     order.bots = CommandedBots(order.group, order.lead);
     order.judge = order.lead;
-    if (!order.lead->IsAlive())
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: the order is judged as the run's facts are (RunJudge), never by a
+    // charmed bot. A charmed lead is friendly to its charmer's side, so the run's own focus on a Brain Wash Totem was
+    // refused as "friendly" (ResolveOrderTarget); with the lead dead the first living bot was the judge even when
+    // charmed. Key off: the dead lead's first living bot, as before.
+    bool const charmJudgeOn = sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead;
+    if (!order.lead->IsAlive() && !charmJudgeOn)
         for (Player* bot : order.bots)
             if (bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == order.lead->GetMap())
             {
                 order.judge = bot;
                 break;
             }
+    if (!order.lead->IsAlive() && charmJudgeOn)
+    {
+        // A dead lead: the first fit (living, uncharmed) bot; with none the dead lead stays, as with no living bot.
+        if (Player* const fitJudge = RunJudge(order.lead, order.bots))
+            order.judge = fitJudge;
+    }
+    if (order.lead->IsAlive())
+    {
+        Player* const charmJudge = RunJudge(order.lead, order.bots);
+        if (TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead,
+                order.lead->IsCharmed(), charmJudge != nullptr))
+            order.judge = charmJudge;
+    }
 
     std::vector<std::string> parts = RemoteCommander::SplitOrderArgs(rest);
     RemoteCommander::OrderTier const tier = RemoteCommander::TierForOrder(verb);
@@ -8789,8 +8812,10 @@ EngagedParty ReadEngagedParty(std::vector<Player*> const& bots, std::vector<std:
 // with whether the group can attack each (GroupCanAttack). With `ep`: a party bot or a party pet is never one of
 // them (a charmed bot hits the party: Scarlet Cathedral r23 slot 5 listed Hele under Dominate Mind as "entry 0
 // cannot be attacked"; a charmed player is named in Facts::charmedFighting), and each carries its hit points and
-// whether a party bot or pet has it as its victim (DungeonRun::HpHeldTick: a unit held at 1 hp).
-void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set<uint64>& seen,
+// whether a party bot or pet has it as its victim (DungeonRun::HpHeldTick: a unit held at 1 hp). Friendliness is
+// judged against `factLead`: the lead bot, or under AiPlayerbot.DungeonRunFactJudgeCharmedLead the run judge while the
+// lead is charmed (ReadEngagedUnits).
+void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit, std::unordered_set<uint64>& seen,
     std::vector<TortoiseBots::DungeonRun::UnitFact>& out, EngagedParty const* ep = nullptr, bool threatRefs = false)
 {
     auto const add = [&](Unit* other)
@@ -8804,7 +8829,7 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
                 ep->charmedFighting->push_back(other->GetName());
             return;
         }
-        if (!other || !other->IsAlive() || sServerFacade.IsFriendlyTo(other, lead) ||
+        if (!other || !other->IsAlive() || sServerFacade.IsFriendlyTo(other, factLead) ||
             !seen.insert(other->GetObjectGuid().GetRawValue()).second)
             return;
         TortoiseBots::DungeonRun::UnitFact fact;
@@ -8831,6 +8856,9 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
             fact.hitsParty = victim && ep->party.count(victim->GetObjectGuid().GetRawValue()) != 0;
         }
         fact.respawnSec = RunRespawnSec(other);
+        // A mana user is a healer or a caster: the automatic crowd control's first pick (RunAutoCcBetter), and the
+        // pack focus's first class when the plan's kill_first list names no unit of the fight (PickPackFocus).
+        fact.caster = other->GetMaxPower(POWER_MANA) > 0;
         // The nest read: only a fast respawn needs its home position (InRespawnNest).
         if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
             fact.homeYd = RunHomeYd(other);
@@ -8851,14 +8879,18 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
 void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f)
 {
     Player* const judge = RunJudge(lead, bots);
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: a charmed lead is friendly to every unit of its charmer's side, so
+    // the engaged units read empty, the fight read as stale and its clock stopped for the whole charm.
+    Player* const factLead = TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(
+        sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead, lead->IsCharmed(), judge != nullptr) ? judge : lead;
     EngagedParty const ep = ReadEngagedParty(bots, &f.charmedFighting);
     std::unordered_set<uint64> seen;
     for (Player* bot : bots)
         if (bot->IsAlive() && bot->IsInWorld())
         {
-            ReadEngagedWith(lead, judge, bot, seen, f.engagedUnits, &ep);
+            ReadEngagedWith(lead, judge, factLead, bot, seen, f.engagedUnits, &ep);
             if (Pet* pet = bot->GetPet())
-                ReadEngagedWith(lead, judge, pet, seen, f.engagedUnits, &ep);
+                ReadEngagedWith(lead, judge, factLead, pet, seen, f.engagedUnits, &ep);
         }
     f.engagedRead = true;
 }
@@ -8874,6 +8906,9 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     if (!map)
         return;
     Player* const judge = RunJudge(lead, bots);
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: friendliness is judged by the run judge while the lead is charmed.
+    Player* const factLead = TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(
+        sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead, lead->IsCharmed(), judge != nullptr) ? judge : lead;
     std::unordered_set<uint64> party;
     for (Player* bot : bots)
     {
@@ -8887,7 +8922,7 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     for (auto const& hold : slot.run.ccHolds)
     {
         Unit* const unit = map->GetUnit(::ObjectGuid(hold.first));
-        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, lead) ||
+        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, factLead) ||
             !RunCcHeld(unit))
             continue;
         UnitFact fact;
@@ -8954,9 +8989,9 @@ void ReadMemberEngaged(Player* lead, Player* judge, Player* bot, TortoiseBots::D
         return;
     Pet* const pet = bot->GetPet();
     std::unordered_set<uint64> seen;
-    ReadEngagedWith(lead, judge, bot, seen, member.engaged, nullptr, true);
+    ReadEngagedWith(lead, judge, lead, bot, seen, member.engaged, nullptr, true);
     if (pet)
-        ReadEngagedWith(lead, judge, pet, seen, member.engaged, nullptr, true);
+        ReadEngagedWith(lead, judge, lead, pet, seen, member.engaged, nullptr, true);
     member.engagedRead = true;
 }
 
@@ -9234,6 +9269,10 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
     std::vector<Creature*> engagedOwners; // engaged plan bosses whose kill_first totems the grid pass reads
     std::unordered_set<uint64> engagedOwnerSeen;
     Player* const judge = RunJudge(lead, bots);
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: a charmed lead is friendly to the Brain Wash Totem and to Jin'do, so
+    // while it is charmed the kill_first friendliness and the owner's engagement are judged by the run judge.
+    Player* const factLead = TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(
+        sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead, lead->IsCharmed(), judge != nullptr) ? judge : lead;
     // The aura a needs_aura kill_first row requires (Delusions 24306 on Jin'do's Shade, from the table the plan's
     // kill_first entries name): a bot that carries one hurts only the row's unit, so it is neither a volley on a totem
     // nor a body the totem re-send may count (t1106b).
@@ -9275,7 +9314,7 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         // is the focus' own.
         if (TortoiseBots::DungeonRun::RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit)))
             return;
-        if (plan.KillFirstRank(unit->GetEntry()) < 0 || sServerFacade.IsFriendlyTo(unit, lead))
+        if (plan.KillFirstRank(unit->GetEntry()) < 0 || sServerFacade.IsFriendlyTo(unit, factLead))
             return;
         TortoiseBots::DungeonRun::UnitFact fact;
         fact.guid = unit->GetObjectGuid().GetRawValue();
@@ -9300,7 +9339,7 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         {
             fact.owner = ownerRaw;
             Unit* summoner = lead->GetMap()->GetUnit(ObjectGuid(ownerRaw));
-            fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
+            fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, factLead) &&
                 EngagedWithParty(summoner, party);
         }
         // The damage dealers (not a tank, not a healer, not a carrier of an aura-gated row) of the party attacking it
@@ -9481,28 +9520,47 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
 // AddPlayerAttackers): the lead bot, or with it dead the member the fight is around (DungeonRun::DeadLeadGuardAnchor:
 // an off-tank in combat, else a member with attackers), else the old fallback: its first living off-tank in range (the
 // boss fight's, else the trash fight's), else any living bot on its map. Null when none is.
-Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& f)
+// `skipCharmed` (AiPlayerbot.DungeonRunFactJudgeCharmedLead): no charmed bot is the anchor.
+static Player* RaidGuardFallbackAnchor(Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::Facts const& f, bool skipCharmed)
 {
-    if (lead->IsAlive())
-        return lead;
+    auto const fit = [&](Player* bot)
+    {
+        return bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap() &&
+            !(skipCharmed && bot->IsCharmed());
+    };
     int const fighting = TortoiseBots::DungeonRun::DeadLeadGuardAnchor(f);
     if (fighting >= 0)
         for (Player* bot : bots)
-            if (bot->GetName() == f.members[fighting].name && bot->IsAlive() && bot->IsInWorld() &&
-                bot->GetMap() == lead->GetMap())
+            if (bot->GetName() == f.members[fighting].name && fit(bot))
                 return bot;
     for (std::string const& name : f.raid.bossOffTanksAlive)
         for (Player* bot : bots)
-            if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+            if (bot->GetName() == name && fit(bot))
                 return bot;
     for (std::string const& name : f.raid.offTanksAlive)
         for (Player* bot : bots)
-            if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+            if (bot->GetName() == name && fit(bot))
                 return bot;
     for (Player* bot : bots)
-        if (bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+        if (fit(bot))
             return bot;
     return nullptr;
+}
+
+// Under AiPlayerbot.DungeonRunFactJudgeCharmedLead a charmed lead is no anchor either: friendly to its charmer's side,
+// it filtered every attacker out of the guard's list (addAttackers) and measured the reach from where the charm walked
+// it, so the guard and the raid healer guard went blind for the whole charm. The fallback skips charmed bots then.
+Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& f)
+{
+    bool const keyOn = sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead;
+    if (lead->IsAlive())
+    {
+        bool const leadCharmed = lead->IsCharmed();
+        Player* const other = keyOn && leadCharmed ? RaidGuardFallbackAnchor(lead, bots, f, true) : nullptr;
+        return TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(keyOn, leadCharmed, other != nullptr) ? other : lead;
+    }
+    return RaidGuardFallbackAnchor(lead, bots, f, keyOn);
 }
 
 // The fear families' room (DungeonRun::UnitFact::fleeRoomYd): how far the unit stands from the nearest living
@@ -9731,6 +9789,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
                                                      // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
             fact.attackable = GroupCanAttack(anchor, attacker); // never picked up when it cannot be attacked
+            fact.selectable = !attacker->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
             if (inParty)
@@ -11792,6 +11851,24 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;
         // AiPlayerbot.DungeonRunRaidHealerGuard: an add on a healer goes to the ranged dps first (RaidHealerGuard).
         f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;
+        // AiPlayerbot.DungeonRunGuardLeavesAssignedTank: a unit a tank row assigns to a slot stays with that tank.
+        f.raid.guardLeavesAssigned = sPlayerbotAIConfig.dungeonRunGuardLeavesAssignedTank;
+        // ... only while the assigning row's own key reads that kind: until_tank is an aura tactic, tank_post its own.
+        f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;
+        f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;
+        // AiPlayerbot.DungeonRunGuardClockHittable: the assigned clock starts on the first hittable tick.
+        f.raid.guardClockHittable = sPlayerbotAIConfig.dungeonRunGuardClockHittable;
+        // The slot order those rows' `priority` names, with the state the guard's assigned-tank grace reads: a charmed
+        // tank cannot hold the unit. The order drops a dead tank, so the next tank inherits its slot.
+        if (f.raid.guardLeavesAssigned)
+            if (PlayerbotAI* const leadAi = PlayerbotAIStorage::Instance().GetAI(lead))
+                for (Player* const tank : ai::GetRaidTankRoles(leadAi).tanks)
+                {
+                    RaidTankFact tankFact;
+                    tankFact.alive = tank->IsAlive();
+                    tankFact.charmed = tank->IsCharmed();
+                    f.raid.tanks.push_back(tankFact);
+                }
     }
     // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
     // AiPlayerbot.DungeonRunNearWipeStopParty is on).
@@ -13195,6 +13272,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
                 fact.victimTank = PlayerbotAI::IsTank(player);
             }
             fact.attackable = GroupCanAttack(anchor, attacker);
+            fact.selectable = !attacker->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
             f.partyAttackers.push_back(fact);
@@ -16708,9 +16786,23 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     }
     bool const allDead = facts.total > 0 && facts.alive == 0;
     FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
+    // The plan boss only when he is one of the units being fought: a trash fight still open when the step turns to his
+    // boss step (or in the fight's last 3 s) is not his fight and stays unnamed. The first pick within a fight wins.
+    if (ctx.bossEntry)
+        for (DungeonRun::UnitFact const& u : facts.engagedUnits)
+            if (u.entry == ctx.bossEntry || u.formOf == ctx.bossEntry)
+            {
+                CombatMonitorService::Instance().AdoptBoss(binding.groupId, ctx.bossEntry, ctx.bossName.c_str());
+                break;
+            }
+    // No boss in the fight yet: the same data pick the bound sampler makes (world-boss rank, instance-bind, plan
+    // boss; most health first). It names the boss on a move-step pull and on a boss step reached in a walk back.
+    if (CombatMonitorService::Instance().InFight(binding.groupId) &&
+        CombatMonitorService::Instance().BossEntry(binding.groupId) == 0)
+        NoteFightBoss(binding.groupId, lead);
     // The timeline's boss: the plan's boss step, found among the engaged facts (a script-changed entry still matches
     // through formOf); the first unit found is the fight's. A unit that reads another entry than the plan's is noted
-    // as the fight's phase here too, the same way the bound sampler does it (the run path never calls NoteFightBoss).
+    // as the fight's phase here too, the same way the bound sampler does it.
     if (ctx.bossEntry)
         for (DungeonRun::UnitFact const& u : facts.engagedUnits)
         {

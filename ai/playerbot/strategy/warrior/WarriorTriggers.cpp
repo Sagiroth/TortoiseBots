@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupMembers.h"
 #include "WarriorTriggers.h"
 #include "WarriorActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
@@ -55,6 +56,36 @@ bool BloodrageBuffTrigger::IsActive()
         rage);
 }
 
+void SunderArmorDebuffTrigger::AnnounceFullStack(Unit* target)
+{
+    if (!sPlayerbotAIConfig.announceSunderStacks || announcedTarget == target->GetObjectGuid())
+        return;
+
+    Creature* creature = target->IsCreature() ? static_cast<Creature*>(target) : nullptr;
+    if (!creature || !creature->IsElite())
+        return;
+
+    announcedTarget = target->GetObjectGuid();
+
+    Group* group = bot->GetGroup();
+    if (!group || ai->GetPlayersInGroup().empty())
+        return;
+
+    // One voice per target: of the warrior bots fighting it, the lowest guid speaks.
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (member && member != bot && member->GetClass() == CLASS_WARRIOR && member->GetVictim() == target &&
+            member->GetGUIDLow() < bot->GetGUIDLow() && PlayerbotAIStorage::Instance().GetAI(member))
+            return;
+    }
+
+    std::string const msg = "5 Sunders on " + std::string(creature->GetName());
+    if (group->isRaidGroup())
+        ai->SayToRaid(msg);
+    else
+        ai->SayToParty(msg);
+}
+
 bool SunderArmorDebuffTrigger::IsActive()
 {
     if (!ai->HasSpell("sunder armor"))
@@ -75,7 +106,10 @@ bool SunderArmorDebuffTrigger::IsActive()
     if (Aura* aura = ai->GetAura("sunder armor", target))
     {
         if (aura->GetStackAmount() >= 5)
+        {
+            AnnounceFullStack(target);
             return aura->GetAuraDuration() <= 6000;
+        }
         return true;
     }
 

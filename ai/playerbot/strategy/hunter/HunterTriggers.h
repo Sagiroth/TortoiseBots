@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/HunterSwitchPolicy.h"
+#include "playerbot/HunterAoePolicy.h"
 #include "playerbot/HunterKitePolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
@@ -58,6 +59,16 @@ namespace ai
     {
     public:
         AspectOfTheCheetahTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the cheetah") {}
+    };
+
+    // A saved `.bot choice` order keeps its own aspect up: fires while an
+    // aspect is ordered and missing. The upkeep rows cast exactly it.
+    class ChoiceAspectTrigger : public Trigger
+    {
+    public:
+        ChoiceAspectTrigger(PlayerbotAI* ai) : Trigger(ai, "choice aspect") {}
+        bool IsActive() override;
+        std::string GetTargetName() override { return "self target"; }
     };
 
     BEGIN_TRIGGER(HuntersPetDeadTrigger, Trigger)
@@ -549,6 +560,16 @@ private:
     {
     public:
         CarveTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "carve") {}
+
+        // AiPlayerbot.HunterCarveInReachOnly: no walk-in for Carve (HunterAoePolicy.h).
+        bool IsActive() override
+        {
+            if (!SpellCanBeCastedTrigger::IsActive())
+                return false;
+            Unit* target = GetTarget();
+            return target && ai::HunterCarveAllowed(sPlayerbotAIConfig.hunterCarveInReachOnly,
+                bot->GetDistance(target, SizeFactor::CombatReach));
+        }
     };
 
 

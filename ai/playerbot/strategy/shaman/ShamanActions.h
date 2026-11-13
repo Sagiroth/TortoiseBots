@@ -2,9 +2,11 @@
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
 #include "playerbot/policy/class/ShamanFireGatePolicy.h"
 #include "playerbot/policy/class/ShamanTankPolicy.h"
+#include "ShamanTotemCommandPolicy.h"
 
 namespace ai
 {
@@ -136,6 +138,31 @@ namespace ai
         bool isUseful() override;
     };
 
+    inline bool TotemBlockedByOrder(PlayerbotAI* ai, std::string const& totem)
+    {
+        std::string stored[4];
+        for (int slot = 0; slot < 4; ++slot)
+            stored[slot] = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", TotemOrderKey(slot))->Get();
+        return TotemBlockedBySlotOrder(totem, stored);
+    }
+
+    // Places the totem the player ordered for one slot; the slot's own
+    // trigger decides when.
+    class CastOrderedTotemAction : public Action
+    {
+    public:
+        CastOrderedTotemAction(PlayerbotAI* ai, int slot, std::string const& name) : Action(ai, name), slot(slot) {}
+        bool Execute(Event& event) override { return ai->DoSpecificAction(Ordered(), event, true); }
+        bool isUseful() override { return !Ordered().empty(); }
+
+    private:
+        std::string Ordered()
+        {
+            return OrderedTotemForSlot(AI_VALUE2(std::string, "manual saved string", TotemOrderKey(slot)));
+        }
+        int slot;
+    };
+
     class CastTotemAction : public CastBuffSpellAction
     {
     public:
@@ -158,6 +185,9 @@ namespace ai
         {
             time_t lastCast = AI_VALUE2(time_t, "manual time", "last totem cast time");
             if (lastCast && time(0) - lastCast < 4)
+                return false;
+
+            if (TotemBlockedByOrder(ai, name))
                 return false;
 
             if (sServerFacade.isMoving(bot))
@@ -439,7 +469,7 @@ namespace ai
     public:
         CastMagmaTotemAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "magma totem") {}
         virtual std::string GetTargetName() override { return "self target"; }
-        virtual bool isUseful() override { return CastMeleeSpellAction::isUseful() && !AI_VALUE2(bool, "has totem", name); }
+        virtual bool isUseful() override { return CastMeleeSpellAction::isUseful() && !AI_VALUE2(bool, "has totem", name) && !TotemBlockedByOrder(ai, name); }
     };
 
     class CastFireNovaAction : public CastSpellAction
@@ -484,7 +514,20 @@ namespace ai
     // row queues it at warrior protection priority (INTERRUPT+1) when a mob
     // peels onto a non-tank member; the target check mirrors the warrior
     // CastTauntAction guard (victim exists and is not us).
-    MELEE_ACTION_U(CastEarthshakerSlamAction, "earthshaker slam", GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot);
+    // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
+    // inherits this isUseful. Stands down at cast time when the mob is already on another tank (TauntHeldTargetPolicy.h).
+    class CastEarthshakerSlamAction : public CastMeleeSpellAction
+    {
+    public:
+        CastEarthshakerSlamAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "earthshaker slam") {}
+
+        virtual bool isUseful() override
+        {
+            return GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot &&
+                !TauntRefusedByGate(ai, bot, GetTarget(), "earthshaker slam") &&
+                !TauntTargetHeldByOtherTank(bot, GetTarget());
+        }
+    };
 
     // Taunt the mob picked by "attacker of non-tank target". CastMeleeSpellAction's
     // own reach prerequisite targets that mob (a taunt past 5 yards fails, so
@@ -636,6 +679,15 @@ namespace ai
 
             return CastSpellAction::isUseful();
         }
+    };
+
+    // Same spell used as the elemental single-target nuke: it keeps the
+    // CastSpellAction single-target threat type, so the AoE threat hold on
+    // CastChainLightningAction does not stop it.
+    class CastChainLightningSingleAction : public CastSpellAction
+    {
+    public:
+        CastChainLightningSingleAction(PlayerbotAI* ai) : CastSpellAction(ai, "chain lightning") {}
     };
 
     class CastLightningBoltAction : public CastSpellAction

@@ -104,6 +104,7 @@ By default (`AiPlayerbot.HireAnywhere = 0`), the `.bot hire` chat command always
 - **Equipment Tiers:** Level 60 companions can be hired in fixed Best-in-Slot gear sets (Tiers 0 through 7). Tiers unlock per character via recruiter quests (or account-wide if [`AiPlayerbot.HireGearUnlockAccountWide`](../../server/settings/hiring.md#aiplayerbothiregearunlockaccountwide) is enabled): Tier 0 (Standard), Tier 1 (Pre-raid), Tier 2 (Zul'Gurub), Tier 3 (Molten Core), Tier 4 (Blackwing Lair), Tier 5 (Ahn'Qiraj), Tier 6 (Naxxramas), Tier 7 (Karazhan).
 - **Temporary Character:** Hires exist while you are online, plus a disconnect grace period ([`AiPlayerbot.HireDisconnectGracePeriod`](../../server/settings/hiring.md#aiplayerbothiredisconnectgraceperiod)). Removing them deletes the temporary character.
 - **PvE-only:** Hired companions leave you when you enter a battleground. With [`AiPlayerbot.HireAllowPvP`](../../server/settings/hiring.md#aiplayerbothireallowpvp) set to `1` they may stay and fight in battlegrounds.
+- **Other Faction:** With [`AiPlayerbot.HireCrossFactionNeutralInns`](../../server/settings/hiring.md#aiplayerbothirecrossfactionneutralinns) set to `1` on a realm with cross-faction groups, recruiters at neutral inns also offer the other faction's classes and races. Such a hire is attacked by your side's city guards and cannot use your flight paths.
 </details>
 
 ### `.bot hire raid`
@@ -173,7 +174,7 @@ Teleports an owned bot or hired companion to your current location. The bot itse
 .bot summon <CharacterName>
 ```
 
-Teleportation takes 3 seconds. On arrival the bot resumes following you. It anchors where it lands only if you gave `stay`, `guard`, `hold` or `comestay` after the summon request (`come` later re-enables follow-restore).
+Teleportation takes 3 seconds. On arrival the bot resumes following you. It anchors where it lands only if you gave `stay`, `guard`, `hold` or `comestay` after the summon request (`come` later re-enables follow-restore). A live hunter pet or warlock demon is summoned with the bot and arrives beside it; a dead pet stays where it fell.
 <a id="automatic-summon-on-group-accept"></a>With [`AiPlayerbot.OwnedBotSummonWhenGroup`](../../server/settings/party.md#aiplayerbotownedbotsummonwhengroup) on, owned bots and hires that accept a party invite are summoned automatically (same map, beyond sight distance; pool bots never).
 Cooldown and combat/death/revive/repair behavior follow the matching `OwnedBotSummon*` settings below.
 

@@ -137,6 +137,32 @@ static std::string TotemModeWord(PlayerbotAI* ai)
     return stored;
 }
 
+// One TBM:TOTEM record: stored orders, drop mode, then every totem the bot
+// has trained (each name once, slot order earth..air).
+static void SendTotemLine(ChatHandler* handler, Player* bot, PlayerbotAI* ai)
+{
+    std::string known;
+    for (int slot = 0; slot < 4; ++slot)
+    {
+        std::uint32_t count = 0;
+        char const* const* choices = ai::TotemChoicesForSlot(slot, count);
+        for (std::uint32_t i = 0; i < count; ++i)
+        {
+            std::string const name = choices[i];
+            if (!ai->HasSpell(name))
+                continue;
+            if (!known.empty() && ("+" + known + "+").find("+" + name + "+") != std::string::npos)
+                continue;
+            if (!known.empty())
+                known += "+";
+            known += name;
+        }
+    }
+    handler->PSendSysMessage("TBM:TOTEM|%s|earth=%s,fire=%s,water=%s,air=%s,mode=%s,known=%s",
+        ProtocolSafe(bot->GetName()).c_str(), TotemStatusWord(ai, 0).c_str(), TotemStatusWord(ai, 1).c_str(),
+        TotemStatusWord(ai, 2).c_str(), TotemStatusWord(ai, 3).c_str(), TotemModeWord(ai).c_str(), known.c_str());
+}
+
 // Subgroup census for one bot (the trigger's ReadTotemSubgroup shape, game
 // state translated here so the policy stays testable): own-subgroup live
 // mates on the same map within 100 yd. Hunters count as melee (pet swings),
@@ -204,7 +230,8 @@ static std::string TotemWantForBot(PlayerbotAI* ai, Player* bot, int slot)
 // per-slot totem choice, persisted per bot like the behaviour toggles.
 // `.bot totem <scope> mode <auto|prepull|manual>`, `.bot totem <scope>
 // drop` (queue the configured set now, in or out of combat), `.bot totem
-// <bot> status`. Answers the action protocol (ACK/ERR) so the addon
+// <bot> status`, `.bot totem <scope> set <earth>,<fire>,<water>,<air>` (all
+// four slots at once). Answers the action protocol (ACK/ERR) so the addon
 // button/lines can drive it. Unknown totems and totems the bot never
 // trained answer ERR naming the reason.
 bool HandleTotem(ChatHandler* handler, char const* args)
@@ -226,7 +253,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
     std::string const usage =
-        "Usage: .bot totem <bot|party|raid> <earth|fire|water|air> <totem name|auto|none> | mode <auto|prepull|manual> | drop | status";
+        "Usage: .bot totem <bot|party|raid> <earth|fire|water|air> <totem name|auto|none> | set <earth>,<fire>,<water>,<air> | mode <auto|prepull|manual> | drop | status";
     bool const scopeIsParty = scope == "party" || scope == "raid";
     if (!scopeIsParty && scope.empty())
     {
@@ -272,12 +299,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
             if (!ai)
                 continue;
-            std::string line = std::string("earth=") + TotemStatusWord(ai, 0) +
-                ",fire=" + TotemStatusWord(ai, 1) +
-                ",water=" + TotemStatusWord(ai, 2) +
-                ",air=" + TotemStatusWord(ai, 3) +
-                ",mode=" + TotemModeWord(ai);
-            handler->PSendSysMessage("TBM:TOTEM|%s|%s", ProtocolSafe(bot->GetName()).c_str(), line.c_str());
+            SendTotemLine(handler, bot, ai);
         }
         SendActionAck(handler, "totem status", ackScope, (uint32)bots.size(), "-");
         return true;
@@ -300,6 +322,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
                 continue;
             ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::TotemModeKey())->Set(ai::TotemDropModeName(mode));
             sPlayerbotDbStore.Save(ai);
+            SendTotemLine(handler, bot, ai);
             ++succeeded;
         }
         if (!succeeded)
@@ -342,6 +365,52 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         return true;
     }
 
+    // `set <earth>,<fire>,<water>,<air>`: all four slots validated first, then
+    // stored per shaman; a bot missing any named totem is skipped whole.
+    if (word2 == "set")
+    {
+        std::string stored[4];
+        if (!ai::ParseTotemSetList(loweredRest, stored))
+        {
+            SendActionError(handler, "totem set", "invalid", usage.c_str());
+            return true;
+        }
+        uint32 succeeded = 0;
+        bool refused = false;
+        for (Player* bot : bots)
+        {
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+            if (!ai || bot->GetClass() != CLASS_SHAMAN)
+                continue;
+            bool trained = true;
+            for (int slot = 0; slot < 4 && trained; ++slot)
+            {
+                if (!stored[slot].empty() && stored[slot] != "auto" && !ai->HasSpell(stored[slot]))
+                {
+                    std::string msg = std::string(bot->GetName()) + " has not trained " + stored[slot] + ".";
+                    SendActionError(handler, "totem set", "unknown-spell", msg.c_str());
+                    trained = false;
+                    refused = true;
+                }
+            }
+            if (!trained)
+                continue;
+            for (int slot = 0; slot < 4; ++slot)
+                ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::TotemOrderKey(slot))->Set(stored[slot]);
+            sPlayerbotDbStore.Save(ai);
+            SendTotemLine(handler, bot, ai);
+            ++succeeded;
+        }
+        if (!succeeded)
+        {
+            if (!refused)
+                SendActionError(handler, "totem set", "no-shaman", "No shaman bots in scope.");
+            return true;
+        }
+        SendActionAck(handler, "totem set", ackScope, succeeded, "-");
+        return true;
+    }
+
     // `<slot> <totem|auto|none>`.
     int const slot = ai::TotemSlotIndex(word2);
     if (slot < 0)
@@ -363,6 +432,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         return true;
     }
     uint32 succeeded = 0;
+    bool refused = false;
     for (Player* bot : bots)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -374,15 +444,18 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         {
             std::string msg = std::string(bot->GetName()) + " has not trained " + stored + ".";
             SendActionError(handler, "totem", "unknown-spell", msg.c_str());
+            refused = true;
             continue;
         }
         ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::TotemOrderKey(slot))->Set(stored);
         sPlayerbotDbStore.Save(ai);
+        SendTotemLine(handler, bot, ai);
         ++succeeded;
     }
     if (!succeeded)
     {
-        SendActionError(handler, "totem", "no-shaman", "No shaman bots in scope.");
+        if (!refused)
+            SendActionError(handler, "totem", "no-shaman", "No shaman bots in scope.");
         return true;
     }
     std::string const detail = std::string(ai::TotemSlotName(slot)) + "=" + (stored.empty() ? "none" : stored);

@@ -37,6 +37,8 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot behavior`](#bot-behavior) | `<Name\|scope> <key> <on\|off>` | Sets persistent bot behaviors (loot, AoE, mimic...). |
 | [`.bot service`](#bot-service) | `<Name> [portal <spellId>]` | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](#bot-totem) | `<scope> <slot\|mode\|drop> [...]` | Configures and drops shaman totem loadouts. |
+| [`.bot blessing`](#bot-blessing) | `<scope> <class> <blessing\|auto>` \| `<scope> player <name> <blessing\|auto>` \| `status` | Assigns the blessing each class or character exception gets from a paladin bot. |
+| [`.bot choice`](#bot-choice) | `<scope> <aura\|aspect\|curse> <value\|auto>` \| `status` | Orders one paladin aura, hunter aspect, or warlock curse per bot. |
 
 ---
 
@@ -301,6 +303,8 @@ Alias: `.bot behaviour`. Settings are persisted per bot across sessions.
 - `threat`: Threat back-off that eases off when the bot nears the tank's threat.
 - `potions`: Automatic consumption of healing and mana potions through the reaction engine.
 - `spread`: Opt-in tactical spacing to avoid stacking in combat.
+- `hold`: Hold position (off by default). The bot keeps following and fighting but never moves away from enemies on its own: no panic or outnumbered flee, no kiting, no stepping back for casting or shooting room (a hunter stays in melee range too), no mage *Blink* away from a mob in melee range. Stepping out of ground effects and boss mechanics still happen.
+- `noblink`: Mage only. The bot never casts *Blink* inside a dungeon or raid, neither to escape a root or stun nor to jump away from a mob in melee range; outside instances *Blink* works as usual (off by default).
 - `mimic`: Mimics consumable usage out of combat (food, elixirs, flasks, scrolls, and more, but not plain water). The bot resolves a class-, spec-, and level-appropriate equivalent and casts it virtually (no inventory item needed). When more than 4 bots mimic at once, individual chat confirmations are suppressed in favor of a single `[Raid Mimic]` summary. Supports party-wide toggles: `.bot behavior party mimic on`.
 
 </details>
@@ -324,6 +328,7 @@ Configures and manages shaman totem loadouts and casting policies.
 
 ```text
 .bot totem <bot|party|raid> <earth|fire|water|air> <totem name|auto|none>
+.bot totem <bot|party|raid> set <earth>,<fire>,<water>,<air>
 .bot totem <bot|party|raid> mode <auto|prepull|pre-pull|manual>
 .bot totem <bot|party|raid> drop
 .bot totem <bot|party|raid> status
@@ -332,7 +337,8 @@ Configures and manages shaman totem loadouts and casting policies.
 <details>
 <summary>Totem parameters and modes</summary>
 
-- **Slot Pinning:** Assign a specific totem to an element slot (`earth`, `fire`, `water`, `air`). Passing `auto` restores automatic selection (subgroup-aware for earth, water, and air; falls back to spec-row behavior for fire). Passing `none` stores an empty order identical to unset, so the slot falls back to the automatic pick (auto behavior). An order chooses *which* totem the slot places; *when* is still the drop mode, so use `drop` to place an ordered set immediately.
+- **Slot Pinning:** Assign a specific totem to an element slot (`earth`, `fire`, `water`, `air`). Passing `auto` restores automatic selection (subgroup-aware for earth, water, and air; falls back to spec-row behavior for fire). Passing `none` stores an empty order identical to unset, so the slot falls back to the automatic pick (auto behavior). While a slot has an order, no other totem goes into that slot: the pack fire totem, the reactive ones (Earthbind, Grounding, cleansing) and the spec's own picks all leave it alone. The one exception is *Tremor Totem*: when someone in the group is feared or charmed it replaces the ordered earth totem, and the ordered totem returns once Tremor has expired or been recalled. An order chooses *which* totem the slot places; *when* is still the drop mode, so use `drop` to place an ordered set immediately.
+- **Set All Four Slots:** `.bot totem <scope> set <earth>,<fire>,<water>,<air>` takes exactly four comma-separated values in that order; each is `auto`, `none` or a totem name valid for that slot (long or short form, any case, whitespace around the commas ignored). All four are checked first: a wrong count or an invalid value answers `TBM:ACTION_ERR|totem set|invalid|<usage>` and changes nothing. A shaman that has not trained one of the named totems is skipped whole with `TBM:ACTION_ERR|totem set|unknown-spell|<message>`; no shaman in scope answers `no-shaman`. Each shaman changed gets a fresh `TBM:TOTEM` record, then `TBM:ACTION_ACK|totem set|<scope>|<n>|-`.
 - **Casting Modes:**
   - `auto`: Bot drops totems in combat and in the pre-pull window (ready check / rebuff) only — never otherwise out of combat, so a following bot leaves no totems in town (default).
   - `prepull` (or `pre-pull`): The same rule as `auto`, kept as an explicit choice: drops totems out of combat when combat is imminent and refreshes them in combat.
@@ -340,5 +346,51 @@ Configures and manages shaman totem loadouts and casting policies.
 - **Immediate Drop:** `.bot totem <scope> drop` queues the configured totems now, in or out of combat.
 - **Recall:** *Totemic Recall* refunds a standing set once the bot and its group are out of combat. The refund waits while the pre-pull window is open or *Mana Tide Totem* is down.
 - **Status Query:** `.bot totem <bot|party|raid> status` reports current loadout and mode via `TBM:TOTEM` records followed by a trailing `TBM:ACTION_ACK|totem status|<scope>|<n>|-`.
+- **`TBM:TOTEM` Record:** `TBM:TOTEM|<bot>|earth=<x>,fire=<x>,water=<x>,air=<x>,mode=<mode>,known=<name>+<name>+...`. `known` lists every totem the bot has trained (full lowercase names, each once, earth to air slot order) and is empty (`known=`) when it has none. A single-slot order, `mode` and `set` also send the fresh record for each shaman they changed, before their ACK.
+
+</details>
+
+### `.bot blessing` <a id="bot-blessing"></a>
+
+Assigns, per paladin bot, the blessing each class gets, plus optional per-character exceptions that override the class assignment. Classes left on `auto` keep the automatic coverage pick.
+
+```text
+.bot blessing <bot|party|raid> <warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid> <might|wisdom|kings|salvation|sanctuary|light|auto>
+.bot blessing <bot|party|raid> player <name> <might|wisdom|kings|salvation|sanctuary|light|auto>
+.bot blessing <bot|party|raid> status
+```
+
+<details>
+<summary>Blessing assignment rules</summary>
+
+- **Per Paladin, Per Class or Character:** Orders are saved with the paladin bot. A paladin gives one blessing per member, so the order replaces its automatic pick and, where needed, its own live blessing on those members. A `player` exception overrides that character's class assignment; `<name>` is case-insensitive and must be in the paladin's group (otherwise `TBM:ACTION_ERR|blessing|not-in-group|<message>`). Up to 20 character exceptions are stored per paladin (adding beyond 20 drops the oldest). `auto` clears the class order or removes the character exception.
+- **Covered Already:** The paladin stands down on a member that already carries the ordered blessing from any caster, so two paladins ordered the same blessing do not overwrite each other.
+- **Untrained Blessing:** A paladin that has not trained the blessing answers `TBM:ACTION_ERR|blessing|unknown-spell|<message>` and keeps its assignment. After a respec an order for a blessing the bot no longer knows is ignored (automatic pick) until it is trained again.
+- **Fixed Blessing Strategies:** The `blessing kings`, `blessing might` and similar strategies still give one blessing to everyone and win over the per-class and per-character orders.
+- **Replies:** An order answers one fresh `TBM:BLESSING` record per paladin changed, then `TBM:ACTION_ACK|blessing|<scope>|<n>|<class>=<blessing>` (or `player:<Name>=<blessing>`). `status` answers one record per paladin bot in scope (other classes produce none), then `TBM:ACTION_ACK|blessing status|<scope>|<n>|-`.
+- **`TBM:BLESSING` Record:** `TBM:BLESSING|<bot>|warrior=<b>,paladin=<b>,hunter=<b>,rogue=<b>,priest=<b>,shaman=<b>,mage=<b>,warlock=<b>,druid=<b>,known=<b>+<b>+...[,players=<Name>:<b>+<Name>:<b>]`. `<b>` is `auto` or a blessing word; `known` lists the blessings the paladin has trained and may be empty; `players` is omitted when no character exceptions are set.
+
+</details>
+
+### `.bot choice` <a id="bot-choice"></a>
+
+Orders, per bot, one paladin aura, hunter aspect, or warlock curse. Kinds left on `auto` keep the automatic pick.
+
+```text
+.bot choice <bot|party|raid> <aura|aspect|curse> <value|auto>
+.bot choice <bot|party|raid> status
+```
+
+<details>
+<summary>Choice rules</summary>
+
+- **Values:** `aura`: `devotion`, `retribution`, `concentration`, `sanctity`, `shadow`, `fire`, `frost` (`shadow`/`fire`/`frost` mean the resistance auras). `aspect`: `hawk`, `monkey`, `cheetah`, `pack`, `wild`, `beast`, `wolf`, `viper`. `curse`: `agony`, `elements`, `shadow`, `recklessness`, `weakness`, `tongues`, `doom`, `exhaustion`. `auto` clears the order; anything else answers `TBM:ACTION_ERR|choice|invalid|<usage>` and changes nothing.
+- **One Per Bot:** The order is saved with the bot (a paladin holds an aura order, a hunter an aspect order, a warlock a curse order). Bots of another class in scope are skipped. An order the bot no longer knows after a respec is ignored (automatic pick) until it is trained again.
+- **Aura Wins:** The ordered aura replaces the spec upkeep (which otherwise keeps the spec aura up) and the single-aura fallback. The raid resist swap and its out-of-combat restore stand down while an order is set. Travel auras are not automated, so there is nothing to fight there.
+- **Aspect Wins:** The ordered aspect replaces the Hawk upkeep in and out of combat (its own upkeep row casts it, above Hawk). The low-mana Viper switch (opt-in `AiPlayerbot.HunterViperOnLowMana`) stands down while an order is set, including a `viper` order itself. An ordered travel aspect (`cheetah`, `pack`) keeps the no-attackers rule, so it never lands in a fight. PvP flag play removes Cheetah when attacked and the order only puts it back out of combat.
+- **Curse Wins:** The ordered curse replaces the automatic curse pick on the bot's targets (spec rows and the raid Recklessness/Shadow assignment stand down); the same row still fires when the chat `curse <x>` manual row for another curse is set, so mixed manual play keeps working. A target that already carries that curse from another warlock is left alone (the curse slot refuses the overwrite). `doom` keeps no extra sanity rules here: if ordered, it is cast.
+- **Untrained Choice:** A bot that has not trained the ordered spell answers `TBM:ACTION_ERR|choice|unknown-spell|<message>` and keeps its setting. A scope with no bot of the kind's class answers `TBM:ACTION_ERR|choice|no-bot|<message>`.
+- **Replies:** An order answers one fresh `TBM:CHOICE` record per bot changed, then `TBM:ACTION_ACK|choice|<scope>|<n>|<kind>=<value>`. `status` answers one record per bot in scope that has the kind, then `TBM:ACTION_ACK|choice status|<scope>|<n>|-`.
+- **`TBM:CHOICE` Record:** `TBM:CHOICE|<bot>|<kind>=<value|auto>,known=<v>+<v>+...`. `known` lists the values the bot has trained (short words, `+`-separated) and may be empty.
 
 </details>

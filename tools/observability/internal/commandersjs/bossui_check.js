@@ -27,7 +27,7 @@ function grabConst(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-["commanders.js", "unitinfo.js", "fightreplay.js", "fightdebug.js", "bosspanel.js"].forEach((f) => {
+["commanders.js", "unitinfo.js", "fightreplay.js", "fightdebug.js", "fdview.js", "bosspanel.js"].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 });
 ctx.BP = ctx.BossPanel;
@@ -42,7 +42,7 @@ ctx.BOSS_TABLE = ctx.BossPanel.normalize({ bosses: [
     phases: [], adds: [], notes: [] },
 ] });
 vm.runInContext([grab("esc"), grab("cmdTrashWord"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdMobOverlaySvg"), grab("cmdMobLook"),
-  grab("cmdMobSvg"), grab("fdFramesHtml"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("bossBotMarks")].join("\n")
+  grab("cmdMobSvg"), grab("fdFramesHtml"), grab("fdRangeBandHtml"), grab("fdOutCls"), grab("fdMarkOut"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("bossBotMarks")].join("\n")
   + "\nvar cmdBossTable = () => ctxBossTable(); var BossPanel = BP;", ctx);
 ctx.ctxBossTable = () => ctx.BOSS_TABLE;
 

@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/class/BearRagePolicy.h"
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 namespace ai
 {
@@ -601,10 +602,18 @@ namespace ai
         : CastReachTargetSpellAction(ai, "feral charge", 1.5f) {}
     };
 
+    // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
+    // inherits this isUseful, and GetTarget() there is the value's pick. Stands down at cast time when the mob is already on another tank (TauntHeldTargetPolicy.h).
     class CastGrowlAction : public CastSpellAction
     {
     public:
         CastGrowlAction(PlayerbotAI* ai) : CastSpellAction(ai, "growl") {}
+
+        virtual bool isUseful() override
+        {
+            return CastSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "growl") &&
+                !TauntTargetHeldByOtherTank(bot, GetTarget());
+        }
     };
 
     // Taunt the mob picked by "attacker of non-tank target"; the cast reads
@@ -675,10 +684,22 @@ namespace ai
         CastFrenziedRegenerationAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "frenzied regeneration") {}
     };
 
+    // The AoE taunt: re-walks the loose-add count at cast time, uncached, because a roar queued while loose adds
+    // were on a non-tank outlives its reach prerequisite and would otherwise fire after the pack settled, inside
+    // the "trigger active" value's one-second cache.
+    // The area taunt: never at a subject the taunt gate refuses (another tank's live post owns it, a Shade of Jin'do,
+    // a taunt-immune boss), and never while any hostile in the roar's own radius is another post's subject.
     class CastChallengingRoarAction : public CastMeleeSpellAction
     {
     public:
         CastChallengingRoarAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "challenging roar") {}
+
+        virtual bool isUseful() override
+        {
+            return CastMeleeSpellAction::isUseful() && AoeTauntStillNeeded(ai, bot) &&
+                !(GetTarget() && TauntRefusedByGate(ai, bot, GetTarget(), "challenging roar")) &&
+                !AreaTauntRefusedByPost(ai, bot, "challenging roar");
+        }
     };
 
     class CastEnrageAction : public CastBuffSpellAction

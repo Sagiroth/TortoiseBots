@@ -18,11 +18,13 @@
 // rows, calls Seal() once, and readers see nothing before the seal.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -31,6 +33,7 @@
 #include <vector>
 
 #include "BossAnchorPolicy.h"
+#include "GuardGracePolicy.h"
 #include "policy/combat/RearFlankPolicy.h"
 #include "policy/heal/DispelTargetPolicy.h"
 
@@ -64,6 +67,11 @@ namespace ai
         ThreatSuccessor = 22, // damage dealers are capped at the highest off-tank's threat (ThreatCapPolicy.h)
         Anchor = 23,          // while the boss fights, every boss/raid move stays within `param` yd of the spot
         TankIgnore = 24,      // while the boss fights, tanks leave `target_entry` to the damage dealers (no guard, no taunt)
+        SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
+        GateHold = 26,        // DPS spare `boss_entry` at or below `param` % while more than `priority` blockers fight near
+        TankPost = 27,        // a named tank waits at a spot for a unit that is not in the fight yet, then attacks it
+        AddCrew = 28,         // once `target_entry` is dead, the boss's add duty goes to a named crew
+        HealReserve = 29,     // healers keep the row's mana % back from top-ups outside the row's release window
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -83,6 +91,8 @@ namespace ai
         TankAnchor = 10, // use_object: the tank the boss is on also brings the boss to the object
         Assigned = 11, // interrupt: a directed row the run leader may order (F3), inert until its key reads it
         All = 12,      // avoid_cast: every bot leaves the blast while the spell is cast, tanks too (F4-A)
+        Strict = 13,   // threat_successor: the row opts the boss into AiPlayerbot.DungeonRunThreatSuccessorStrict
+        HoldSpot = 14, // tank_post: the post starts during another fight, latches its arrival and drags back
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -128,6 +138,14 @@ namespace ai
             case BossTacticKind::AvoidCast:
                 if (text == "all")
                     return TacticMode::All;
+                break;
+            case BossTacticKind::ThreatSuccessor:
+                if (text == "strict")
+                    return TacticMode::Strict;
+                break;
+            case BossTacticKind::TankPost:
+                if (text == "hold_spot")
+                    return TacticMode::HoldSpot;
                 break;
             default:
                 break;
@@ -185,6 +203,16 @@ namespace ai
             return BossTacticKind::Anchor;
         if (text == "tank_ignore")
             return BossTacticKind::TankIgnore;
+        if (text == "seek_pull")
+            return BossTacticKind::SeekPull;
+        if (text == "gate_hold")
+            return BossTacticKind::GateHold;
+        if (text == "tank_post")
+            return BossTacticKind::TankPost;
+        if (text == "heal_reserve")
+            return BossTacticKind::HealReserve;
+        if (text == "add_crew")
+            return BossTacticKind::AddCrew;
         return BossTacticKind::None;
     }
 
@@ -216,6 +244,17 @@ namespace ai
         float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
 
         bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
+    };
+
+    // A threat_successor row's Cause Insanity timer (`cycle_spell`): the reset window is open when the time since the
+    // last reset lies in [k*minGapMs, k*maxGapMs] for k = 1..3 (the double gaps included), and a damage dealer at or
+    // above stopPct of the reset reference holds its damage on the boss. `param` and `window_s` hold the gap bounds.
+    struct ThreatResetWindow
+    {
+        std::uint32_t spell = 0;
+        std::uint32_t minGapMs = 0;
+        std::uint32_t maxGapMs = 0;
+        std::uint8_t stopPct = 0;
     };
 
     // An anchor row's circle for one bot: the row's spot, and the tanks' radius (`priority`, 0: the shared one) or the
@@ -400,6 +439,35 @@ namespace ai
         std::uint32_t anchor = 0;
         std::uint8_t group = 0;
     };
+    // The tank slots a unit is assigned to by its own rows, one per kind: an until_tank row (read only with
+    // AiPlayerbot.DungeonRunAuraTactics) and a tank_post row (read only with AiPlayerbot.DungeonRunTankPost). Each is
+    // the lowest slot of its own kind; 0: no row of that kind assigns the unit. The kinds name different tanks, so the
+    // guard takes the slot of the kind whose own key is on (SlotFor).
+    struct AssignedTankSlot
+    {
+        std::uint32_t untilTankSlot = 0;
+        std::uint32_t tankPostSlot = 0;
+
+        // The slot the raid guard leaves the unit to: the lowest slot among the kinds whose key is on, 0 when no
+        // enabled kind names the unit.
+        std::uint32_t SlotFor(bool auraTactics, bool tankPost) const
+        {
+            std::uint32_t slot = 0;
+            if (auraTactics && untilTankSlot > 0)
+                slot = untilTankSlot;
+            if (tankPost && tankPostSlot > 0 && (slot == 0 || tankPostSlot < slot))
+                slot = tankPostSlot;
+            return slot;
+        }
+    };
+
+    // An add_crew row: the switch unit whose death hands the boss's adds over (`switchEntry`), and how many AoE
+    // ranged bots of the raid join the crew (`crewSize`, 0: melee and tanks only).
+    struct AddCrewRow
+    {
+        std::uint32_t switchEntry = 0;
+        std::uint8_t crewSize = 0;
+    };
 
     class BossTacticTable
     {
@@ -423,12 +491,13 @@ namespace ai
             // The health band is a percentage range, low to high.
             if (row.hpMin > row.hpMax || row.hpMax > 100)
                 return false;
-            // Only a row a fight scan answers can carry a gate. These five are read straight from the table (the dps
+            // Only a row a fight scan answers can carry a gate. These kinds are read straight from the table (the dps
             // and tank pickers, the linked_death scan, the threat reference), so a gate on one of them would never be
             // consulted.
             if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::TankHold ||
                     row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath ||
-                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore))
+                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore ||
+                    row.kind == BossTacticKind::AddCrew))
                 return false;
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
@@ -514,14 +583,42 @@ namespace ai
                 (row.param < 3.0f || row.param > 40.0f || row.mode != TacticMode::Default))
                 return false;
             // threat_successor: the boss itself and nothing else — the row marks the creature whose damage dealers are
-            // capped at the off-tank. Like ranged_only it takes no mode word, and it carries no gate (see above).
+            // capped at the off-tank. It carries no gate (see above). Its one mode word is `strict`: the boss opts into
+            // AiPlayerbot.DungeonRunThreatSuccessorStrict (HasStrictThreatSuccessor); empty keeps the plain cap.
             if (row.kind == BossTacticKind::ThreatSuccessor &&
-                (row.targetEntry != 0 || row.mode != TacticMode::Default))
+                (row.targetEntry != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::Strict)))
+                return false;
+            // A threat_successor row with a cycle_spell carries the boss's reset window too: `param` and `window_s` the
+            // earliest and latest gaps in seconds (5 <= param < window_s <= 60), `priority` the damage dealers' stop
+            // percent (50-100). A row without one is today's plain successor cap; cycle_s is never used.
+            if (row.kind == BossTacticKind::ThreatSuccessor &&
+                (row.cycleSec != 0.0f ||
+                 (row.cycleSpell != 0 && (!(row.param >= 5.0f) || !(row.param < row.windowSec) ||
+                                          !(row.windowSec <= 60.0f) || row.priority < 50 || row.priority > 100))))
                 return false;
             // tank_ignore: the entry the tanks leave alone while the row's boss fights, and nothing else. It is read
             // straight from the table (the tank pickers, the run guard), so it carries no gate (see above) and no mode.
             if (row.kind == BossTacticKind::TankIgnore &&
                 (row.targetEntry == 0 || row.spellId != 0 || row.mode != TacticMode::Default))
+                return false;
+            // seek_pull: the seek source (`target_entry`), the most walk-outs in one cycle (`priority`, 1-5), the kill
+            // lead in seconds (`param`, 10-85) and the last start watchdog (`window_s`, 10-85). Read straight from the
+            // table (SeekPullRow), so it carries no gate, and it names no spell, spot or cycle columns.
+            if (row.kind == BossTacticKind::SeekPull &&
+                (row.targetEntry == 0 || row.spellId != 0 || row.priority < 1 || row.priority > 5 ||
+                    row.param < 10.0f || row.param > 85.0f || row.windowSec < 10.0f || row.windowSec > 85.0f ||
+                    row.mode != TacticMode::Default))
+                return false;
+            // gate_hold: the spared entry (boss_entry), its blocker (target_entry), the health gate (`param`, 1-99 %)
+            // and the blockers that may still fight (`priority`). `window_s` is the blocker search radius (0: 200 yd,
+            // else 50-250). The blocker must be a different unit: the spared boss would count as its own blocker and
+            // hold itself forever. The row's own health gate is `param`, so the band columns, a spell, a spot and a
+            // mode word are refused.
+            if (row.kind == BossTacticKind::GateHold &&
+                (row.targetEntry == 0 || row.targetEntry == row.bossEntry || row.spellId != 0 ||
+                    !(row.param >= 1.0f) || row.param > 99.0f ||
+                    !(row.windowSec == 0.0f || (row.windowSec >= 50.0f && row.windowSec <= 250.0f)) ||
+                    RowGateSet(row) || row.mode != TacticMode::Default))
                 return false;
             // anchor: the boss itself (target_entry 0, no spell); the centre is the spot (spot_x/y/z, the boss's home),
             // `param` the radius for everyone and `priority` the tanks' own radius (0: the shared one, never wider).
@@ -531,16 +628,44 @@ namespace ai
                     row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
                     row.mode != TacticMode::Default))
                 return false;
-            // The cycle columns are the seek_aura kind's, the spot columns the seek_aura and anchor kinds'.
-            if (row.kind != BossTacticKind::SeekAura && (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+            // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7), the wait spot, the arrival
+            // radius, 5-100 yd: a subject that lands and runs after a healer across the room, and the longest hold. A
+            // fight-scan kind, so its health band arms the post. No spell, no cycle columns; the only mode word is
+            // `hold_spot`.
+            if (row.kind == BossTacticKind::TankPost &&
+                (row.targetEntry == 0 || row.priority < 1 || row.priority > 7 || !row.HasSpot() ||
+                    row.param < 5.0f || row.param > 100.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
+                    row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
                 return false;
-            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor && row.HasSpot())
+            // heal_reserve: the boss itself (target_entry 0, no spell, priority 0), the reserve percent (`param`,
+            // 10-100) and the release lead in seconds (`window_s`, 0-120). A fight-scan kind, so its health band
+            // arms it. No mode word, no spot and no cycle columns.
+            if (row.kind == BossTacticKind::HealReserve &&
+                (row.targetEntry != 0 || row.spellId != 0 || row.priority != 0 || row.param < 10.0f ||
+                    row.param > 100.0f || row.windowSec < 0.0f || row.windowSec > 120.0f ||
+                    row.mode != TacticMode::Default))
+                return false;
+            // add_crew: the switch unit whose death hands the boss's adds over (`target_entry`, never the boss itself)
+            // and the crew size (`priority`, 0-5; the first `priority` AoE ranged bots of the crew class order join the
+            // melee and the tanks). No spell, no radius, no gate (see above) and no mode word.
+            if (row.kind == BossTacticKind::AddCrew &&
+                (row.targetEntry == 0 || row.targetEntry == row.bossEntry || row.spellId != 0 ||
+                    row.priority > 5 || row.param != 0.0f || RowGateSet(row) || row.mode != TacticMode::Default))
+                return false;
+            // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
+            // the spot columns the seek_aura, anchor and tank_post kinds'.
+            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
+                (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+                return false;
+            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor &&
+                row.kind != BossTacticKind::TankPost && row.HasSpot())
                 return false;
             // A gate is a fight-scan question; these five answer it themselves or not at all (a pull gate already
             // decides the run).
             if (RowGateSet(row) && (row.kind == BossTacticKind::SeekAura || row.kind == BossTacticKind::PullGate ||
                     row.kind == BossTacticKind::Spread || row.kind == BossTacticKind::BurnMana ||
-                    row.kind == BossTacticKind::RangedOnly || row.kind == BossTacticKind::Anchor))
+                    row.kind == BossTacticKind::RangedOnly || row.kind == BossTacticKind::Anchor ||
+                    row.kind == BossTacticKind::SeekPull))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -563,6 +688,8 @@ namespace ai
                 avoidCastMaps_[row.map] = true;
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
                 holdMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::GateHold)
+                gateHoldMaps_[row.map] = true;
             if (IsAuraTacticKind(row.kind))
                 auraTacticMaps_[row.map] = true;
             if (row.kind == BossTacticKind::DispelPriority)
@@ -578,15 +705,46 @@ namespace ai
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
                 spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::HealReserve)
+                healReserveMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Anchor)
                 anchorMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::TankPost)
+                tankPostMaps_[row.map] = true;
+            // The value's lookup is one row per boss: a second add_crew row of the same map and boss replaces the
+            // first here (the table holds one such row per boss in the data).
+            if (row.kind == BossTacticKind::AddCrew)
+                addCrew_[Key(row.map, row.bossEntry)] = AddCrewRow{row.targetEntry, row.priority};
+            // A row that assigns the unit to a tank slot: the raid guard leaves the unit to that tank, so the table
+            // keeps each kind's lowest slot for the unit (the guard uses the kind whose key is on).
+            if (row.priority > 0 && row.kind == BossTacticKind::TankPost)
+            {
+                std::uint32_t& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)].tankPostSlot;
+                if (have == 0 || row.priority < have)
+                    have = row.priority;
+            }
+            else if (row.priority > 0 && row.kind == BossTacticKind::TauntAfterCast &&
+                row.mode == TacticMode::UntilTank)
+            {
+                std::uint32_t& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)].untilTankSlot;
+                if (have == 0 || row.priority < have)
+                    have = row.priority;
+            }
             if (row.kind == BossTacticKind::NeedsAura)
                 requiredAura_[row.map][row.targetEntry] = row.spellId;
             // The held entry is the row's target, or its boss when the row names the boss itself (target_entry 0).
             if (row.kind == BossTacticKind::RangedOnly)
                 rangedOnlyGaps_[row.map].emplace(row.targetEntry != 0 ? row.targetEntry : row.bossEntry, row.param);
             if (row.kind == BossTacticKind::ThreatSuccessor)
+            {
                 threatSuccessors_[row.map].insert(TacticSubjectEntry(row));
+                if (row.mode == TacticMode::Strict)
+                    strictThreatSuccessors_[row.map].insert(TacticSubjectEntry(row));
+                if (row.cycleSpell != 0)
+                    resetWindows_[row.map][TacticSubjectEntry(row)] = ThreatResetWindow{row.cycleSpell,
+                        static_cast<std::uint32_t>(row.param * 1000.0f),
+                        static_cast<std::uint32_t>(row.windowSec * 1000.0f), row.priority};
+            }
             if (row.kind == BossTacticKind::TankIgnore)
                 tankIgnoreBosses_[row.map][row.targetEntry].push_back(row.bossEntry);
             if (row.kind == BossTacticKind::LinkedDeath)
@@ -633,6 +791,13 @@ namespace ai
         bool HasHoldMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && holdMaps_.find(map) != holdMaps_.end();
+        }
+
+        // Whether the map has a gate_hold row (the hold multiplier's area and DoT veto runs there too). Its own flag
+        // keeps a map with only hold_kill rows from paying for the gate read. False before the seal.
+        bool HasGateHoldMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && gateHoldMaps_.find(map) != gateHoldMaps_.end();
         }
 
         // Whether the map has a linked_death row (the hold multiplier's area and DoT veto runs there: a map without a
@@ -692,10 +857,53 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
         }
 
+        // Whether the map has a heal_reserve row (the healer top-up gates read it only there). False before the seal.
+        bool HasHealReserveMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && healReserveMaps_.find(map) != healReserveMaps_.end();
+        }
+
         // Whether the map has an anchor row (the movers' clamp looks for a live one only there). False before the seal.
         bool HasAnchorMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && anchorMaps_.find(map) != anchorMaps_.end();
+        }
+
+        // Whether the map has a tank_post row (the trigger runs only there). False before the seal.
+        bool HasTankPostMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && tankPostMaps_.find(map) != tankPostMaps_.end();
+        }
+
+        // The map's add_crew row for a boss, keyed by (map, boss entry): the switch unit whose death hands the boss's
+        // adds over and the crew size (0-5). False before the seal, or when the boss has no such row: the "add crew"
+        // value then reads no crew and every bot keeps today's add duty. The outputs are untouched on false.
+        bool AddCrewOf(std::uint32_t map, std::uint32_t bossEntry, std::uint32_t& switchEntry,
+                       std::uint8_t& crewSize) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || addCrew_.empty())
+                return false;
+            auto const it = addCrew_.find(Key(map, bossEntry));
+            if (it == addCrew_.end())
+                return false;
+            switchEntry = it->second.switchEntry;
+            crewSize = it->second.crewSize;
+            return true;
+        }
+
+        // The tank slots (1-7) a unit of `entry` is assigned to by rows of its own, one per kind: a taunt_after_cast
+        // row in mode until_tank and a tank_post row. Each is the lowest slot of its own kind. Both 0 before the seal
+        // or when no row of that kind names the unit: the raid guard reads SlotFor to leave such a unit to its tank.
+        AssignedTankSlot AssignedTankSlotOf(std::uint32_t map, std::uint32_t entry) const
+        {
+            static const AssignedTankSlot none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto const byMap = assignedTankSlots_.find(map);
+            if (byMap == assignedTankSlots_.end())
+                return none;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? none : it->second;
         }
 
         // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
@@ -736,6 +944,30 @@ namespace ai
             return byMap != threatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
         }
 
+        // Whether that `threat_successor` row carries the mode word `strict`: the boss asks for the strict successor
+        // line (AiPlayerbot.DungeonRunThreatSuccessorStrict: no projection escape, the white-damage stop). A row without
+        // it keeps the plain cap with the key on or off. False before the seal.
+        bool HasStrictThreatSuccessor(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || strictThreatSuccessors_.empty())
+                return false;
+            auto const byMap = strictThreatSuccessors_.find(map);
+            return byMap != strictThreatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
+        }
+
+        // The threat_successor row's Cause Insanity timer (`cycle_spell` != 0): null when the row carries none (today's
+        // Hakkar row), which is also what the key-off path reads as no window. False before the seal.
+        const ThreatResetWindow* ThreatResetWindowOf(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || resetWindows_.empty())
+                return nullptr;
+            auto const byMap = resetWindows_.find(map);
+            if (byMap == resetWindows_.end())
+                return nullptr;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? nullptr : &it->second;
+        }
+
         // The bosses whose tank_ignore row names the entry on this map (empty: none): while one of them fights, the
         // tanks leave the entry to the damage dealers (TankIgnoresUnit). Empty before the seal.
         const std::vector<std::uint32_t>& TankIgnoreBosses(std::uint32_t map, std::uint32_t entry) const
@@ -768,6 +1000,19 @@ namespace ai
                 if (row.kind == kind)
                     return true;
             return false;
+        }
+
+        // The seek_pull row of one boss and source (null: none): the seek walk-out's per-cycle rules. Read straight
+        // from the table by the walk-out's own read, never from the fight scan. Null before the seal.
+        const BossTacticRow* SeekPullRow(std::uint32_t map, std::uint32_t bossEntry, std::uint32_t targetEntry) const
+        {
+            const std::vector<BossTacticRow>* rows = Rows(map, bossEntry);
+            if (!rows)
+                return nullptr;
+            for (const BossTacticRow& row : *rows)
+                if (row.kind == BossTacticKind::SeekPull && row.targetEntry == targetEntry)
+                    return &row;
+            return nullptr;
         }
 
         // The map's linked_death groups, in load order: each (anchor, priority) key's rows name one group. The link
@@ -848,6 +1093,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> maps_;
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
         std::unordered_map<std::uint32_t, bool> holdMaps_;
+        std::unordered_map<std::uint32_t, bool> gateHoldMaps_;
         std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
         std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
@@ -856,10 +1102,20 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, bool> healReserveMaps_;
         std::unordered_map<std::uint32_t, bool> anchorMaps_;
+        std::unordered_map<std::uint32_t, bool> tankPostMaps_;
+        // add_crew: (map << 32 | boss entry) -> the switch unit and the crew size.
+        std::unordered_map<std::uint64_t, AddCrewRow> addCrew_;
+        // map -> the unit -> the lowest raid tank slot a tank row (until_tank, tank_post) assigns it to, and which
+        // kinds of row name it.
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, AssignedTankSlot>> assignedTankSlots_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
+        std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> strictThreatSuccessors_;
+        // threat_successor with a cycle_spell: map -> the subject entry -> its reset window.
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, ThreatResetWindow>> resetWindows_;
         // tank_ignore: map -> the ignored entry -> the bosses whose row names it.
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>> tankIgnoreBosses_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
@@ -1424,15 +1680,61 @@ namespace ai
         return inCombat || notSelectable;
     }
 
-    // Whether a free DPS bot leaves `entry` alone right now: a hold_kill row holds it while its blocker lives
-    // (KillHeld). The dps target, the dps AoE target, the group tank's victim and the raid mark all drop such a
-    // candidate, so with nothing unheld left the bot has no target and waits for the blocker to die instead of
-    // feeding the pile. The role gate is the hold-kill action's: a tank or a healer keeps its own pick (the caller
-    // passes false for them), and an explicit attack order is taken long before this runs.
-    inline bool DpsLeavesAlone(bool freeDpsBot, const ActiveBossRows& rows, std::uint32_t entry,
-                               const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    // gate_hold's blocker search radius when `window_s` is 0: wide enough to see a second boss fighting anywhere in
+    // the room, narrow enough to stay one encounter.
+    constexpr float kGateHoldRadiusYd = 200.0f;
+
+    inline float GateHoldRadius(float windowSec)
     {
-        return freeDpsBot && KillHeld(rows, entry, countNear);
+        return windowSec > 0.0f ? windowSec : kGateHoldRadiusYd;
+    }
+
+    // Whether a unit of a gate_hold row's blocker entry counts while it fights: alive (the caller checks), in combat
+    // and not evading. Unlike a hold_kill blocker (CountsAsBlocker) an unselectable unit that is not fighting never
+    // counts: an evaded second boss back in the air is out of the encounter and must not stall the spared one's kill.
+    // Selectability is handed in so the rule can state that it never decides on its own.
+    inline bool CountsAsFightingBlocker(bool inCombat, bool evading, bool notSelectable)
+    {
+        (void)notSelectable;
+        return inCombat && !evading;
+    }
+
+    // Whether DPS leave `entry` alone under a gate_hold row: the entry is at or below the row's gate percent (`param`)
+    // and more than `priority` of the row's blockers still fight. `countFighting` counts the row's living, in-combat,
+    // non-evading blockers within GateHoldRadius of the bot (the "fighting blockers" value). The spared unit is the
+    // row's boss_entry; the blocker its target_entry. An evaded or out-of-combat blocker releases the hold, so a
+    // living boss with an unkillable blocker is never left to stand.
+    inline bool GateHeld(const ActiveBossRows& rows, std::uint32_t entry, int hpPct,
+                         const std::function<std::uint32_t(const BossTacticRow&)>& countFighting)
+    {
+        for (const BossTacticRow* row : rows)
+        {
+            if (row->kind != BossTacticKind::GateHold || row->bossEntry != entry)
+                continue;
+            if (hpPct > static_cast<int>(row->param))
+                continue;
+            if (countFighting(*row) > row->priority)
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a free DPS bot leaves `entry` alone right now: a hold_kill row holds it while its blocker lives
+    // (KillHeld), and a gate_hold row spares it at its health gate while a blocker fights (GateHeld). The dps target,
+    // the dps AoE target, the group tank's victim and the raid mark all drop such a candidate, so with nothing held
+    // left the bot has no target and waits for the blocker to die instead of feeding the pile. `hpPct` is the
+    // candidate's health; `countFighting` counts a gate row's fighting blockers. The role gate is the hold-kill
+    // action's: a tank or a healer keeps its own pick (the caller passes false for them), and an explicit attack order
+    // is taken long before this runs.
+    inline bool DpsLeavesAlone(bool freeDpsBot, const ActiveBossRows& rows, std::uint32_t entry, int hpPct,
+                               const std::function<std::uint32_t(std::uint32_t)>& countNear,
+                               const std::function<std::uint32_t(const BossTacticRow&)>& countFighting)
+    {
+        if (!freeDpsBot)
+            return false;
+        if (KillHeld(rows, entry, countNear))
+            return true;
+        return GateHeld(rows, entry, hpPct, countFighting);
     }
 
     // A living unit of the paced entry that fights, as the one_at_a_time pick sees it: health first, guid as the
@@ -2541,6 +2843,7 @@ namespace ai
         float distance = 0.0f;
         bool pickable = false;  // alive, attackable, reachable by the caller's rules
         bool victimHealer = false; // its victim is a healer of the bot's group (a Shade of Jin'do on a healer)
+        float dropYd = 0.0f;       // signed height of the bot against the candidate (bot z - candidate z)
     };
 
     // A candidate the attackers path and the grid read both found keeps one entry; a victim that is a healer on either
@@ -2609,6 +2912,18 @@ namespace ai
         return false;
     }
 
+    // Whether the fight's open rows ask for a threat successor: the boss is taunt-immune, so a threat wipe (Hex) hands it
+    // to whoever stands highest, and only the assigned off-tank that held it takes it back. An off-tank that leaves for a
+    // Shade stops holding, the damage dealers' cap falls to half the main tank's threat (ThreatCapPolicy.h), and the
+    // wipe hands the boss to a damage dealer.
+    inline bool HasThreatSuccessorRow(const ActiveBossRows& active)
+    {
+        for (const BossTacticRow* row : active)
+            if (row->kind == BossTacticKind::ThreatSuccessor)
+                return true;
+        return false;
+    }
+
     // Which kill_first pick a bot makes. A free DPS (no explicit attack order) takes every open row (PickKillFirst). A DPS
     // under the run's own order (`orderAutomated`: the run's focus, the 3 s ward refocus) takes only the carrier
     // override (PickCarrierOverride): its own subject's damage counts and nobody else's does. A player's order is never
@@ -2623,6 +2938,151 @@ namespace ai
         if (!explicitOrder)
             return KillFirstPickMode::Free;
         return orderAutomated && carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
+    }
+
+    // --- carrier strike ---------------------------------------------------------------------------------------------
+    // A cursed healer or off-tank turns on its own Shade (a kill_first row gated by the curse) while the raid is safe.
+    // The kill_first node itself is DPS-only and sits far below every heal row, so this carrier needs its own node and
+    // an explicit guard: a healer that leaves the raid to hit a Shade must not be the difference between a member
+    // living and dying.
+    enum class CarrierStrikeRole : std::uint8_t { Dps, Healer, OffTank, MainTank };
+    enum class CarrierStrikeVerdict : std::uint8_t
+    {
+        Strike,
+        NotCarrier,
+        NoShade,
+        MainTank,
+        ThreatSuccessor,
+        HoldsBoss,
+        GuardLowMember,
+        GuardTank,
+        GuardHealers,
+        GuardMana,
+        GuardDispel,
+        Dps,
+    };
+
+    // One other healer as the count reads it, every field the caller's read of the member.
+    struct CarrierHealer
+    {
+        bool alive = false;
+        bool cursed = false;     // carries the fight's carrier aura
+        bool charmed = false;    // a charmer owns its AI (the Brain Wash Totem), so it does not heal the raid
+        float distanceYd = 0.0f; // from the carrier (the raid)
+        float dropYd = 0.0f;     // signed height against the carrier: how far below it (+), how far above it (-)
+    };
+
+    // A healer whose height against the carrier exceeds this is on another floor (Jin'do's troll pit floor sits ~12 yd
+    // under the boss's), where its heals cannot reach the raid. Read both ways: the carrier itself may be the one in the
+    // pit, and a healer on the room floor is then just as far from it.
+    constexpr float kCarrierPitDropYd = 6.0f;
+
+    // The other healers that can really heal the raid: alive, not carriers, not charmed, within the carrier's own heal
+    // reach (twice the heal range) and on the same floor as the carrier.
+    inline bool CarrierHealerCounts(const CarrierHealer& healer, float reachYd)
+    {
+        return healer.alive && !healer.cursed && !healer.charmed && healer.distanceYd <= reachYd &&
+            std::fabs(healer.dropYd) <= kCarrierPitDropYd;
+    }
+
+    inline std::uint8_t CarrierHealerCount(const std::vector<CarrierHealer>& healers, float reachYd)
+    {
+        std::uint8_t count = 0;
+        for (const CarrierHealer& healer : healers)
+            if (CarrierHealerCounts(healer, reachYd))
+                ++count;
+        return count;
+    }
+
+    struct CarrierStrikeInput
+    {
+        CarrierStrikeRole role;
+        bool cursed;            // this bot carries the carrier row's aura
+        bool shadeInReach;      // a pickable unit of the carrier row within kCarrierHoldReachYd
+        bool holdsBoss;         // a boss of the fight is on this bot
+        bool threatSuccessor;   // the fight's boss has a `threat_successor` row: a tank leaving it hands it to a DPS
+        std::uint8_t lowestMemberPct; // the lowest living group member within 2x heal range
+        std::uint8_t tankPct;         // the main tank (0: no main tank alive)
+        std::uint8_t otherHealers;    // CarrierHealerCount: healers other than this bot that can heal the raid
+        std::uint8_t manaPct;
+        bool dispelNowPending;  // a `now` dispel_priority aura on a member in reach this class can cure
+        // AiPlayerbot.DungeonRunShadeHealerCover is on and the bot's pick is a Shade on a healer of ours within
+        // kShadeCoverReachYd of the bot and on its floor, or one it pulled off a healer (ShadeCoverLatch): a free
+        // off-tank takes it even on a threat_successor fight (false = today's rules).
+        bool shadeCover = false;
+        // Under the cover: the lowest living member within 2x heal range other than the Shade's victim, the bot's own
+        // health always counted. 0 (the default) refuses, so a caller that forgets it keeps the off-tank home.
+        std::uint8_t lowestCoverPct = 0;
+    };
+
+    // The carrier's own guards that no config key carries; the lowest-member line is the live AiPlayerbot.LowHealth the
+    // caller passes to CarrierStrikeAllowed (a healer that leaves the raid must not drop it below the low-heal line).
+    constexpr std::uint8_t kCarrierStrikeTankPct = 60;
+    constexpr std::uint8_t kCarrierStrikeHealers = 2;    // other healers that can heal the raid still standing
+    constexpr std::uint8_t kCarrierStrikeManaPct = 30;
+
+    // The first check that fails gives the verdict; earlier checks are the roles this rule never covers.
+    inline CarrierStrikeVerdict CarrierStrikeAllowed(const CarrierStrikeInput& in, std::uint8_t lowHealthPct)
+    {
+        if (in.role == CarrierStrikeRole::Dps)
+            return CarrierStrikeVerdict::Dps;
+        if (in.role == CarrierStrikeRole::MainTank)
+            return CarrierStrikeVerdict::MainTank;
+        // On a successor fight no off-tank may leave the boss, held or not: while no off-tank holds, the damage dealers'
+        // cap is half the main tank's threat, and the next threat wipe hands the boss to a damage dealer.
+        // The healer cover is the other side of that rule: a cursed off-tank the boss is not hitting takes a Shade that is
+        // eating a healer (an off-tank holding the boss stays: HoldsBoss below).
+        bool const offTankCover = in.role == CarrierStrikeRole::OffTank && in.shadeCover && in.cursed && !in.holdsBoss;
+        if (in.role == CarrierStrikeRole::OffTank && in.threatSuccessor && !offTankCover)
+            return CarrierStrikeVerdict::ThreatSuccessor;
+        if (!in.cursed)
+            return CarrierStrikeVerdict::NotCarrier;
+        if (!in.shadeInReach)
+            return CarrierStrikeVerdict::NoShade;
+        if (in.role == CarrierStrikeRole::OffTank && in.holdsBoss)
+            return CarrierStrikeVerdict::HoldsBoss;
+        if (in.role == CarrierStrikeRole::Healer)
+        {
+            if (in.dispelNowPending)
+                return CarrierStrikeVerdict::GuardDispel;
+            if (in.lowestMemberPct < lowHealthPct)
+                return CarrierStrikeVerdict::GuardLowMember;
+            if (in.tankPct < kCarrierStrikeTankPct)
+                return CarrierStrikeVerdict::GuardTank;
+            if (in.otherHealers < kCarrierStrikeHealers)
+                return CarrierStrikeVerdict::GuardHealers;
+            if (in.manaPct < kCarrierStrikeManaPct)
+                return CarrierStrikeVerdict::GuardMana;
+        }
+        if (in.role == CarrierStrikeRole::OffTank)
+        {
+            // Under the cover the low member is usually the healer the Shade is eating: killing the Shade is the rescue,
+            // so only that victim is left out of the line; the off-tank's own health and everyone else's still count.
+            if ((offTankCover ? in.lowestCoverPct : in.lowestMemberPct) < lowHealthPct)
+                return CarrierStrikeVerdict::GuardLowMember;
+            if (in.tankPct < kCarrierStrikeTankPct)
+                return CarrierStrikeVerdict::GuardTank;
+        }
+        return CarrierStrikeVerdict::Strike;
+    }
+
+    // The damaging spells this class strikes a Shade with, shortest cast first; empty means melee or wand (Attack).
+    // CLASS_* ids are kept literal so this header stays free of the core includes.
+    inline std::vector<const char*> CarrierStrikeSpells(std::uint8_t cls)
+    {
+        switch (cls)
+        {
+            case 5:  // CLASS_PRIEST
+                return {"mind blast", "smite"};
+            case 11: // CLASS_DRUID
+                return {"moonfire", "wrath"};
+            case 7:  // CLASS_SHAMAN
+                return {"earth shock", "lightning bolt"};
+            case 2:  // CLASS_PALADIN
+                return {"holy shock"};
+            default:
+                return {};
+        }
     }
 
     // Whether the kill_first trigger has work: the current target is not the pick, or the bookkeeping already names the
@@ -2652,9 +3112,10 @@ namespace ai
     }
 
     // How far the carrier turns on its subject, under an explicit attack order or free (t1106b): the hold reach for
-    // every bot, melee or ranged. A Delusions carrier can hurt only the Shade its curse names, and the Shades are
-    // summoned on one carrier and walk off to a healer: a 15/30 yd first override left half of the cursed DPS on Jin'do
-    // with a Shade beside them, and only one carrier on a Shade takes ~17 s while a new one comes every 7-8 s.
+    // every bot, melee or ranged. Any Delusions carrier can see and damage any Shade (the curse is the only gate, not
+    // which carrier the Shade was summoned on), and the Shades are summoned on one carrier and walk off to a healer: a
+    // 15/30 yd first override left half of the cursed DPS on Jin'do with a Shade beside them, and only one carrier on a
+    // Shade takes ~17 s while a new one comes every 7-8 s.
     // Distances are GetDistance's, bounding radii already off.
     constexpr float kCarrierHoldReachYd = kBossTacticsEngageRange;
 
@@ -2679,6 +3140,24 @@ namespace ai
         return CarrierNoSwitch::None;
     }
 
+    // The kill-first switch row (BossTacticsKillFirst reason=switch): how long this bot's pick had known the Shade it
+    // just turned on (`firstSeenMs` is the pick's first sight of it, 0 when unknown). The unsigned subtraction survives
+    // the 32-bit clock wrap. 0 for an unknown first sight, so the row never claims a delay it did not measure.
+    inline std::uint32_t CarrierSwitchSinceMs(std::uint32_t firstSeenMs, std::uint32_t nowMs)
+    {
+        return firstSeenMs == 0 ? 0u : nowMs - firstSeenMs;
+    }
+
+    // How long a bot's first-sight record of a Shade survives a pass that did not list it (the attackers list flickers,
+    // and a Shade out of reach is not listed for a moment): the record is dropped only once the bot's pick has not seen the
+    // Shade for this long, so `since_ms` stays the time since the FIRST sight.
+    constexpr std::uint32_t kShadeSeenGraceMs = 3000;
+
+    inline bool ShadeSeenExpired(std::uint32_t lastSeenMs, std::uint32_t nowMs)
+    {
+        return nowMs - lastSeenMs > kShadeSeenGraceMs;
+    }
+
     // A needs_aura entry (the Shade of Jin'do 14986) takes damage only from a carrier's direct hit: the core zeroes
     // every hit whose source lacks the aura, a DoT tick lands only while the caster still carries it, and a pet's hit
     // is credited to the pet and never counts. So a DoT cast at one and the pet sent at one only spend the caster's
@@ -2688,9 +3167,105 @@ namespace ai
         return gateKeyOn && requiredAura != 0;
     }
 
+    // Healer cover (AiPlayerbot.DungeonRunShadeHealerCover): a Shade on a healer of ours ranks first within this reach,
+    // and the BossTacticsShadeCover row calls a carrier further from the Shade out_of_range.
+    constexpr float kShadeCoverReachYd = 30.0f;
+
+    // Whether a carrier candidate ranks in the healer-cover tier: its victim is a healer of ours, within the cover reach.
+    // Whether a Shade is on the bot's floor: the troll pit sits ~12 yd under the boss's floor (kCarrierPitDropYd, the
+    // line the carrier strike's healer count uses), and a melee carrier sent down there cannot get back for a long time.
+    inline bool ShadeCoverSameFloor(float dropYd)
+    {
+        return std::fabs(dropYd) <= kCarrierPitDropYd;
+    }
+
+    inline bool ShadeCoverTier(const TacticCandidate& c, bool preferHealerVictim)
+    {
+        return preferHealerVictim && c.victimHealer && c.distance <= kShadeCoverReachYd &&
+            ShadeCoverSameFloor(c.dropYd);
+    }
+
+    // The off-tank's cover latch (M1): a cursed off-tank that takes a Shade off a healer soon pulls it onto itself, and
+    // the Shade's victim then is no healer any more. The latch keeps the cover for that off-tank while the Shade's
+    // victim is the off-tank itself, until the Shade dies (the pick no longer names it), the bot loses the curse, or
+    // kShadeCoverLatchMs pass since the Shade was last on a healer.
+    constexpr std::uint32_t kShadeCoverLatchMs = 15000;
+
+    struct ShadeCoverLatch
+    {
+        std::uint64_t shade = 0; // 0: no latch
+        std::uint32_t sinceMs = 0; // the last time the latched Shade was seen on a healer
+    };
+
+    // `shade`: the bot's pick (0 when none); `onHealer`: its victim is a healer of ours; `onSelf`: its victim is the bot.
+    // Distance and floor are the caller's (the cover needs both whatever the latch says). True when the cover holds.
+    inline bool ShadeCoverLatchHolds(ShadeCoverLatch& latch, std::uint64_t shade, bool cursed, bool onHealer,
+        bool onSelf, std::uint32_t nowMs)
+    {
+        if (!cursed || shade == 0)
+        {
+            latch = ShadeCoverLatch();
+            return false;
+        }
+        if (onHealer)
+        {
+            latch.shade = shade;
+            latch.sinceMs = nowMs;
+            return true;
+        }
+        if (latch.shade != shade || nowMs - latch.sinceMs >= kShadeCoverLatchMs)
+        {
+            latch = ShadeCoverLatch();
+            return false;
+        }
+        return onSelf;
+    }
+
+    // The latched Shade as the bot reads it before any general pick (Codex round 2): once the Shade is on the off-tank it
+    // loses the healer tier, so a nearer Shade would win the general pick, the latch would see another guid and end, and
+    // the off-tank would go back to the boss. The latched Shade therefore keeps the pick while every fact below holds.
+    struct ShadeCoverLatchedShade
+    {
+        bool found = false;        // the unit resolves and is in the world
+        bool carrierEntry = false; // an open carrier row's entry (the bot still carries the curse for it)
+        bool alive = false;
+        bool attackable = false;   // the pick's own attack check (visible, valid target)
+        float distanceYd = 0.0f;
+        float dropYd = 0.0f;       // bot z - Shade z
+        bool onSelf = false;       // the Shade's victim is the bot
+    };
+
+    inline bool ShadeCoverKeepsLatched(const ShadeCoverLatch& latch, bool cursed, const ShadeCoverLatchedShade& s,
+        std::uint32_t nowMs)
+    {
+        return latch.shade != 0 && cursed && s.found && s.carrierEntry && s.alive && s.attackable && s.onSelf &&
+            s.distanceYd <= kShadeCoverReachYd && ShadeCoverSameFloor(s.dropYd) &&
+            nowMs - latch.sinceMs < kShadeCoverLatchMs;
+    }
+
+    // The strike's pick: the latched Shade while it keeps (ShadeCoverKeepsLatched), else the general carrier pick.
+    inline std::uint64_t ShadeCoverResolvePick(const ShadeCoverLatch& latch, bool cursed,
+        const ShadeCoverLatchedShade& latched, std::uint64_t generalPick, std::uint32_t nowMs)
+    {
+        return ShadeCoverKeepsLatched(latch, cursed, latched, nowMs) ? latch.shade : generalPick;
+    }
+
+    // The off-tank half of the cover only while leaving cannot change the threat successor (Opus round 2, R2-1): the
+    // off-tank's own threat on the threat_successor boss is above 0 and at least `share` of the highest tank's, the line
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway keeps a cursed tank on the successor list by
+    // (kThreatCapOffTankAwayShare, ThreatCapPolicy.h). Below it (a Hex wiped the off-tank) the off-tank stays on the
+    // boss as the successor reference. The caller reads it only on a threat_successor fight, and refuses the cover when
+    // the successor boss is not in its fight list.
+    inline bool ShadeCoverThreatAllows(float ownThreat, float highestTankThreat, float share)
+    {
+        return ownThreat > 0.0f && ownThreat >= highestTankThreat * share;
+    }
+
     // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
+    // With `preferHealerVictim` (the healer cover key) a candidate in the cover tier (ShadeCoverTier) wins over every
+    // other one, the nearer of them first; without it the pick is the nearest, exactly as before.
     inline int PickCarrierOverride(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates,
-                                   float reachYd)
+                                   float reachYd, bool preferHealerVictim = false)
     {
         int best = -1;
         for (std::size_t i = 0; i < candidates.size(); ++i)
@@ -2704,10 +3279,562 @@ namespace ai
                     carried = true;
             if (!carried)
                 continue;
-            if (best < 0 || c.distance < candidates[best].distance)
+            if (best < 0)
+            {
+                best = static_cast<int>(i);
+                continue;
+            }
+            bool const tier = ShadeCoverTier(c, preferHealerVictim);
+            bool const bestTier = ShadeCoverTier(candidates[best], preferHealerVictim);
+            if (tier > bestTier || (tier == bestTier && c.distance < candidates[best].distance))
                 best = static_cast<int>(i);
         }
         return best;
+    }
+
+    // --- Shade cover (walk 56 F3) -----------------------------------------------------------------------------------
+    // A Shade of Jin'do copies the boss's threat list, where heal threat is top, so it walks to a healer: 50 of 59
+    // Shade-killed healers in walk 56 were not cursed and cannot hurt it. Only a Delusions carrier can. The cover row
+    // (BossTacticsShadeCover) names each carrier that is asked to cover such a healer and is not on the Shade, and why.
+
+    // Who the row asks about: a cursed damage dealer, or a cursed off-tank that does not hold the boss. A healer keeps its
+    // own carrier-strike guards, the main tank never leaves the boss, and an uncursed bot cannot hit a Shade at all.
+    inline bool ShadeCoverAsks(CarrierStrikeRole role, bool cursed, bool holdsBoss)
+    {
+        if (!cursed)
+            return false;
+        if (role == CarrierStrikeRole::Dps)
+            return true;
+        return role == CarrierStrikeRole::OffTank && !holdsBoss;
+    }
+
+    enum class ShadeCoverMiss : std::uint8_t
+    {
+        None,        // the carrier is on this Shade
+        Dead,
+        Charmed,     // a charmer owns its AI (the Brain Wash Totem)
+        OtherShade,  // already on another Shade
+        OutOfRange,  // further than kShadeCoverReachYd from this Shade
+        ThreatGate,  // an off-tank on a threat_successor fight: the carrier strike keeps it on the boss
+        Guard,       // an off-tank the carrier strike's guards hold back (the main tank under 60 %, its own low health)
+        OnBoss,      // on a boss of the fight
+        OtherTarget, // on anything else (a ward, a totem, a troll)
+        NoTarget,
+    };
+
+    struct ShadeCoverFacts
+    {
+        bool alive = true;
+        bool charmed = false;
+        float distanceYd = 0.0f; // carrier to the Shade
+        float dropYd = 0.0f;     // carrier z - Shade z
+        bool threatGate = false; // the off-tank's successor rule holds it (ShadeCoverThreatGate)
+        bool guard = false;      // an off-tank a carrier-strike guard holds back (ShadeCoverOffTankGuard)
+        bool onThisShade = false;
+        bool onOtherShade = false;
+        bool onBoss = false;
+        bool hasTarget = false;
+    };
+
+    // The first word that fits: a dead or charmed carrier cannot act at all; one already busy on another Shade is not
+    // idle, whatever its range; then range, the successor rule, and what it is hitting instead.
+    inline ShadeCoverMiss ShadeCoverMissReason(const ShadeCoverFacts& f, float reachYd)
+    {
+        if (!f.alive)
+            return ShadeCoverMiss::Dead;
+        if (f.onThisShade)
+            return ShadeCoverMiss::None;
+        if (f.charmed)
+            return ShadeCoverMiss::Charmed;
+        if (f.onOtherShade)
+            return ShadeCoverMiss::OtherShade;
+        if (f.distanceYd > reachYd || !ShadeCoverSameFloor(f.dropYd))
+            return ShadeCoverMiss::OutOfRange;
+        if (f.threatGate)
+            return ShadeCoverMiss::ThreatGate;
+        if (f.guard)
+            return ShadeCoverMiss::Guard;
+        if (f.onBoss)
+            return ShadeCoverMiss::OnBoss;
+        if (f.hasTarget)
+            return ShadeCoverMiss::OtherTarget;
+        return ShadeCoverMiss::NoTarget;
+    }
+
+    inline const char* ShadeCoverMissWord(ShadeCoverMiss miss)
+    {
+        switch (miss)
+        {
+            case ShadeCoverMiss::None:        return "none";
+            case ShadeCoverMiss::Dead:        return "dead";
+            case ShadeCoverMiss::Charmed:     return "charmed";
+            case ShadeCoverMiss::OtherShade:  return "other_shade";
+            case ShadeCoverMiss::OutOfRange:  return "out_of_range";
+            case ShadeCoverMiss::ThreatGate:  return "threat_gate";
+            case ShadeCoverMiss::Guard:       return "guard";
+            case ShadeCoverMiss::OnBoss:      return "on_boss";
+            case ShadeCoverMiss::OtherTarget: return "other_target";
+            case ShadeCoverMiss::NoTarget:    return "no_target";
+        }
+        return "none";
+    }
+
+    // The off-tank's successor rule as the cover row reads it: on a threat_successor fight the carrier strike keeps a
+    // free off-tank on the boss (CarrierStrikeAllowed's ThreatSuccessor verdict), unless the carrier strike is on and the
+    // healer cover key lets it take a Shade on a healer.
+    inline bool ShadeCoverThreatGate(CarrierStrikeRole role, bool threatSuccessor, bool coverOn = false)
+    {
+        return role == CarrierStrikeRole::OffTank && threatSuccessor && !coverOn;
+    }
+
+    // The guards the row can read for another member: with the cover on, the carrier strike still holds an off-tank back
+    // while the main tank is under kCarrierStrikeTankPct or its own health is under the low-health line.
+    inline bool ShadeCoverOffTankGuard(CarrierStrikeRole role, bool coverOn, std::uint8_t mainTankPct,
+        std::uint8_t ownPct, std::uint8_t lowHealthPct)
+    {
+        return role == CarrierStrikeRole::OffTank && coverOn &&
+            (mainTankPct < kCarrierStrikeTankPct || ownPct < lowHealthPct);
+    }
+
+    // One record per (carrier, Shade). A miss is logged only once it has lasted kShadeCoverGraceMs (a carrier turning
+    // onto the Shade this second is no miss), then at most once per kShadeCoverLogGapMs. A record not noted for
+    // kShadeSeenGraceMs starts a new miss.
+    constexpr std::uint32_t kShadeCoverGraceMs = 2000;
+    constexpr std::uint32_t kShadeCoverLogGapMs = 5000;
+    constexpr std::size_t kShadeCoverMaxEntries = 512;
+
+    struct ShadeCoverLogRecord
+    {
+        std::uint32_t firstMissMs = 0;
+        std::uint32_t lastSeenMs = 0;
+        std::uint32_t lastLogMs = 0;
+        bool open = false;   // a miss is running
+        bool logged = false; // lastLogMs is set
+        bool deadLogged = false; // the member's `dead` row is written: one per (member, Shade)
+    };
+
+    // Note a miss at `nowMs`; true when the row is due. The unsigned subtractions survive the 32-bit clock wrap.
+    inline bool ShadeCoverLogDue(ShadeCoverLogRecord& record, std::uint32_t nowMs)
+    {
+        if (!record.open || ShadeSeenExpired(record.lastSeenMs, nowMs))
+        {
+            record.open = true;
+            record.firstMissMs = nowMs;
+        }
+        record.lastSeenMs = nowMs;
+        if (nowMs - record.firstMissMs < kShadeCoverGraceMs)
+            return false;
+        if (record.logged && nowMs - record.lastLogMs < kShadeCoverLogGapMs)
+            return false;
+        record.logged = true;
+        record.lastLogMs = nowMs;
+        return true;
+    }
+
+    // Every (member, Shade) record of the cover row, bounded at kShadeCoverMaxEntries. Not thread-safe: the caller locks.
+    class ShadeCoverLogBook
+    {
+    public:
+        using Key = std::pair<std::uint64_t, std::uint64_t>;
+
+        // Note the pair at `nowMs`: `miss` (the member is not on the Shade) and `dead` (the member is dead). A member on
+        // the Shade drops its record. True when a row is due; a dead member's row is due once per pair.
+        bool Note(std::uint64_t member, std::uint64_t shade, bool miss, bool dead, std::uint32_t nowMs)
+        {
+            Key const key(member, shade);
+            if (!miss)
+            {
+                records_.erase(key);
+                return false;
+            }
+            if (records_.find(key) == records_.end() && records_.size() >= kShadeCoverMaxEntries)
+                Prune(nowMs);
+            ShadeCoverLogRecord& record = records_[key];
+            if (dead && record.deadLogged)
+            {
+                record.lastSeenMs = nowMs;
+                return false;
+            }
+            if (!ShadeCoverLogDue(record, nowMs))
+                return false;
+            if (dead)
+                record.deadLogged = true;
+            return true;
+        }
+
+        // A miss is running for the pair: a member that died while missing the Shade is still asked (its `dead` row).
+        bool MissOpen(std::uint64_t member, std::uint64_t shade, std::uint32_t nowMs) const
+        {
+            auto const it = records_.find(Key(member, shade));
+            return it != records_.end() && it->second.open && !ShadeSeenExpired(it->second.lastSeenMs, nowMs);
+        }
+
+        std::size_t Size() const { return records_.size(); }
+        bool Has(std::uint64_t member, std::uint64_t shade) const { return records_.count(Key(member, shade)) != 0; }
+
+    private:
+        // At the cap: drop every record not noted for kShadeSeenGraceMs; when that frees nothing, drop the oldest
+        // quarter by last note, so the live misses keep their grace and gap.
+        void Prune(std::uint32_t nowMs)
+        {
+            for (auto it = records_.begin(); it != records_.end();)
+            {
+                if (ShadeSeenExpired(it->second.lastSeenMs, nowMs))
+                    it = records_.erase(it);
+                else
+                    ++it;
+            }
+            if (records_.size() < kShadeCoverMaxEntries)
+                return;
+            std::vector<std::pair<std::uint32_t, Key>> byAge;
+            byAge.reserve(records_.size());
+            for (auto const& entry : records_)
+                byAge.push_back(std::make_pair(nowMs - entry.second.lastSeenMs, entry.first));
+            std::size_t const drop = std::max<std::size_t>(1, records_.size() / 4);
+            std::nth_element(byAge.begin(), byAge.begin() + (drop - 1), byAge.end(),
+                [](auto const& a, auto const& b) { return a.first > b.first; });
+            for (std::size_t i = 0; i < drop; ++i)
+                records_.erase(byAge[i].second);
+        }
+
+        std::map<Key, ShadeCoverLogRecord> records_;
+    };
+
+    // --- carrier scan (walk 53) ------------------------------------------------------------------------------------
+    // A Delusions carrier the attackers list never showed a Shade: the Shade is summoned on a carrier and only its
+    // carrier can see it, so both the carrier override and the kill_first grid pass found nothing while one stood
+    // beside the bot (2,127 of 3,276 Shade-frames, 65 %, had no cursed bot on the Shade). The scan reads the carrier
+    // row's entry off the grid itself; this says which check kept every hit out of the pick.
+    enum class CarrierScanRefusal : std::uint8_t
+    {
+        None,
+        NoUnit,
+        Ineligible,
+        BeyondReach,
+        NoLos,
+        InvalidTarget,
+    };
+
+    struct CarrierScanFacts
+    {
+        bool unitFound = false;    // a living unit of the carrier row's entry from the grid read
+        bool gridEligible = false; // KillFirstGridEligible(alive, evading, victimOurs, weHoldIt, ownerInFight)
+        float distanceYd = -1.0f;  // bot to unit
+        bool los = false;          // bot->IsWithinLOSInMap(unit)
+        bool validAttack = false;  // bot->IsValidAttackTarget(unit)
+    };
+
+    // The first check that fails gives the verdict; its order is the order a carrier would walk them in: is there a
+    // unit of the entry at all, is it this fight's, is it in reach, can the bot see it, may it attack it.
+    inline CarrierScanRefusal CarrierScanRefuses(const CarrierScanFacts& f, float reachYd)
+    {
+        if (!f.unitFound)
+            return CarrierScanRefusal::NoUnit;
+        if (!f.gridEligible)
+            return CarrierScanRefusal::Ineligible;
+        if (f.distanceYd < 0.0f || f.distanceYd > reachYd)
+            return CarrierScanRefusal::BeyondReach;
+        if (!f.los)
+            return CarrierScanRefusal::NoLos;
+        if (!f.validAttack)
+            return CarrierScanRefusal::InvalidTarget;
+        return CarrierScanRefusal::None;
+    }
+
+    // Index of the nearest hit that passes every check, else -1.
+    inline int CarrierScanPick(const std::vector<CarrierScanFacts>& hits, float reachYd)
+    {
+        int best = -1;
+        for (std::size_t i = 0; i < hits.size(); ++i)
+        {
+            if (CarrierScanRefuses(hits[i], reachYd) != CarrierScanRefusal::None)
+                continue;
+            if (best < 0 || hits[i].distanceYd < hits[best].distanceYd)
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    inline const char* CarrierScanReasonWord(CarrierScanRefusal refusal)
+    {
+        switch (refusal)
+        {
+            case CarrierScanRefusal::None:          return "none";
+            case CarrierScanRefusal::NoUnit:        return "no_unit";
+            case CarrierScanRefusal::Ineligible:    return "ineligible";
+            case CarrierScanRefusal::BeyondReach:   return "beyond_reach";
+            case CarrierScanRefusal::NoLos:         return "no_los";
+            case CarrierScanRefusal::InvalidTarget: return "invalid_target";
+        }
+        return "none";
+    }
+
+    // What the no-switch row says about the scan: how many grid hits the carrier entry had, which check refused each,
+    // whether a player's order closed the pick, and whether any candidate of the entry was pickable at all.
+    struct CarrierScanTally
+    {
+        int hits = 0;
+        int byCode[6] = {};
+        bool playerOrder = false;
+        bool freeMode = false; // the pick mode was Free (no order at all) rather than Carrier (the run's own order)
+        bool pickableSeen = false;
+    };
+
+    // Whether the scan's Shade replaces the ordinary kill_first pick (Codex, round 3). A free DPS takes every open row
+    // (PickKillFirst), so a Powerful Healing Ward or a Brain Wash Totem in view wins the ordinary pick while a Shade
+    // lives, and a carrier is the only one who can kill that Shade (the uncursed raid leaves the ward and totem to
+    // nobody else). With the key on, a carrier (an open carrier row: the fight scan drops it for a bot without the
+    // aura) in any mode but None (a player's order is never overridden) takes the scan's Shade over the ordinary pick;
+    // no Shade found keeps the ordinary pick. An ordinary pick that already is a carrier-row entry (the carrier
+    // override's own Shade) stays: it is a Shade, and its ranking (a healer's Shade first) is the override's.
+    inline bool CarrierScanTakesPrecedence(bool isCarrier, bool keyOn, KillFirstPickMode mode, bool scanFound,
+                                           bool ordinaryIsCarrierEntry)
+    {
+        return keyOn && isCarrier && mode != KillFirstPickMode::None && scanFound && !ordinaryIsCarrierEntry;
+    }
+
+    // The row's word from the scan: a player's order first (it is never overridden), then the most common refusal among
+    // the grid hits (the enum order breaks a tie; the None code counts hits that passed every check and is never the
+    // word), then why there was no hit at all: no hit and no unit in the fight is no_unit, no hit and an unpickable
+    // unit is not_pickable. A hit the scan could take that the pick did not is the pick's own rule saying no
+    // (not_pickable). A pickable unit in the fight with no grid hit can only be out of the reach.
+    inline const char* CarrierScanWord(const CarrierScanTally& tally, bool shadeInFight, bool pickable)
+    {
+        if (tally.playerOrder)
+            return "player_order";
+        int best = -1;
+        for (int code = static_cast<int>(CarrierScanRefusal::NoUnit);
+             code <= static_cast<int>(CarrierScanRefusal::InvalidTarget); ++code)
+            if (tally.byCode[code] > 0 && (best < 0 || tally.byCode[code] > tally.byCode[best]))
+                best = code;
+        if (best >= 0)
+            return CarrierScanReasonWord(static_cast<CarrierScanRefusal>(best));
+        if (tally.hits > 0)
+            return "not_pickable";
+        if (!shadeInFight)
+            return "no_unit";
+        if (!pickable)
+            return "not_pickable";
+        return CarrierScanReasonWord(CarrierScanRefusal::BeyondReach);
+    }
+
+    // --- taunt gate ------------------------------------------------------------------------------------------------
+    // A tank never taunts a subject it must not hold: a needs_aura entry (the Shade of Jin'do, which only a carrier can
+    // damage and which copies the boss's threat list onto a healer) or a creature the core marks immune to taunts
+    // (Jin'do). A needs_aura subject is refused for a bot that LACKS the aura, and also for a carrier that is the
+    // BOSS's current victim (`holdsBoss`, the main tank holding Jin'do: a Shade taunt would move the boss's threat
+    // pull off it, walk 54: 19 of 114 Shade taunts, Jin'do on a damage dealer 5 s later in 3 of them). A cursed
+    // off-tank that does not hold the boss may still taunt the Shade (the same rule as AttackerOfNonTankSkipsUnit,
+    // which keeps the Shade in the scan for a carrier). Key off, every taunt passes as before.
+    enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune, HoldingBoss, PostSubject };
+
+    inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune,
+                                  bool holdsBoss)
+    {
+        if (!keyOn)
+            return TauntGate::Allow;
+        if (requiredAura != 0 && !botHasAura)
+            return TauntGate::NeedsAura;
+        if (requiredAura != 0 && holdsBoss)
+            return TauntGate::HoldingBoss;
+        if (tauntImmune)
+            return TauntGate::TauntImmune;
+        return TauntGate::Allow;
+    }
+
+    inline const char* TauntGateWord(TauntGate gate)
+    {
+        switch (gate)
+        {
+            case TauntGate::Allow:       return "allow";
+            case TauntGate::NeedsAura:   return "needs_aura";
+            case TauntGate::TauntImmune: return "taunt_immune";
+            case TauntGate::HoldingBoss: return "holding_boss";
+            case TauntGate::PostSubject: return "post_subject";
+        }
+        return "allow";
+    }
+
+    // AiPlayerbot.DungeonRunTankPostOwnsSubject: while another tank's post is live (its record read within
+    // kTankPostLiveMs) on this subject entry, in this instance, by a tank that can act, this tank does not taunt the
+    // subject: the post's own slot takes it (walk 2c a-1: slots 3, 0 and 2 taunted Cindarion before slot 1 arrived).
+    constexpr std::uint32_t kTankPostLiveMs = 3000;
+    inline bool TankPostSubjectReserved(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost)
+    {
+        return keyOn && otherPostLive && otherTankCanAct && !botOwnsPost;
+    }
+
+    // The post's reservation also needs its tank able to take the unit back: the tank within kTankPostReserveRangeYd
+    // of the subject (3D), and the subject still on it or loose (not its victim) for less than
+    // kTankPostReserveGraceMs. A tank stranded across the room, or one that lost the unit past the grace, reserves
+    // nothing, so the other tanks may taunt it.
+    //
+    // Walk 2c: the awaited unit landed 48-55 yd away from its post tank and the tank reached melee at about +13 s, so
+    // the reservation keeps the unit at 60 yd and through a 15 s loose spell. Both limits are the post's own; the
+    // guard's assignment clock keeps its kGuardAssignedGraceMs.
+    constexpr float kTankPostReserveRangeYd = 60.0f;
+    constexpr std::uint32_t kTankPostReserveGraceMs = 15000;
+    static_assert(kTankPostReserveGraceMs == kGuardPostGraceMs, "the guard's tank_post grace is the post's own");
+    inline bool TankPostReserves(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost,
+                                 bool ownerWithinRange, bool subjectOnOwner, std::uint32_t looseMs)
+    {
+        return TankPostSubjectReserved(keyOn, otherPostLive, otherTankCanAct, botOwnsPost) && ownerWithinRange &&
+            (subjectOnOwner || looseMs < kTankPostReserveGraceMs);
+    }
+
+    // Which limit lapsed a post's reservation this read: the range first, then the loose grace (the order the
+    // reservation reads them). `none` while the reservation holds, and with the key off (nothing is written then).
+    enum class TankPostLapse : std::uint8_t
+    {
+        None = 0,
+        Range = 1,
+        Grace = 2,
+    };
+    inline TankPostLapse TankPostLapseOf(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,
+                                         std::uint32_t looseMs)
+    {
+        if (!keyOn)
+            return TankPostLapse::None;
+        if (!ownerWithinRange)
+            return TankPostLapse::Range;
+        if (!subjectOnOwner && looseMs >= kTankPostReserveGraceMs)
+            return TankPostLapse::Grace;
+        return TankPostLapse::None;
+    }
+
+    // One lapse row per lapse event: `lapseLogged` is the record's flag. A read that still sees the lapse writes
+    // nothing; a read where the reservation holds again re-arms it for the next lapse.
+    inline bool TankPostLapseDue(TankPostLapse lapse, bool& lapseLogged)
+    {
+        if (lapse == TankPostLapse::None)
+        {
+            lapseLogged = false;
+            return false;
+        }
+        if (lapseLogged)
+            return false;
+        lapseLogged = true;
+        return true;
+    }
+
+    // The post owner's own record update re-arms the same flag: its tank back within kTankPostReserveRangeYd of the
+    // subject with the subject on it, or loose off it for less than the grace, is the reservation holding again, so a
+    // later lapse writes its own row even when no other tank reads the reservation in between. While a lapse is still
+    // active the flag stays, and a reader's later read of that lapse stays quiet.
+    inline bool TankPostLapseOwnerUpdate(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,
+                                         std::uint32_t looseMs, bool& lapseLogged)
+    {
+        lapseLogged = lapseLogged && TankPostLapseOf(keyOn, ownerWithinRange, subjectOnOwner, looseMs) !=
+            TankPostLapse::None;
+        return lapseLogged;
+    }
+
+    // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on its
+    // post tank, and while the subject cannot be hit before the clock has started (unselectable or not attackable: a
+    // boss still in the air, out of reach of every tank), so the grace is not spent before it lands. It starts on the
+    // first hittable tick with the subject off the tank. A running clock keeps its start through unhittable spells
+    // shorter than the grace (a shrug, a blink, a brief immunity). A spell of the grace length or more is a real
+    // lift-off: the clock clears, so the next hittable tick starts a new grace. `prior` is the record's clock (0: not
+    // started); `unhittableSince` is the start of the current unhittable spell (0: none).
+    struct TankPostLooseClockState
+    {
+        std::uint32_t looseSinceMs = 0;
+        std::uint32_t unhittableSinceMs = 0;
+    };
+    inline TankPostLooseClockState TankPostLooseClock(std::uint32_t prior, std::uint32_t unhittableSince,
+                                                      bool subjectOnOwner, bool subjectSelectable,
+                                                      bool subjectAttackable, std::uint32_t nowMs)
+    {
+        TankPostLooseClockState out;
+        if (subjectOnOwner)
+            return out;
+        if (subjectSelectable && subjectAttackable)
+        {
+            out.looseSinceMs = prior != 0 ? prior : nowMs;
+            return out;
+        }
+        out.unhittableSinceMs = unhittableSince != 0 ? unhittableSince : nowMs;
+        out.looseSinceMs = nowMs - out.unhittableSinceMs >= kTankPostReserveGraceMs ? 0 : prior;
+        return out;
+    }
+
+    // The area taunts (challenging shout, challenging roar) taunt every hostile within their radius of the caster, not
+    // only the selected target: one unit of the scan that another live post reserves refuses the cast.
+    constexpr float kAreaTauntRadiusYd = 10.0f;
+    struct AreaTauntUnit
+    {
+        float yd = 0.0f;
+        bool reservedByOther = false;
+    };
+    inline bool AreaTauntHitsReservedSubject(const std::vector<AreaTauntUnit>& units, float radius)
+    {
+        for (const AreaTauntUnit& unit : units)
+            if (unit.reservedByOther && unit.yd <= radius)
+                return true;
+        return false;
+    }
+
+    // The gate's refusal row is throttled per (bot, gate word), not per bot: the 495 taunt_immune rows at Jin'do (walk
+    // 54) could hide a needs_aura row that fell in the same 5 s. `lastMs` is one bot's last-row time per word (indexed
+    // by the TauntGate value; 0 = never). Returns whether a row for `gate` is due, and stamps `nowMs` when it is.
+    constexpr std::size_t kTauntGateWords = 5;
+    using TauntGateLogTimes = std::array<std::uint32_t, kTauntGateWords>;
+
+    inline bool TauntGateLogDueFor(TauntGateLogTimes& lastMs, TauntGate gate, std::uint32_t nowMs, std::uint32_t gapMs)
+    {
+        std::uint32_t& last = lastMs[static_cast<std::size_t>(gate)];
+        if (last != 0 && nowMs - last < gapMs)
+            return false;
+        last = nowMs;
+        return true;
+    }
+
+    // Carrier hold (AiPlayerbot.DungeonRunCarrierHold): a Delusions carrier standing on its Shade keeps it. "not dps
+    // target active" fires whenever the current target differs from "dps target" (the skull, Jin'do), and its action
+    // "dps assist" (relevance 60) outranks kill-first (21), so the carrier was pulled off a live Shade for Jin'do
+    // (76 times in walk 54, 65 in walk 53). With the key on the trigger stays quiet when the current target is a
+    // needs_aura subject the bot carries the aura for. A non-carrier on the Shade (it cannot damage it) and every
+    // other target keep today's rule; key off is today.
+    inline bool CarrierHoldsCurrent(bool keyOn, bool currentIsNeedsAura, bool botHasRequiredAura)
+    {
+        return keyOn && currentIsNeedsAura && botHasRequiredAura;
+    }
+
+    // Whether "not dps target active" fires, for a live non-player current target. The hostile player target is
+    // decided first and is never suppressed by the hold (a carrier on a Shade still switches to an enemy player);
+    // the hold (`holdsCurrent`) only suppresses the dps-target comparison. No enemy and no dps target: no fire.
+    inline bool NotDpsTargetFires(bool enemyKnown, bool targetIsEnemy, bool holdsCurrent, bool dpsKnown,
+                                  bool targetIsDps)
+    {
+        if (enemyKnown)
+            return !targetIsEnemy;
+        if (holdsCurrent)
+            return false;
+        if (dpsKnown)
+            return !targetIsDps;
+        return false;
+    }
+
+    // The kill-first trigger's check interval in seconds: every second under TotemFocus (a totem lives 1-2 s) or
+    // CarrierHold (the re-pick after a Shade dies took a median 2.0 s), every two seconds otherwise.
+    inline std::uint32_t KillFirstCheckSeconds(bool totemFocus, bool carrierHold)
+    {
+        return (totemFocus || carrierHold) ? 1 : 2;
+    }
+
+    // Whether the kill-first trigger is due at `nowSec`, with both keys read by the caller at every check (so a
+    // `.reload config` takes effect on a trigger that is already built). `lastSec` is the last due time (0 = never);
+    // it is stamped whenever the check is due. Keys off this is the base Trigger::needCheck rule for interval 2:
+    // due when never checked or two seconds have passed.
+    inline bool KillFirstCheckDue(bool totemFocus, bool carrierHold, std::int64_t nowSec, std::int64_t& lastSec)
+    {
+        std::int64_t const gap = KillFirstCheckSeconds(totemFocus, carrierHold);
+        if (gap < 2 || lastSec == 0 || nowSec - lastSec >= gap)
+        {
+            lastSec = nowSec;
+            return true;
+        }
+        return false;
     }
 
     // tank_ignore (t1105h J2): a tank leaves a unit alone (no guard pick, no engage, no taunt, no tank target) while one
@@ -2786,5 +3913,302 @@ namespace ai
             outX = rx;
             outY = ry;
         }
+    }
+
+    // --- tank_post --------------------------------------------------------------------------------------------------
+    // A named tank waits at a spot for a unit that is not in the fight yet (an unselectable second boss), then attacks
+    // it on arrival. The row's band arms the post, so the whole read is a fight scan. Every number comes from the row.
+    // With the row's `hold_spot` mode and AiPlayerbot.DungeonRunTankPostHoldSpot, the post also starts while the tank
+    // holds another hostile, latches its arrival, drags the subject back to the spot, outlives its window once arrived
+    // and yields to a boss stand seat. AiPlayerbot.DungeonRunTankPostLeash adds the pre-arrival walk back.
+    constexpr float kTankPostSpotYd = 3.0f;    // the tank holds within this of the spot
+    constexpr float kTankPostSearchYd = 200.0f; // the awaited unit's grid search radius
+    constexpr float kTankPostDragYd = 8.0f;     // hold_spot: past this from the spot with the subject on the tank, walk back
+
+    enum class TankPostDecision : std::uint8_t
+    {
+        None = 0,   // no post: the row is closed, or there is nobody to wait for yet
+        Walk = 1,   // the tank walks to the spot
+        Hold = 2,   // the tank is at the spot and waits
+        Engage = 3, // the unit arrived: attack it
+        End = 4,    // the post ends now: window, death, evade, band or tank
+        Drag = 5,   // hold_spot: the arrived subject is on the tank, walk it back to the spot keeping the target
+        Yield = 6,  // hold_spot: the tank holds a boss stand seat, the post waits (its record is kept)
+        Leash = 7,  // hold_spot + leash: before the arrival the tank is past 8 yd from the spot: walk back keeping
+                    // its target
+    };
+
+    struct TankPostIn
+    {
+        bool live = false;          // the row is open for this bot: the boss stands in its health band
+        bool started = false;       // a post is already held
+        bool tankCanAct = true;     // alive and not creature-charmed
+        bool subjectFound = false;  // a unit of the awaited entry stands within kTankPostSearchYd
+        bool subjectAlive = false;
+        bool subjectSelectable = false; // no UNIT_FLAG_NOT_SELECTABLE
+        bool subjectEvading = false;
+        float subjectToSpotYd = 0.0f;
+        float arrivalRadiusYd = 0.0f; // the row's param
+        float botToSpotYd = 0.0f;
+        bool holdingOtherHostile = false; // the tank holds another hostile that attacks a group member
+        bool windowExpired = false;       // the row's window_s has passed since the post started
+        bool holdSpot = false;            // the row's `hold_spot` mode and its key are on
+        bool arrivedBefore = false;       // this post's latched arrival counts for the unit this read saw
+        bool subjectOnTank = false;       // the subject's victim is this tank
+        bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
+        bool leash = false;               // hold_spot and its leash key: walk back before the arrival
+        bool slotMoved = false;           // the post's row is still in the fight, for another slot index (read by the end word only)
+        std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
+    };
+
+    // The awaited unit has arrived when it stands within the row's radius of the spot, alive and selectable. Combat
+    // is not asked: a unit that lands and becomes targetable before it enters combat is attacked by the posted tank.
+    // An unselectable unit (a second boss still in the air) is not arrived, however close it circles.
+    inline bool TankPostArrived(bool found, bool alive, bool selectable, float subjectToSpotYd,
+                                float arrivalRadiusYd)
+    {
+        return found && alive && selectable && subjectToSpotYd <= arrivalRadiusYd;
+    }
+
+    // Whether the post's latched arrival counts for the unit this read saw: only the same unit stays arrived, so a
+    // second unit of the same target_entry starts unarrived.
+    inline bool TankPostLatchCounts(bool arrivedLogged, std::uint64_t arrivedSubjectGuid,
+                                    std::uint64_t subjectGuid)
+    {
+        return arrivedLogged && arrivedSubjectGuid == subjectGuid;
+    }
+
+    // Whether this tick latches (and logs) the post's arrival. A plain post keeps its old rule and latches only when
+    // it engages. With the row's `hold_spot` mode, the unit physically stands arrived, whatever the step chose: a
+    // first arrival can come out as Drag (the tank already more than 8 yd from the spot with the unit on it) or Yield
+    // (a stand seat is due); it must still latch, or the post would later treat it as never arrived and end on its
+    // window.
+    inline bool TankPostLatchesArrival(const TankPostIn& in, TankPostDecision step)
+    {
+        if (!in.holdSpot)
+            return step == TankPostDecision::Engage;
+        if (in.arrivedBefore || step == TankPostDecision::None || step == TankPostDecision::End)
+            return false;
+        return TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable, in.subjectToSpotYd,
+            in.arrivalRadiusYd);
+    }
+
+    // One creature of the awaited entry as the grid search saw it ("tank post units" value).
+    struct TankPostUnit
+    {
+        std::uint64_t guid = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        bool alive = false;
+        bool selectable = false;
+        bool evading = false;
+    };
+
+    // Whether the boss stand seat the tank holds yields the post. A stay (S2: the bot already stood clear) is not a
+    // seat the plan gave it, so the post keeps going and the leash keeps slot 1 at the spot while the tank is clear.
+    inline bool TankPostSeated(bool standValid, bool stay) { return standValid && !stay; }
+
+    // The unit the post waits for: the nearest living one to the spot (the nearest dead one when none lives, so its
+    // death still ends the post). -1 for an empty list.
+    inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ)
+    {
+        int best = -1;
+        float bestYd = 0.0f;
+        bool bestAlive = false;
+        for (std::size_t i = 0; i < units.size(); ++i)
+        {
+            const TankPostUnit& unit = units[i];
+            const float dx = unit.x - spotX;
+            const float dy = unit.y - spotY;
+            const float dz = unit.z - spotZ;
+            const float yd = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (best < 0 || (unit.alive && !bestAlive) || (unit.alive == bestAlive && yd < bestYd))
+            {
+                best = static_cast<int>(i);
+                bestYd = yd;
+                bestAlive = unit.alive;
+            }
+        }
+        return best;
+    }
+
+    // What the post's tank does this tick. A post that was held and can no longer be held ends; a row that is not
+    // open (or has nothing to wait for) and holds no post does nothing. Another hostile on a group member keeps the
+    // tank on it and the post waits, except in hold_spot once the subject arrives, where the subject outranks it.
+    // In hold_spot the window closes only before the arrival, the arrival stays latched while the subject is alive and
+    // selectable, and a stand seat yields the post (the record is kept).
+    inline TankPostDecision TankPostStep(const TankPostIn& in)
+    {
+        if (!in.live || !in.tankCanAct)
+            return in.started ? TankPostDecision::End : TankPostDecision::None;
+        if (in.windowExpired && !(in.holdSpot && in.arrivedBefore))
+            return in.started ? TankPostDecision::End : TankPostDecision::None;
+        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading)
+            return in.started ? TankPostDecision::End : TankPostDecision::None;
+        if (in.holdSpot && in.seated)
+            return TankPostDecision::Yield;
+        bool const arrived = TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,
+                                 in.subjectToSpotYd, in.arrivalRadiusYd) ||
+            (in.holdSpot && in.arrivedBefore && in.subjectSelectable);
+        if (arrived)
+        {
+            if (!in.holdSpot)
+                return in.holdingOtherHostile ? TankPostDecision::Hold : TankPostDecision::Engage;
+            if (in.subjectOnTank && in.botToSpotYd > kTankPostDragYd)
+                return TankPostDecision::Drag;
+            return TankPostDecision::Engage;
+        }
+        if (in.holdSpot && in.leash && in.botToSpotYd > kTankPostDragYd)
+            return TankPostDecision::Leash;
+        if (in.holdingOtherHostile)
+            return TankPostDecision::Hold;
+        return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
+    }
+
+    // The end word of a post (the step's own order). `slotMoved`: the post's row is still in the fight, but for another
+    // slot index than this bot now holds (a tank died and GetRaidTankRoles renumbered): "slot", not "band".
+    inline const char* TankPostEndWord(bool live, bool slotMoved, bool tankCanAct, bool windowExpired,
+                                       bool subjectFound, bool subjectAlive, bool subjectEvading)
+    {
+        if (!live)
+            return slotMoved ? "slot" : "band";
+        if (!tankCanAct)
+            return "tank";
+        if (windowExpired)
+            return "window";
+        if (!subjectFound)
+            return "gone";
+        if (!subjectAlive)
+            return "dead";
+        if (subjectEvading)
+            return "evade";
+        return "band";
+    }
+
+    // The `slot` end word of a post whose row left this bot's slot: the row is still held (another row of the same
+    // slot) or the renumbering moved it while the owns-subject key is on. With the key off a renumbered end says
+    // `band`, the pre-feature word.
+    inline bool TankPostEndsAsSlot(bool rowStillHeld, bool slotMoved, bool ownsSubjectKeyOn)
+    {
+        return rowStillHeld || (slotMoved && ownsSubjectKeyOn);
+    }
+
+    // A step row is written when the post enters Drag, Yield or Leash (not while it stays in it).
+    inline bool TankPostStepEntered(std::uint8_t lastStep, TankPostDecision step)
+    {
+        return (step == TankPostDecision::Drag || step == TankPostDecision::Yield ||
+                   step == TankPostDecision::Leash) &&
+               lastStep != static_cast<std::uint8_t>(step);
+    }
+
+    // AiPlayerbot.DungeonRunTankPostTaunts: the Engage step takes the subject back whenever it is not on the post's tank,
+    // off a healer or a damage dealer, and off another tank only with AiPlayerbot.DungeonRunTankPostOwnsSubject (without
+    // the reservation that tank's own class taunt is not refused, so the subject flips between the two tanks; walk 2d: 3
+    // of 3 reservations lapsed on grace while slot 1 hit him without a taunt; slot 1's first taunt +108..+121 s). The
+    // gate still decides (needs_aura, taunt_immune); a warrior out of Defensive Stance takes it first; the area taunt
+    // only when the single taunt cannot go out, the subject is within kAreaTauntRadiusYd and on a non-tank, and no other
+    // post's subject is in its radius.
+    enum class TankPostTaunt : std::uint8_t { None, Taunt, Stance, AreaTaunt, Gate, NotReady };
+    struct TankPostTauntIn
+    {
+        bool keyOn = false; bool engage = false; bool subjectOnTank = false; bool subjectSelectable = false;
+        bool gateRefuses = false; bool tauntCastable = false; bool needsStance = false; bool stanceCastable = false;
+        bool areaCastable = false; bool areaInRange = false; bool areaGateRefuses = false; bool victimIsTank = false;
+        bool ownsSubjectOn = false;
+    };
+    // Whether any taunt path is open at all: the key on, the subject off this tank and selectable, and off another tank
+    // only with the reservation (its taunt passes, but the other tank's own class taunt would not be refused, so the
+    // subject would flip between the two). Read before the gate inputs, which write rows and advance the post clocks.
+    inline bool TankPostTauntAttemptable(const TankPostTauntIn& in)
+    {
+        if (!in.keyOn || !in.engage || in.subjectOnTank || !in.subjectSelectable) return false;
+        return !in.victimIsTank || in.ownsSubjectOn;
+    }
+    // Whether the area taunt's own gate has to be read at all: the step picks the area taunt only with a known spell,
+    // castable now, the subject in range and off a non-tank. In every other state the gate cannot change the verdict,
+    // and reading it scans the radius and advances the other posts' clocks.
+    inline bool TankPostAreaTauntGateNeeded(const TankPostTauntIn& in)
+    {
+        return in.areaCastable && in.areaInRange && !in.victimIsTank;
+    }
+    inline TankPostTaunt TankPostTauntStep(const TankPostTauntIn& in)
+    {
+        if (!TankPostTauntAttemptable(in)) return TankPostTaunt::None;
+        if (in.gateRefuses) return TankPostTaunt::Gate;
+        if (in.tauntCastable) return TankPostTaunt::Taunt;
+        if (in.needsStance && in.stanceCastable) return TankPostTaunt::Stance;
+        if (in.areaCastable && in.areaInRange && !in.areaGateRefuses && !in.victimIsTank) return TankPostTaunt::AreaTaunt;
+        return TankPostTaunt::NotReady;
+    }
+    inline const char* TankPostTauntWord(TankPostTaunt t)  // none, taunt, stance, area, gate, not_ready
+    {
+        switch (t)
+        {
+            case TankPostTaunt::Taunt:
+                return "taunt";
+            case TankPostTaunt::Stance:
+                return "stance";
+            case TankPostTaunt::AreaTaunt:
+                return "area";
+            case TankPostTaunt::Gate:
+                return "gate";
+            case TankPostTaunt::NotReady:
+                return "not_ready";
+            case TankPostTaunt::None:
+            default:
+                return "none";
+        }
+    }
+    // --- add_crew --------------------------------------------------------------------------------------------------
+    // AiPlayerbot.DungeonRunAddCrew: once the row's switch unit (`target_entry`) is dead, the boss's add duty goes to
+    // the melee, the tanks and the first `priority` AoE ranged bots of the raid; the other ranged damage dealers stay
+    // on the boss. Before the switch, and with the key or the row off, today's duty stands (the Onyxia whelp hunt for
+    // its own classes). The kind is generic: the caller supplies the roles and the raid order.
+    enum class AddCrewState : std::uint8_t { Waiting = 0, Crew = 1, NotCrew = 2 };
+
+    // AoE ranged classes in crew order (1.12 Classes): mage 0, warlock 1, hunter 2, shaman 3, druid 4; -1 none.
+    inline int AddCrewClassOrder(std::uint8_t classId)
+    {
+        switch (classId)
+        {
+            case 8: return 0;
+            case 9: return 1;
+            case 3: return 2;
+            case 7: return 3;
+            case 11: return 4;
+            default: return -1;
+        }
+    }
+
+    struct AddCrewCandidate
+    {
+        std::uint64_t guid = 0;
+        int order = -1;
+    };
+
+    // This bot's place among the raid's living AoE ranged damage dealers, sorted by (order, guid); -1 when not listed.
+    inline int AddCrewRank(std::vector<AddCrewCandidate> raid, std::uint64_t me)
+    {
+        std::sort(raid.begin(), raid.end(), [](const AddCrewCandidate& a, const AddCrewCandidate& b)
+        { return a.order != b.order ? a.order < b.order : a.guid < b.guid; });
+        for (std::size_t i = 0; i < raid.size(); ++i)
+            if (raid[i].guid == me)
+                return static_cast<int>(i);
+        return -1;
+    }
+
+    inline bool AddCrewMember(bool tank, bool healer, bool ranged, int aoeRank, std::uint8_t crewSize)
+    {
+        if (healer)
+            return false;
+        if (tank || !ranged)
+            return true;
+        return aoeRank >= 0 && aoeRank < crewSize;
+    }
+
+    inline AddCrewState AddCrewStateFor(bool keyOn, bool rowFound, bool switchAlive, bool member)
+    {
+        if (!keyOn || !rowFound || switchAlive)
+            return AddCrewState::Waiting;
+        return member ? AddCrewState::Crew : AddCrewState::NotCrew;
     }
 }

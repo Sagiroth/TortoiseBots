@@ -8,7 +8,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ai
@@ -78,6 +81,21 @@ namespace ai
         return dueMs;
     }
 
+    // How many cycles SeekRolledDueMs rolled `dueMs` forward (0: none). DungeonRunSeekCycleRoll moves the record's cycle
+    // number by this, so a missed sighting no longer leaves the walk-out's cycle closed (walk 62 SIPHON-WHY cause C).
+    inline std::uint32_t SeekRolledCycles(std::uint32_t nowMs, std::uint32_t dueMs, std::uint32_t cycleMs)
+    {
+        if (dueMs == 0 || cycleMs == 0)
+            return 0;
+        std::uint32_t n = 0;
+        while (nowMs > dueMs + kSeekOverdueGraceMs)
+        {
+            dueMs += cycleMs;
+            ++n;
+        }
+        return n;
+    }
+
     // The burn is forced once the window is about to close.
     inline bool SeekForceBurn(std::uint32_t nowMs, std::uint32_t dueMs)
     {
@@ -89,9 +107,18 @@ namespace ai
     // cloud was never earned. A pick already overdue (dueInMs 0) is late by definition; no due time is not.
     constexpr std::uint32_t kSeekLateEngageMs = 30000;
 
+    // The same rule at another lead: a seek_pull row's `param` is the kill lead (walk 51: back -> death median 27 s,
+    // p75 31 s, so a burn from 45 s kills about 18 s before the siphon; no earlier than the row's lead keeps the
+    // killed Son's 60 s respawn ahead of the next cycle's walk-out).
+    inline bool SeekLateEngagedBurnWithin(bool sourceInCombat, std::uint32_t dueMs, std::uint32_t dueInMs,
+                                          std::uint32_t leadMs)
+    {
+        return sourceInCombat && dueMs != 0 && dueInMs <= leadMs;
+    }
+
     inline bool SeekLateEngagedBurn(bool sourceInCombat, std::uint32_t dueMs, std::uint32_t dueInMs)
     {
-        return sourceInCombat && dueMs != 0 && dueInMs <= kSeekLateEngageMs;
+        return SeekLateEngagedBurnWithin(sourceInCombat, dueMs, dueInMs, kSeekLateEngageMs);
     }
 
     // Who seeks: every living bot that lacks the aura, except the boss's victim (the main tank) and the two tanks kept
@@ -203,10 +230,185 @@ namespace ai
     }
 
     // A Son that has fought a non-tank this long goes to the first off-tank (SeekTakeFightingSonOnHealer); this long
-    // plus 4 s and no tank took it, the hold lets the damage dealers kill it (SeekHoldDecision). Walk 41: a Son sat on a
-    // healer at 100 % for 13 s and the siphon went undosed behind it.
-    constexpr std::uint32_t kSeekHealerTakeMs = 8000;
-    constexpr std::uint32_t kSeekNonTankBurnMs = kSeekHealerTakeMs + 4000;
+    // and no tank took it, the hold lets the damage dealers kill it (SeekHoldDecision). Walk 41: a Son sat on a healer
+    // at 100 % for 13 s and the siphon went undosed behind it. Walk 48: the old 8 s take and 12 s release still left
+    // the held Sons at a median 26.5 s, and 12 of the 23 losses were Son wipes, so both steps are shorter.
+    constexpr std::uint32_t kSeekHealerTakeMs = 3000;
+    constexpr std::uint32_t kSeekNonTankBurnMs = 5000;
+
+    // A hold the fight keeps longer than this is released to the damage dealers whatever the window, the gather or the
+    // Son's health say: walk 48's held Sons lasted a median 26.5 s (p75 47 s, max 126 s), and the losses with a
+    // walk-out lost 8.8 members to Sons a fight against 4.5 without. A lost cloud costs less than a Son wipe. Only
+    // fighting time counts (SeekHoldClockTicks): a spare waiting at its spawn is the reservoir, not a stall.
+    constexpr std::uint32_t kSeekHoldMaxMs = 20000;
+
+    // Whether this read feeds the hold clock. Only a Son fighting a victim (`engaged`) counts toward the 20 s cap, so
+    // a spare standing at its spawn or waiting out a shut window never enters it: the hold rule holds every
+    // non-selected Son wherever it stands, and a clock on that would release the whole reservoir for good after 20 s,
+    // after which the area veto stops protecting the Sons later siphons need. The cap itself reaches the selected
+    // source, and a Son on a tank inside the window (`victimTank`: the Son's victim is a player tank). A Son on a
+    // non-tank is the healer clock's (SeekHealerClockTick).
+    inline bool SeekHoldClockTicks(bool selected, bool engaged, bool victimTank, bool windowOpen)
+    {
+        return engaged && (selected || (victimTank && windowOpen));
+    }
+
+    // Whether one read feeds the shared hold clock: a Son this read saw alive, that the clock counts
+    // (SeekHoldClockTicks) and that the hold rule still holds. A read of a Son seen dead erases its record and a
+    // read that does not tick a live Son changes nothing (SeekHoldClockTick), so another bot may keep feeding it.
+    // Every other Son is left out: an idle spare never gets a record, so the cap can never release the reservoir the
+    // area veto protects; a Son the rule already releases is damageable and needs no clock.
+    inline bool SeekSonTicks(bool seenAlive, bool ticks, bool holds)
+    {
+        return seenAlive && ticks && holds;
+    }
+
+    // The meet Son stays held for the damage dealers while the meet is open and no tank has it (DungeonRunSeekSonMeet).
+    // Walk 54: 57 of 58 meet Sons were released 2-6 s after the shot at 98 % hp, 33-50 yd out, because the puller
+    // counted as a non-tank on the 5 s clock (and the late-engaged burn forced the rest); the damage dealers then
+    // peeled the Son off the puller before the receiver could act. Checked first, so no clock, cap or burn releases it.
+    // `meetOpen` is false with the flag off.
+    inline bool SeekMeetHoldsSon(bool meetOpen, bool sonIsMeetSon, bool sonVictimIsTank)
+    {
+        return meetOpen && sonIsMeetSon && !sonVictimIsTank;
+    }
+
+    // Healers leave the open meet's puller alone (DungeonRunSeekMeetNoHeal). Walk 55: 24 of 27 meets ended with the Son
+    // peeled onto a healer, because a heal on the puller adds threat on every mob that has the puller on its list (heal
+    // threat x0.5 split over Hakkar and the Son, a 1-1.5k heal about 250-375 on the Son against the one Auto Shot the
+    // puller holds). So while the meet is open a heal target that is the puller is skipped, unless its hp after the
+    // incoming hits is below kSeekMeetHealFloorPct (then the heal wins over the threat). `flagOn` is the key.
+    constexpr float kSeekMeetHealFloorPct = 40.0f;
+
+    // The damage dealers' threat cap on a just-taken Son (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2). Walk 60:
+    // after the take the burn opened as soon as the Son's victim was a tank (SeekMeetHoldsSon), and DPS pulled it off
+    // the tank that had just taunted it (18 of 25 victims DPS, a median 13 s after the take). True: hold this damage
+    // dealer's attacks and casts on that Son while ALL of: the key is on; the action is no heal; the Son's live victim
+    // is the tank that took it; this bot's threat on the Son is at least `capPct` % of that tank's (once held, at least
+    // `releasePct` %: `wasHeld` is this bot's hold of this same take on its last read, so the hold does not flicker at
+    // the line); the Son is at 20 % health or more; the take is under kSeekTakenSonCapMs (15 s) old; and the next Blood
+    // Siphon is KNOWN to be more than 8 s away. An unknown siphon clock releases (dosing comes first: the Son must still
+    // die near the raid before the siphon).
+    constexpr std::uint8_t kSeekTakenSonCapPct = 85;
+    constexpr std::uint8_t kSeekTakenSonReleasePct = 75;
+    constexpr float kSeekTakenSonCapMinHpPct = 20.0f;
+    constexpr std::uint32_t kSeekTakenSonCapMs = 15000;
+    constexpr int kSeekTakenSonCapSiphonMs = 8000;
+    inline bool SeekTakenSonDpsHeld(bool flagOn, bool sonTakenByTank, std::uint8_t dpsThreatPct, float sonHpPct,
+                                    std::uint32_t sinceTakeMs, bool siphonKnown, int siphonInMs, bool isHealAction,
+                                    bool wasHeld, std::uint8_t capPct = kSeekTakenSonCapPct,
+                                    std::uint8_t releasePct = kSeekTakenSonReleasePct)
+    {
+        const std::uint8_t line = wasHeld ? releasePct : capPct;
+        return flagOn && !isHealAction && sonTakenByTank && dpsThreatPct >= line &&
+            sonHpPct >= kSeekTakenSonCapMinHpPct && sinceTakeMs < kSeekTakenSonCapMs && siphonKnown &&
+            siphonInMs > kSeekTakenSonCapSiphonMs;
+    }
+
+    // The per-bot latch of one take (DungeonRunSeekTakenSonThreatCap): the take it belongs to (Son and take time, so a
+    // re-take of the same Son guid is a new take), whether this bot was held on its last read (the hysteresis), and
+    // whether its one `seek take capped` row went out.
+    struct SeekTakenCapLatch
+    {
+        std::uint64_t son = 0;
+        std::uint32_t takenMs = 0;
+        bool held = false;
+        bool logged = false;
+    };
+
+    // The latch for the take (son, takenMs): kept when it is the same take, reset when it is another one.
+    inline SeekTakenCapLatch& SeekTakenCapLatchFor(SeekTakenCapLatch& latch, std::uint64_t son, std::uint32_t takenMs)
+    {
+        if (latch.son != son || latch.takenMs != takenMs)
+            latch = SeekTakenCapLatch{son, takenMs, false, false};
+        return latch;
+    }
+
+    // Whether this read writes the take's one row: the bot is held and the row for this take has not gone out yet.
+    inline bool SeekTakenCapRowDue(SeekTakenCapLatch& latch, bool held)
+    {
+        if (!held || latch.logged)
+            return false;
+        latch.logged = true;
+        return true;
+    }
+    inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPuller, float hpPct)
+    {
+        return flagOn && meetOpen && isPuller && hpPct >= kSeekMeetHealFloorPct;
+    }
+
+    // Whether the meet hold can apply at all: the key on and at least one pulled-Son meet open on the server (the count
+    // of records holding a receiver, kept by SeekMeetOpenDelta). Checked before any lock, so the key off, and every
+    // server or map without a meet, cost one atomic read.
+    inline bool SeekMeetHealScope(bool flagOn, int openMeets)
+    {
+        return flagOn && openMeets > 0;
+    }
+
+    // The change one record's meet makes to that count (+1 opened, -1 closed or dropped, 0 neither): `before` and `after`
+    // are "the record names a receiver" around the change. Every place that opens, closes or drops a meet applies it, so
+    // the count is exact whatever ends the meet (a taken Son, a lost receiver, the 20 s cap seen by a reader, a wipe or
+    // reset that drops the record).
+    inline int SeekMeetOpenDelta(bool before, bool after)
+    {
+        return (after ? 1 : 0) - (before ? 1 : 0);
+    }
+
+    // The walker a healer skips: the meet's own puller. The returner is the same bot in the normal path (the abort moves
+    // the puller to `returner`); a second walk-out inside the open meet makes an unrelated bot the returner, and that
+    // one is not held.
+    inline bool SeekMeetHealWalker(std::uint64_t guid, std::uint64_t meetPuller)
+    {
+        return guid != 0 && guid == meetPuller;
+    }
+
+    // The hp the floor is read against: current hp less the damage the target's attackers deal in one swing
+    // (`incoming`, the heal pick's own estimate). A puller at 45 % with 10 % incoming is at 35 %: healed.
+    inline float SeekMeetHealHpAfterIncoming(float hpPct, std::uint32_t incoming, std::uint32_t maxHp)
+    {
+        if (!maxHp)
+            return hpPct;
+        const float left = hpPct - 100.0f * static_cast<float>(incoming) / static_cast<float>(maxHp);
+        return left > 0.0f ? left : 0.0f;
+    }
+
+    // Why the hold rule leaves a Son alone or lets it go: the reason the seek logs with each release. `Held` is the
+    // hold itself and `Dosed` the hold once every seeker already carries the poison (nothing a kill buys) — both still
+    // hold the Son; `Cap20`, `NonTank` and `SelectedBurn` are the release paths.
+    enum class SeekHoldWhy
+    {
+        Held,
+        Cap20,
+        NonTank,
+        SelectedBurn,
+        Dosed,
+    };
+
+    // Whether a reason still holds the Son. Dosed is a hold variant, not a release: both the decision and the release
+    // log read held-ness through this one predicate.
+    inline bool SeekHoldWhyHolds(SeekHoldWhy why)
+    {
+        return why == SeekHoldWhy::Held || why == SeekHoldWhy::Dosed;
+    }
+
+    // The hold rule's one body: SeekHoldDecision answers SeekHoldWhyHolds(SeekHoldWhyOf(...)) and the seek logs the
+    // reason of each release, so the decision and its log cannot drift.
+    inline SeekHoldWhy SeekHoldWhyOf(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
+        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0,
+        std::uint32_t heldMs = 0)
+    {
+        if (heldMs >= kSeekHoldMaxMs)
+            return SeekHoldWhy::Cap20;
+        if (nonTankHeldMs >= kSeekNonTankBurnMs)
+            return SeekHoldWhy::NonTank;
+        if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
+            return SeekHoldWhy::Held;
+        if (seekers <= 0)
+            return SeekHoldWhy::Dosed;
+        if (hpPct <= holdPct && !gatherReady && !forceBurn)
+            return SeekHoldWhy::Held;
+        return SeekHoldWhy::SelectedBurn;
+    }
 
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
     // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
@@ -217,17 +419,15 @@ namespace ai
     //
     // `nonTankHeldMs` is how long the Son has been fighting a non-tank (0: on a tank, or no victim). Past
     // kSeekNonTankBurnMs it is no longer held, whatever else holds it: the off-tank had kSeekHealerTakeMs to take it
-    // and 4 s more, and a Son left on the raid costs more than the cycle's cloud (walk 45: six deaths behind one hold).
+    // and a moment more, and a Son left on the raid costs more than the cycle's cloud (walk 45: six deaths behind one
+    // hold). `heldMs` is how long the fight has held this Son while it fought (0: not held); past kSeekHoldMaxMs it is
+    // released too. The clock behind it counts fighting time only (SeekHoldClockTicks).
     inline bool SeekHoldDecision(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
-        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0)
+        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0,
+        std::uint32_t heldMs = 0)
     {
-        if (nonTankHeldMs >= kSeekNonTankBurnMs)
-            return false;
-        if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
-            return true;
-        if (seekers <= 0)
-            return true;
-        return hpPct <= holdPct && !gatherReady && !forceBurn;
+        return SeekHoldWhyHolds(SeekHoldWhyOf(isSelected, windowOpen, gatherReady, forceBurn, hpPct, holdPct,
+                                             distFromSpotYd, seekers, nonTankHeldMs, heldMs));
     }
 
     // One living Son at an area action's point: how far it stands from the point (the action's target, or the bot when
@@ -324,11 +524,486 @@ namespace ai
         return heldMs >= kSeekHealerTakeMs;
     }
 
+    // The nearest take (DungeonRunSeekNearestTake, walk 55): a Son on a non-tank is taken at once by the tank whose
+    // taunt reaches it, not only by the receiver (tanks[2]) or, after the 3 s healer clock, by tanks[1]. Walk 55: the
+    // nearest free tank stood a median 12.9 yd from such a Son, and the receiver's take was mostly `attack` (walking,
+    // the taunt out of reach or on cooldown) while 1-3 other tanks stood free.
+    constexpr float kSeekNearestTakeYd = 8.0f; // Taunt and Growl are melee: within this, Attack closes the last yards
+
+    // Which Son the nearest take may go to: one fighting a non-tank, not the open meet's Son (the meet's own take
+    // handles it), with its victim inside the raid circle plus 2 yd (a victim outside is the edge take's business).
+    inline bool SeekNearestTakeSonOk(bool victimNonTank, bool openMeetSon, bool victimInsideRaidCircle)
+    {
+        return victimNonTank && !openMeetSon && victimInsideRaidCircle;
+    }
+
+    // The nearest take's reach (DungeonRunSeekNearestTakeReach, walk 57 F4): walk 57's identified Son kills were mostly
+    // walked Sons whose meet was peeled (1.02 a fight) or that were met and then sat on a non-tank (0.69), while the
+    // 8 yd nearest take fired 20 times in 58 fights. With the key, tanks[1] also takes a walked Son on a non-tank from
+    // up to kSeekNearestTakeReachYd (Attack closes the gap) when the receiver is more than kSeekNearestTakeReachRecvYd
+    // from it, or that Son's meet closed as `peeled` or `receiver_victim` within kSeekNearestTakeMeetLostMs.
+    constexpr float kSeekNearestTakeReachYd = 20.0f;
+    constexpr float kSeekNearestTakeReachRecvYd = 15.0f;
+    constexpr std::uint32_t kSeekNearestTakeMeetLostMs = 10000;
+
+    // Today's rule (the 8 yd nearest take): see SeekNearestTakerIs.
+    inline bool SeekNearestTakerNear(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
+                                     float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon)
+    {
+        if (selfIdx <= 0)
+            return false;
+        if (selfIdx == receiverIdx)
+            return true;
+        if (selfIdx != 1)
+            return false;
+        const bool receiverCannot = receiverYd > kSeekNearestTakeYd || !receiverTauntReady;
+        const bool selfCan = selfYd <= kSeekNearestTakeYd && selfTauntReady && !selfIsBossVictim && !selfHoldsSon;
+        return receiverCannot && selfCan;
+    }
+
+    // The reach rule alone (DungeonRunSeekNearestTakeReach): `reachKey` is the key on and the Son a walked one (the
+    // caller's read), `meetLost` its meet closed as peeled or receiver_victim in the last 10 s, `selfCollapsesCap`
+    // tanks[1] leaving the boss would collapse the damage dealers' threat-cap reference (ThreatCapLeaveCollapses; the
+    // caller passes false for a Son whose take already started, the take latch). tanks[1] only: within 20 yd, its
+    // taunt ready, not the boss's victim, holding no Son, its leave not collapsing the cap, and the receiver more than
+    // 15 yd from the Son, or the Son's meet lost while the receiver cannot take it itself (within 8 yd with its taunt
+    // ready, it can: two tanks would taunt the one Son).
+    inline bool SeekNearestTakerReach(int selfIdx, float receiverYd, bool receiverTauntReady, float selfYd,
+                                      bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon, bool reachKey,
+                                      bool meetLost, bool selfCollapsesCap)
+    {
+        if (!reachKey || selfIdx != 1)
+            return false;
+        const bool receiverCanTake = receiverYd <= kSeekNearestTakeYd && receiverTauntReady;
+        const bool receiverFar = receiverYd > kSeekNearestTakeReachRecvYd || (meetLost && !receiverCanTake);
+        const bool selfCan = selfYd <= kSeekNearestTakeReachYd && selfTauntReady && !selfIsBossVictim &&
+            !selfHoldsSon && !selfCollapsesCap;
+        return receiverFar && selfCan;
+    }
+
+    // Whether the tank at `selfIdx` (in the raid's tank order) is the nearest take's taker for one such Son. The main
+    // tank (0) never takes. The receiver (`receiverIdx`, the third tank) keeps its own take. tanks[1] takes at once,
+    // without the 3 s clock, only when the receiver cannot (more than 8 yd from the Son, or its taunt on cooldown;
+    // a dead receiver is passed as far and not ready) and tanks[1] itself can: within 8 yd, its taunt ready, not the
+    // boss's victim and holding no Son. With the reach (SeekNearestTakerReach) tanks[1] may also take from 20 yd. Any
+    // other tank index is not a taker here. The last three default off: today's rule.
+    inline bool SeekNearestTakerIs(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
+                                   float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon,
+                                   bool reachKey = false, bool meetLost = false, bool selfCollapsesCap = false)
+    {
+        if (SeekNearestTakerNear(selfIdx, receiverIdx, receiverYd, receiverTauntReady, selfYd, selfTauntReady,
+                                 selfIsBossVictim, selfHoldsSon))
+            return true;
+        return SeekNearestTakerReach(selfIdx, receiverYd, receiverTauntReady, selfYd, selfTauntReady, selfIsBossVictim,
+                                     selfHoldsSon, reachKey, meetLost, selfCollapsesCap);
+    }
+
+    // The stance or form a tank's taunt needs (by class id): a warrior's Taunt needs Defensive Stance, a druid's Growl
+    // Bear Form or Dire Bear Form; a paladin's Hand of Reckoning (Turtle) needs none.
+    inline bool SeekTauntFormOk(std::uint8_t classId, bool defensiveStance, bool bearForm)
+    {
+        switch (classId)
+        {
+            case 1: return defensiveStance;
+            case 11: return bearForm;
+            default: return true;
+        }
+    }
+
+    // Whether a tank's taunt is ready now: the taunt-after pick's own guards (TankTauntGuards: in control, not
+    // silenced or pacified), a taunt known (KnownTaunt), the taunt's own spell cooldown ready, and its stance or form
+    // held (SeekTauntFormOk). Not the full cast check: the global cooldown alone (a warrior's Sunder a moment ago) is
+    // not "not ready", and range is the caller's 8 yd test (the take's Attack closes it).
+    inline bool SeekTankTauntReadyNow(bool inControl, bool silencedOrPacified, bool hasTaunt, bool spellCooldownReady,
+                                      bool formOk)
+    {
+        return inControl && !silencedOrPacified && hasTaunt && spellCooldownReady && formOk;
+    }
+
+    // One Son the nearest take judges: its eligibility (SeekNearestTakeSonOk's inputs), both tanks' distances to it,
+    // and both tanks' taunt readiness for it (SeekTankTauntReadyNow, per Son).
+    struct SeekNearestTakeCand
+    {
+        bool victimNonTank = false;
+        bool openMeetSon = false;
+        bool victimInside = false;
+        float selfYd = 0.0f;
+        float receiverYd = 0.0f;
+        bool receiverTauntReady = false;
+        bool selfTauntReady = false;
+        // The reach's inputs (DungeonRunSeekNearestTakeReach): the key on and the Son a walked one, and its meet lost.
+        bool reachKey = false;
+        bool meetLost = false;
+        // This tank's cap-checked take of this Son already started (the walk-out state's take latch): the collapse is
+        // not re-checked for it (walk 57 F4 review L3).
+        bool capLatched = false;
+    };
+
+    // The cap guard for one Son: the collapse holds the take back, unless that Son's take already started.
+    inline bool SeekCapGuardBlocks(bool selfCollapsesCap, bool capLatched)
+    {
+        return selfCollapsesCap && !capLatched;
+    }
+
+    // The healer clock's override of the cap guard (round 2 NEW-1: a guarded take had no fallback, so a Son on a healer
+    // was never taken while the cap would collapse): the Son has sat on that non-tank for kSeekHealerClockOverrideMs,
+    // or its victim is under kSeekHealerClockOverrideHpPct health. Then the take goes, cap or not.
+    constexpr std::uint32_t kSeekHealerClockOverrideMs = 6000;
+    constexpr float kSeekHealerClockOverrideHpPct = 40.0f;
+
+    inline bool HealerClockOverridesCap(std::uint32_t onNonTankMs, float victimHpPct)
+    {
+        return onNonTankMs >= kSeekHealerClockOverrideMs || victimHpPct < kSeekHealerClockOverrideHpPct;
+    }
+
+    // Whether the healer clock's take goes ahead (walk 57 F4 review H1): key off (DungeonRunSeekNearestTakeReach) always,
+    // as today; key on, when the clock overrides the guard (HealerClockOverridesCap) or the cap guard does not block it
+    // (SeekCapGuardBlocks). A blocked take leaves the branch with no task this tick, until the override comes.
+    inline bool SeekHealerClockTakeAllowed(bool reachKey, bool selfCollapsesCap, bool capLatched,
+                                           bool clockOverrides = false)
+    {
+        return !reachKey || clockOverrides || !SeekCapGuardBlocks(selfCollapsesCap, capLatched);
+    }
+
+    // The nearest take's pick: the index of the nearest eligible Son (SeekNearestTakeSonOk) this tank takes
+    // (SeekNearestTakerIs), or -1. Flag off: always -1, so the 3 s healer clock is the only take. `viaReach` (when
+    // given) says the pick was taken only by the reach (SeekNearestTakerReach), not by the 8 yd rule: its row's
+    // `src=nearest_reach`.
+    inline int PickSeekNearestTake(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
+                                   const std::vector<SeekNearestTakeCand>& sons, bool selfCollapsesCap = false,
+                                   bool* viaReach = nullptr)
+    {
+        if (viaReach)
+            *viaReach = false;
+        if (!flagOn)
+            return -1;
+        int best = -1;
+        bool bestReach = false;
+        for (std::size_t i = 0; i < sons.size(); ++i)
+        {
+            const SeekNearestTakeCand& c = sons[i];
+            if (!SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
+                continue;
+            if (!SeekNearestTakerIs(selfIdx, receiverIdx, c.receiverYd, c.receiverTauntReady, c.selfYd,
+                                    c.selfTauntReady, selfIsBossVictim, selfHoldsSon, c.reachKey, c.meetLost,
+                                    SeekCapGuardBlocks(selfCollapsesCap, c.capLatched)))
+                continue;
+            if (best < 0 || c.selfYd < sons[static_cast<std::size_t>(best)].selfYd)
+            {
+                best = static_cast<int>(i);
+                bestReach = !SeekNearestTakerNear(selfIdx, receiverIdx, c.receiverYd, c.receiverTauntReady, c.selfYd,
+                                                  c.selfTauntReady, selfIsBossVictim, selfHoldsSon);
+            }
+        }
+        if (viaReach)
+            *viaReach = best >= 0 && bestReach;
+        return best;
+    }
+
+    // The Son whose nearest take the cap guard held back this tick (walk 58 F3, the `seek take held ... reason=cap_guard`
+    // row): with the guard, no Son is picked; without it, one would be. -1: the guard held nothing (it did not collapse,
+    // no Son is takeable anyway, or another Son is taken instead).
+    inline int SeekCapGuardHeldPick(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
+                                    const std::vector<SeekNearestTakeCand>& sons, bool selfCollapsesCap)
+    {
+        if (!selfCollapsesCap ||
+            PickSeekNearestTake(flagOn, selfIdx, receiverIdx, selfIsBossVictim, selfHoldsSon, sons, true) >= 0)
+            return -1;
+        return PickSeekNearestTake(flagOn, selfIdx, receiverIdx, selfIsBossVictim, selfHoldsSon, sons, false);
+    }
+
+    // The receiver's own pick of a fighting Son near the spot (the third tank's `fighting`): with the nearest take on it
+    // skips only a Son whose victim is the first off-tank (`victimTankIdx` 1, the nearest taker that just took it), so
+    // it does not walk over and taunt it back. A Son on the main tank (0), on any other tank or on a non-tank (-1) is
+    // still the receiver's. Flag off: today's pick (any fighting Son not on itself).
+    inline bool SeekReceiverSkipsFighting(bool flagOn, bool isReceiver, int victimTankIdx)
+    {
+        return flagOn && isReceiver && victimTankIdx == 1;
+    }
+
     // Whether an off-tank may take a Son, drag one or walk a pull at all: never while it is the boss's victim (after
     // Cause Insanity the threat successor can hand Hakkar to it, and its walk would bring him onto the gather).
     inline bool SeekTankTakeAllowed(bool isBossVictim)
     {
         return !isBossVictim;
+    }
+
+    // A Son whose victim is the boss's own victim tank is taken off it by another living tank of the raid
+    // (DungeonRunSeekVictimRelief, walks 66 and 71): a Son that sits on the boss's victim tank (Hakkar with a Son,
+    // after Cause Insanity hands him to a tank already holding one) kills it in a median 3 s. The dwell keeps a
+    // passing frame from starting a take. Pure so the sweep's latch map stays a caller detail.
+    constexpr std::uint32_t kSeekVictimReliefDwellMs = 1000;
+    constexpr std::uint32_t kSeekVictimReliefKeepMs = 6000;
+    constexpr std::uint32_t kSeekVictimReliefRetakeMs = 8000;
+    constexpr std::uint8_t kSeekVictimReliefMaxPerSon = 2;
+    constexpr float kSeekVictimReliefReachYd = 20.0f;
+    constexpr std::uint32_t kSeekVictimReliefClaimMs = 1000;
+    // A read gap this long breaks the run: the dwell is measured from a read, and a Son seen on the boss's tank again
+    // after the fight was not read for a while starts over instead of counting the gap.
+    constexpr std::uint32_t kSeekVictimReliefGapMs = 2000;
+    // A latch nobody touched for this long belongs to an ended fight and drops with the sweep.
+    constexpr std::uint32_t kSeekVictimReliefStaleMs = 120000;
+
+    struct SeekReliefLatch
+    {
+        std::uint32_t sinceMs = 0;     // first read of the unbroken "on the boss's tank" run; 0: not running
+        std::uint32_t lastStartMs = 0;  // the last confirmed relief start; 0: none
+        std::uint64_t lastTaker = 0;
+        std::uint64_t activeTaker = 0;    // the reliever whose attempt the keep window still covers; 0: none
+        std::uint32_t activeSinceMs = 0;  // that attempt's first stamp; later ticks never move it
+        std::uint64_t claimTaker = 0;     // the pending selection claim; 0: none
+        std::uint32_t claimMs = 0;        // the claim's tick; it expires 1000 ms later
+        int claimIdx = -1;                // the claimant's tank position (roles.tanks); -1: unranked
+        float claimYd = 0.0f;             // the claimant's distance to the Son at the pick
+        std::uint32_t rollbackStartMs = 0; // lastStartMs before this take's confirm; a rolled-back take restores it
+        std::uint64_t rollbackTaker = 0;   // lastTaker before this take's confirm
+        std::uint8_t takes = 0;
+        std::uint32_t seenMs = 0;      // the last read that touched the latch (the sweep's clock)
+    };
+
+    // The per-Son clock: starts on the first read that sees the Son on the boss's tank, clears on the first that does
+    // not, and starts over when the gap since the last read is longer than kSeekVictimReliefGapMs: the Son may have
+    // left the tank and come back unseen inside the gap.
+    inline void SeekReliefClockTick(SeekReliefLatch& latch, bool sonOnBossTank, std::uint32_t nowMs)
+    {
+        const bool gap = latch.seenMs != 0 && nowMs - latch.seenMs > kSeekVictimReliefGapMs;
+        if (!sonOnBossTank)
+            latch.sinceMs = 0;
+        else if (latch.sinceMs == 0 || gap)
+            latch.sinceMs = nowMs != 0 ? nowMs : 1;
+        latch.seenMs = nowMs;
+    }
+
+    // A live selection claim, whatever taker holds it: pending for 1000 ms after its tick. Unsigned subtraction
+    // throughout, so the 32-bit clock may wrap.
+    inline bool SeekVictimReliefClaimLive(const SeekReliefLatch& latch, std::uint32_t nowMs)
+    {
+        return latch.claimTaker != 0 && nowMs - latch.claimMs < kSeekVictimReliefClaimMs;
+    }
+
+    // A live relief attempt: a confirmed start whose 6 s keep window still runs.
+    inline bool SeekVictimReliefAttemptLive(const SeekReliefLatch& latch, std::uint32_t nowMs)
+    {
+        return latch.activeTaker != 0 && nowMs - latch.activeSinceMs < kSeekVictimReliefKeepMs;
+    }
+
+    // A new start is due: the flag on, the Son on the boss's tank for the dwell, under two starts, and 8 s or more
+    // since the last confirmed one. Unsigned subtraction throughout, so the 32-bit clock may wrap. This gates the
+    // selection claim; the execution confirm re-checks the cap and the spacing under the same lock.
+    inline bool SeekVictimReliefDue(bool flagOn, const SeekReliefLatch& latch, std::uint32_t nowMs)
+    {
+        if (!flagOn || latch.sinceMs == 0)
+            return false;
+        if (nowMs - latch.sinceMs < kSeekVictimReliefDwellMs)
+            return false;
+        if (latch.takes >= kSeekVictimReliefMaxPerSon)
+            return false;
+        return latch.lastStartMs == 0 || nowMs - latch.lastStartMs >= kSeekVictimReliefRetakeMs;
+    }
+
+    // Relief runs while two or more tanks of the raid are alive (roles.tanks holds live members only): with two
+    // tanks the survivor is the only reliever, so the old three-tank rule left it nothing to take with.
+    inline bool SeekVictimReliefAllowed(std::size_t livingTanks)
+    {
+        return livingTanks >= 2;
+    }
+
+    // This tank may start it: any living tank of the raid's order, not the boss's victim, not charmed, holding no Son
+    // of the fight, its taunt ready, within 20 yd of the Son. The main tank qualifies last (SeekReliefClaimBeats).
+    inline bool SeekVictimRelieverOk(bool tankRole, bool selfIsBossVictim, bool selfCharmed, bool selfHoldsSon,
+                                     bool tauntReady, float sonYd)
+    {
+        return tankRole && !selfIsBossVictim && !selfCharmed && !selfHoldsSon && tauntReady &&
+            sonYd <= kSeekVictimReliefReachYd;
+    }
+
+    // Of two qualifying relievers an off-tank beats the main tank (tanks[0]), and among off-tanks the nearer one wins
+    // the claim; a tie goes to the lower tank index. The main tank is the raid's Hakkar tank, so its taunt stays for
+    // Hakkar: it is the last reliever, and an off-tank may take a claim over from it, never the reverse.
+    inline bool SeekReliefClaimBeats(float selfYd, int selfIdx, float claimYd, int claimIdx)
+    {
+        if ((selfIdx == 0) != (claimIdx == 0))
+            return claimIdx == 0;
+        return selfYd < claimYd || (selfYd == claimYd && selfIdx < claimIdx);
+    }
+
+    // Selection's claim: the pick and the attack or taunt run with the lock released between them, so two tanks
+    // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms; a read by
+    // the same taker is answered from its own live claim, so a tank whose ticks keep going to a higher action still
+    // executes the pick it made. The claim is never refreshed: it expires 1000 ms after the first pick, and then
+    // the same tank may claim again. Another tank is refused while the claim lives unless it outranks the holder
+    // (SeekReliefClaimBeats: off-tanks before the main tank, the nearer off-tank first), which takes the claim over
+    // on its first stamp. The caller checks the tank's eligibility first, so a bot that cannot take never holds the
+    // claim.
+    inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch, std::uint64_t self,
+                                         std::uint32_t nowMs, int selfIdx = -1, float selfYd = 0.0f)
+    {
+        if (!SeekVictimReliefDue(flagOn, latch, nowMs))
+            return false;
+        if (SeekVictimReliefAttemptLive(latch, nowMs))
+            return false;
+        if (SeekVictimReliefClaimLive(latch, nowMs))
+        {
+            if (latch.claimTaker == self)
+                return true;
+            if (selfIdx < 0 || latch.claimIdx < 0 ||
+                !SeekReliefClaimBeats(selfYd, selfIdx, latch.claimYd, latch.claimIdx))
+                return false;
+        }
+        else
+            latch.claimMs = nowMs;
+        latch.claimTaker = self;
+        latch.claimIdx = selfIdx;
+        latch.claimYd = selfYd;
+        return true;
+    }
+
+    // A started relief of this tank is kept: the taunt's own cooldown would otherwise drop the task the tick after the
+    // cast, so the dwell and the taunt check are skipped for 6 s from the attempt's first stamp while the Son lives
+    // and is not on this tank yet. Later execution ticks neither recount nor extend the window.
+    inline bool SeekVictimReliefKept(bool flagOn, const SeekReliefLatch& latch, std::uint64_t self, bool sonOnSelf,
+                                     std::uint32_t nowMs)
+    {
+        return flagOn && latch.activeTaker == self && !sonOnSelf &&
+            SeekVictimReliefAttemptLive(latch, nowMs);
+    }
+
+    // The start itself: names this tank as the taker, stamps the take, counts it, and opens the keep window. Only
+    // the execution gate calls it, once this tank's live claim is confirmed on the pick's clock.
+    inline void SeekVictimReliefStart(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
+    {
+        latch.lastStartMs = nowMs;
+        latch.lastTaker = self;
+        latch.activeTaker = self;
+        latch.activeSinceMs = nowMs;
+        ++latch.takes;
+    }
+
+    // The take's execution gate. The pick and the attack or taunt run with the lock released between them, so the
+    // claim is re-read under the lock immediately before either side effect, and measured on the pick's own clock
+    // (the task carries the tick's `nowMs`): the tick can be a while after the read, and a probe of the live clock
+    // would find the claim expired and refuse a take that was picked in time. Refuse: the claim is gone or another
+    // tank took it over, and the task must issue no attack and no taunt. Confirm: this tank's live claim is stamped,
+    // counted and opens the keep window before the action, and a failed action rolls it back. Keep: this tank's
+    // attempt is already live (the kept task, a later tick of the same take), so it acts without another stamp.
+    enum class SeekReliefGate
+    {
+        Refuse = 0,
+        Confirm,
+        Keep
+    };
+
+    inline SeekReliefGate SeekVictimReliefPreExec(SeekReliefLatch& latch, std::uint64_t self,
+                                                  std::uint32_t pickMs)
+    {
+        if (latch.activeTaker == self && SeekVictimReliefAttemptLive(latch, pickMs))
+            return SeekReliefGate::Keep;
+        if (latch.claimTaker != self || !SeekVictimReliefClaimLive(latch, pickMs))
+            return SeekReliefGate::Refuse;
+        if (latch.takes >= kSeekVictimReliefMaxPerSon)
+            return SeekReliefGate::Refuse;
+        if (latch.lastStartMs != 0 && pickMs - latch.lastStartMs < kSeekVictimReliefRetakeMs)
+            return SeekReliefGate::Refuse;
+        latch.rollbackStartMs = latch.lastStartMs;
+        latch.rollbackTaker = latch.lastTaker;
+        SeekVictimReliefStart(latch, self, pickMs);
+        latch.claimTaker = 0;
+        latch.claimMs = 0;
+        return SeekReliefGate::Confirm;
+    }
+
+    // A confirmed take issued neither an attack order nor a taunt after all: the confirmation is undone (the count,
+    // the start stamps and the keep window go back to the ones before it), so the take counts nothing and the Son is
+    // claimable again. The attempt this take opened is the one whose first stamp is the pick's clock.
+    inline void SeekVictimReliefRollback(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t pickMs)
+    {
+        if (latch.activeTaker != self || latch.activeSinceMs != pickMs)
+            return;
+        latch.activeTaker = 0;
+        latch.activeSinceMs = 0;
+        if (latch.takes != 0)
+            --latch.takes;
+        latch.lastStartMs = latch.rollbackStartMs;
+        latch.lastTaker = latch.rollbackTaker;
+    }
+    // The active attempt's end: the Son reached its reliever, or the 6 s from the first stamp ran out. The sweep
+    // calls it per Son; afterwards a new start counts again.
+    inline void SeekVictimReliefKeepTick(SeekReliefLatch& latch, std::uint64_t self, bool sonOnSelf,
+                                         std::uint32_t nowMs)
+    {
+        if (latch.activeTaker == 0)
+            return;
+        if ((sonOnSelf && latch.activeTaker == self) ||
+            nowMs - latch.activeSinceMs >= kSeekVictimReliefKeepMs)
+        {
+            latch.activeTaker = 0;
+            latch.activeSinceMs = 0;
+        }
+    }
+
+    // The relief latch's key: the map instance and the Son's raw guid. Instance copies of one DB spawn can share the
+    // guid, so a guid alone would let one raid's claim, cap or spacing block another raid's relief.
+    inline std::pair<std::uint32_t, std::uint64_t> SeekReliefKey(std::uint32_t instanceId, std::uint64_t sonGuid)
+    {
+        return std::make_pair(instanceId, sonGuid);
+    }
+
+    using SeekReliefLatches = std::map<std::pair<std::uint32_t, std::uint64_t>, SeekReliefLatch>;
+
+    // Drops the caller's own instance's latches that no read touched for kSeekVictimReliefStaleMs (a dead Son, a wiped
+    // fight). Another instance's latches are left alone: their reader sweeps them, and this call's clock may be older
+    // than a stamp another thread has just taken there. The age is a signed difference, so a stamp the caller has not
+    // seen yet (a clock read before the lock) is never mistaken for a very old one by the unsigned wrap.
+    inline void SweepSeekReliefLatches(SeekReliefLatches& latches, std::uint32_t instanceId, std::uint32_t nowMs)
+    {
+        for (SeekReliefLatches::iterator it = latches.begin(); it != latches.end();)
+        {
+            if (it->first.first != instanceId)
+            {
+                ++it;
+                continue;
+            }
+            const std::int32_t ageMs = static_cast<std::int32_t>(nowMs - it->second.seenMs);
+            it = ageMs > static_cast<std::int32_t>(kSeekVictimReliefStaleMs) ? latches.erase(it) : std::next(it);
+        }
+    }
+
+    // Whether the relief take casts its tank's known taunt: any take from the relief path does, whatever the nearest
+    // flag says. The taunt that qualified the tank is the taunt it casts.
+    inline bool SeekTakeUsesKnownTaunt(bool nearestTakeOn, const char* takeSrc)
+    {
+        if (takeSrc && std::strcmp(takeSrc, "victim_relief") == 0)
+            return true;
+        return nearestTakeOn;
+    }
+
+
+    // Why a take this tick did or did not taunt: `chase_refused` (the Son stands outside the anchor and this class
+    // cannot taunt it from here), `no_taunt` (the class has no taunt), `attack` (the taunt is on cooldown or out of
+    // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes. `edge_far` replaces
+    // `chase_refused` when DungeonRunSeekTakeEdge refused a Son whose victim is inside but that stands too far out.
+    // The take's source word (walk 56 F4, the `src=` field of the `seek take` row): which take path produced the task.
+    // FindBossSeekTank names the path (`meet`, `nearest`, `nearest_reach`, `healer_clock`, `receiver`, `pickup`,
+    // `pull_join`, `victim_relief`, else `other`); a take the take edge let through (DungeonRunSeekTakeEdge: the Son stood outside the
+    // circle, and only the edge rule allowed the chase) gets `+edge` after it, e.g. `nearest+edge`, so the path stays
+    // countable by prefix.
+    inline std::string SeekTakeSrcWord(const char* path, bool edgeTake)
+    {
+        std::string out = path && *path ? path : "other";
+        if (edgeTake)
+            out += "+edge";
+        return out;
+    }
+
+    inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt, bool edgeFar = false)
+    {
+        if (chaseRefused && !canTaunt)
+            return edgeFar ? "edge_far" : "chase_refused";
+        if (!hasTaunt)
+            return "no_taunt";
+        if (canTaunt)
+            return "taunt";
+        return "attack";
     }
 
     // Who pulls an unengaged Son this read: exactly one actor. The third off-tank while three tanks live and it is not

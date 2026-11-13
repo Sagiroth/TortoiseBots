@@ -3,6 +3,7 @@
 #include "UseMeetingStoneAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/SummonPetFollowPolicy.h"
 
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -177,40 +178,60 @@ bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *
     return false;
 }
 
+// A spot beside the summoner for player: tried at the follow range around the
+// follow angle, every 45 degrees; a spot on the wrong floor or out of the
+// summoner's sight falls back to the summoner's own spot. False when no tried
+// spot is in the summoner's sight. No side effects: the summon below and the
+// navmesh-island unstick (MovementAction::TryPlaceUnstick) both use it.
+bool SummonAction::FindSpotBeside(Player* summoner, Player* player, float followRange, float followAngle,
+    float& outX, float& outY, float& outZ)
+{
+    for (double angle = followAngle - M_PI; angle <= followAngle + M_PI; angle += M_PI / 4)
+    {
+        // How far the ground beside the summoner may sit from the ground
+        // under the summoner before the spot is rejected. A slope gives a
+        // metre or two over the follow distance; a floor that was missed
+        // gives a lot more.
+        static float const MAX_GROUND_DROP = 5.0f;
+
+        float x = summoner->getPositionX() + cos(angle) * followRange;
+        float y = summoner->getPositionY() + sin(angle) * followRange;
+        float z = summoner->getPositionZ();
+        summoner->UpdateGroundPositionZ(x, y, z);
+
+        // UpdateGroundPositionZ asks Map::GetHeight for the ground under
+        // that spot, which is not always the floor the summoner is standing
+        // on: in front of an instance portal, on a platform or a bridge it
+        // returns the terrain below. The bot then arrives underneath the
+        // world, cannot path anywhere and just stands there.
+        bool const badGround = std::fabs(z - summoner->getPositionZ()) > MAX_GROUND_DROP;
+
+        if (badGround || !summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
+        {
+            x = summoner->getPositionX();
+            y = summoner->getPositionY();
+            z = summoner->getPositionZ();
+        }
+
+        if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
+        {
+            outX = x;
+            outY = y;
+            outZ = z;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 {
     if (!summoner->IsBeingTeleported() && !player->IsBeingTeleported() && summoner != player)
     {
-        float followAngle = GetFollowAngle();
-        for (double angle = followAngle - M_PI; angle <= followAngle + M_PI; angle += M_PI / 4)
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        if (FindSpotBeside(summoner, player, ai->GetRange("follow"), GetFollowAngle(), x, y, z))
         {
-            // How far the ground beside the summoner may sit from the ground
-            // under the summoner before the spot is rejected. A slope gives a
-            // metre or two over the follow distance; a floor that was missed
-            // gives a lot more.
-            static float const MAX_GROUND_DROP = 5.0f;
-
             uint32 mapId = summoner->GetMapId();
-            float x = summoner->getPositionX() + cos(angle) * ai->GetRange("follow");
-            float y = summoner->getPositionY() + sin(angle) * ai->GetRange("follow");
-            float z = summoner->getPositionZ();
-            summoner->UpdateGroundPositionZ(x, y, z);
-
-            // UpdateGroundPositionZ asks Map::GetHeight for the ground under
-            // that spot, which is not always the floor the summoner is standing
-            // on: in front of an instance portal, on a platform or a bridge it
-            // returns the terrain below. The bot then arrives underneath the
-            // world, cannot path anywhere and just stands there.
-            bool const badGround = std::fabs(z - summoner->getPositionZ()) > MAX_GROUND_DROP;
-
-            if (badGround || !summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
-            {
-                x = summoner->getPositionX();
-                y = summoner->getPositionY();
-                z = summoner->getPositionZ();
-            }
-
-            if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
                 if (sServerFacade.UnitIsDead(player) && sServerFacade.IsAlive(summoner))
                 {
@@ -230,12 +251,31 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
                 player->GetMotionMaster()->Clear();
 
+                // Issue #1606: a summoned bot used to leave its pet behind, and
+                // the pet walked the direct route to its owner through the
+                // instance, pulling whatever it passed. Hand a live bot pet to
+                // the core's temporary unsummon cache: it resummons the pet
+                // beside its owner when the teleport lands, as it already does
+                // for players. A real player keeps the core's own rule (the pet
+                // is only dropped beyond the grid activation distance).
+                Pet* const pet = player->GetPet();
+                bool const petFollows = !isRealPlayer_Helper(player) &&
+                    ai::SummonTeleportMovesPet(pet != nullptr, pet && sServerFacade.IsAlive(pet),
+                        player->GetTemporaryUnsummonedPetNumber() == 0,
+                        !player->IsPetNeedBeTemporaryUnsummoned());
+                if (petFollows)
+                    player->UnsummonPetTemporaryIfAny();
+
                 // TeleportTo can refuse - in combat, mid flight, or when the
                 // destination map is not open to this player. Reporting success
                 // regardless left the bot standing where it was with nobody any
                 // the wiser.
                 if (!player->TeleportTo(mapId, x, y, z, 0))
                 {
+                    // Give the pet back: the bot stays where it was.
+                    if (petFollows)
+                        player->ResummonPetTemporaryUnSummonedIfAny();
+
                     sLog.outError("SummonAction: %s could not be teleported to map %u at %.2f %.2f %.2f.",
                         player->GetGuidStr().c_str(), mapId, x, y, z);
 

@@ -298,6 +298,18 @@ public:
     // (any race can use them, except the Swift Riding Turtle) are granted and
     // chosen only when this is on. Player-owned alts are never gated. Default false.
     bool randomBotShopMounts = false;
+    // Level-up gear top-up: a masterless pool bot that dings (5+) gets its
+    // empty slots and clearly outdated grey/white items (6+ item levels below
+    // it) filled by the fresh-seed item selection, once per level. Never
+    // replaces green or better; never hired, claimed or player-led bots.
+    // Default false (opt-in).
+    bool poolGearTopUpOnLevel = false;
+    // Level-up money top-up: a masterless pool bot that dings holding less
+    // than its next class-trainer visit costs (with the reserves the trip
+    // gate keeps aside, capped at 1 g per level) is topped up to that floor,
+    // once per level. Never hired, claimed or player-led bots. Default false
+    // (opt-in).
+    bool poolMoneyTopUp = false;
     // Safety factor on the mount break-even distance: bots mount for travel
     // only when the remaining trip exceeds
     // 7 y/s * castTime / (mountSpeed/100) * this. 0 disables the threshold
@@ -399,6 +411,7 @@ public:
     // entry dismisses them, and hiring is refused while queued or inside.
     // Set for today's behaviour (hires may go to battlegrounds).
     bool hireAllowPvP = false;
+    bool hireCrossFactionNeutralInns = false;
     // Hired companions loot and roll by default. Unset: a hire never opens a
     // corpse and passes on every roll (pool bots and alts are unaffected).
     bool hireLoot = true;
@@ -594,8 +607,11 @@ public:
     bool rogueDungeonThreatDrops;
     bool sapApproachAvoidPack;
     bool warriorGapCloser;
+    bool announceSunderStacks;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
     bool hunterViperOnLowMana;
+    // Hunters cast Carve only on a target already in melee reach, never walking in for it.
+    bool hunterCarveInReachOnly;
     // Paladin bots keep Judgement of Wisdom / Light up on the boss in groups (opt-in).
     bool paladinJudgementUpkeep;
     // Onyxia phase 2 whelp duty for AoE ranged DPS and egg-cave avoidance (opt-in).
@@ -612,6 +628,12 @@ public:
     bool raidHealerSeatsByClass = false;
     // A layout tank healer's second seat on its tank helps the raid while the tank is quiet (default off).
     bool raidTankHealerAssist = false;
+    // The reaction engine's universal raid rows (environmental hazard step-away, raid bomb runout, Four Horsemen
+    // mark rotation, dragon flank, ranged raid spread): on, the `react` strategy carries them (ReactionRowsPolicy.h)
+    // and a live spread row outranks a stay in the spread action's own gate. Off, the rows are not built at all, so
+    // every engine's trigger list and every spread verdict is what it was while the strategy had no creator
+    // (default off; the lists are built when an engine inits, so it needs a restart).
+    bool raidReactions = false;
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
@@ -659,15 +681,177 @@ public:
     // swapped-off tank holds its threat): on, the rows are read (its own key on top of the aura-tactics and tactics
     // gates). Off, the rows are ignored, so the table behaves exactly as before the kind (default off).
     bool dungeonRunTankSwap = false;
+    // The tank_post boss-tactic kind (a named tank waits at the row's spot for a unit that is not in the fight yet and
+    // attacks it on arrival): on, the rows are read (its own key on top of the tactics gate). Off, the rows are ignored,
+    // so the table behaves exactly as before the kind (default off).
+    bool dungeonRunTankPost = false;
+    // The add_crew boss-tactic kind (once the row's switch unit `target_entry` is dead, the boss's add duty goes to the
+    // melee, the tanks and the first `priority` AoE ranged bots of the raid, the other ranged staying on the boss): on,
+    // the rows are read (its own key on top of the tactics gate). Off, the rows are ignored, so the table behaves
+    // exactly as before the kind (default off).
+    bool dungeonRunAddCrew = false;
+    // The raid guard leaves a unit to the tank a boss-tactic row assigns it to (an until_tank row with a tank slot, or
+    // a tank_post row): on, the off-tank pick-ups never send another tank at it; off, the raid's off-tanks take it as
+    // before (its own key on top of the raid and boss rules; default off).
+    bool dungeonRunGuardLeavesAssignedTank = false;
+    // The raid guard's assignment clock starts on the first hittable tick (the unit attackable and selectable: a boss
+    // still in the air does not spend the grace), and a tank_post unit gets the post's 15 s grace instead of 8 s: on,
+    // those rules; off, the clock starts on the first loose tick and every unit gets 8 s, as before (its own key on top
+    // of the raid and boss rules; default off).
+    bool dungeonRunGuardClockHittable = false;
+    // The tank_post `hold_spot` mode (the post starts while the tank holds another hostile, its arrival latches and
+    // outlives the window, it drags the subject back to the spot, and it yields to a boss stand seat): on, the rows'
+    // mode runs; off, every tank_post row is a plain post as before the mode (default off).
+    bool dungeonRunTankPostHoldSpot = false;
+    // The tank_post `hold_spot` leash (before the arrival, a tank more than 8 yd from the spot walks back keeping its
+    // current target, so it fights what comes to the spot instead of following a whelp): on, it runs with the mode;
+    // off, the tank keeps the other hostile and the post waits as before (default off).
+    bool dungeonRunTankPostLeash = false;
+    // A live tank_post owns its subject (no other tank taunts the subject the post is waiting for, the post's own slot
+    // takes it; Challenging Shout and Challenging Roar included): on, the taunt gate and the two area taunts refuse a
+    // post tank's subject while that tank is alive, stands within 60 yd of the unit, and the unit is on it or loose off
+    // it for less than 15 s; off, every tank may taunt the subject as before (default off).
+    bool dungeonRunTankPostOwnsSubject = false;
+    // The post's Engage step takes the subject back (AiPlayerbot.DungeonRunTankPostTaunts): on, a post tank taunts the
+    // awaited unit off a healer, a damage dealer or another tank whenever it is not on it, through the taunt gate, in
+    // Defensive Stance first for a warrior, and by area taunt only when the single taunt cannot go out, the unit is
+    // within 10 yd and on a non-tank; off, the step only attacks the unit as before (default off).
+    bool dungeonRunTankPostTaunts = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;
+    // The seek_pull boss-tactic kind (a seek_aura source is walked out and killed every cycle, up to the row's
+    // walk-outs a cycle): on, the rows load and run; off, the old one-walk-out-per-cycle rules hold (default off).
+    bool dungeonRunSeekPullCycle = false;
+    // The pulled Son's meet (a seek_pull row's walk-out, Hakkar): on, the walk back ends where a waiting off-tank
+    // stands, instead of at the tanks' circle edge, so the Son lands on that tank and is taunted on arrival; off, the
+    // walk back is the circle edge as before (default off).
+    bool dungeonRunSeekSonMeet = false;
+    // The take's chase refusal for a Son at the raid's edge (Hakkar): on, a tank takes a Son standing outside the raid
+    // circle when its victim stands inside the circle (plus 2 yd), the Son is on the platform (z >= 46.5), within 8 yd of the
+    // circle and within 10 yd of that victim; off, the take refuses every Son outside the circle as before (default off).
+    bool dungeonRunSeekTakeEdge = false;
+    // Healers skip the open pulled-Son meet's puller and returner as heal targets unless they are under 40 % hp (a heal on
+    // the puller adds threat on the Son and peels it onto the healer); off, they heal them as before (default off).
+    bool dungeonRunSeekMeetNoHeal = false;
+    // The walk-out focus (Hakkar's seek pull): on, the live walk-out puller's combat actions are held until its shot
+    // lands (reaction actions still run; nothing below 40 % health), it turns to the Son one tick before it casts, and
+    // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks
+    // and it turns and casts in one tick as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutFocus = false;
+    // The walk-out keeps its puller in combat (Hakkar's seek pull): on, `combat end` does not fire for the live,
+    // unshot walk-out puller while Hakkar fights, and the pick skips a bot whose AI is off the combat engine or that eats
+    // or drinks; it needs dungeonRunSeekWalkoutFocus (without it nothing is held); off,
+    // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutHoldCombat = false;
+    // The victim relief (Hakkar's Sons): on, a seek source whose victim is the boss's own victim tank for 1 s is taken
+    // off it by the other off-tank (within 20 yd, its taunt ready, holding no source, not the boss's victim), at most
+    // twice per source and 8 s apart; off, today's takes hold (default off, recommended on).
+    bool dungeonRunSeekVictimRelief = false;
+    // The walk-out's face-and-cast (Hakkar's seek pull): on, the puller at its stand stops, turns to the Son with the
+    // instant forced turn and casts in the same tick, UpdateFaceTarget leaves the live unshot puller's facing alone, and
+    // the 6 s no-shot clock counts only the time spent in shot position; off, the turn-then-cast-next-tick of the walk-out
+    // focus and the wall-time clock stay as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutFaceCast = false;
+    // The walk-out stand rows (Hakkar's seek pull, diagnostic, safe on for test walks): on, while the puller walks out
+    // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
+    // logs `seek pull: walk-out castrefused` (at most 10 a walk-out); no behaviour changes (default off).
+    bool dungeonRunSeekWalkoutStandLog = false;
+    // The walk-out stand's sight (Hakkar's seek pull): on, the stand search aims the way the bot's own sight test does
+    // (its collision height to the Son's z + the Son's collision height), and a refused move within 3 yd of the stand
+    // re-plans the stand (up to 3 times a walk-out) instead of counting toward the three-refusal abort; off, floor + 2
+    // to z + 2 and every refusal counts (default off, recommended on).
+    bool dungeonRunSeekWalkoutStandSight = false;
+    // The navmesh-island unstick (PlaceUnstickPolicy.h): on, a bot in a dungeon or raid whose moves have failed with
+    // dispatch-short / NOPATH for 10 s, and whose own spot one navmesh query proves cut off from its master, is
+    // teleported beside the master (combat kept, a pet stuck with it taken along, no whisper), at most once per 30 s; only
+    // while the master is alive, off any transport, more than 20 yd away and within sight distance (or the group is
+    // commander-bound), never on a battleground, never while the bot is dead, charmed, possessing another unit or casting, and never while the master fights the bot's own target
+    // within 5 yd of it; off, such a bot stays where it is (default off, recommended on).
+    bool dungeonRunPlaceUnstick = false;
+    // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
+    // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
+    // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
+    // takes. Off, the 3 s rule stands as before (default off, recommended on).
+    bool dungeonRunSeekNearestTake = false;
+    // The nearest take's reach (Hakkar's Sons, walk 57 F4; needs dungeonRunSeekNearestTake): on, the first off-tank
+    // also takes a walked Son on a non-tank from up to 20 yd when the receiver is more than 15 yd from it, or that Son's
+    // meet closed as peeled or receiver_victim in the last 10 s and the receiver cannot take it itself (within 8 yd,
+    // its taunt ready); never while it is Hakkar's victim or holds a Son, or when its leaving Hakkar would collapse the
+    // damage dealers' threat-cap reference (no off-tank reference left, or one under half of today's). The same cap
+    // guard then holds back its 3 s healer-clock take too, until the Son has sat 6 s on that non-tank or its victim is
+    // under 40 % health. A take that passed the guard and started is kept for its Son for 10 s. The take
+    // row says src=nearest_reach. Off, the 8 yd nearest take and the healer clock stand as before (default off,
+    // recommended on).
+    bool dungeonRunSeekNearestTakeReach = false;
+    // The meet's pre-place (Hakkar's Sons): on, when a walk-out starts the third tank (alive, not charmed, not Hakkar's
+    // victim, holding no Son, inside the tanks' circle) walks to a point 2 yd inside the tanks' circle edge on the line
+    // from the anchor's centre toward the puller's stand and holds there for the meet. It ends when that meet closes,
+    // the task ends without one, another tank is picked at the shot, or the tank dies, is charmed or becomes Hakkar's
+    // victim. Off, the receiver stands wherever its tank AI left it, as before (default off, recommended on).
+    bool dungeonRunSeekMeetPrePlace = false;
+    // The pre-place's late walk (Hakkar's Sons, walk 57 F3; needs dungeonRunSeekMeetPrePlace): on, the pre-placed third
+    // tank stays on Hakkar until the walk-out puller's walk left to its stand is no longer than the tank's own walk to
+    // its point plus 4 yd (never later than 10 yd from the stand), or the puller is in position (at its stand, in shot
+    // position or shot), then walks to its point. Off, it walks when the walk-out starts, as before (default off,
+    // recommended on; its value is still being tested).
+    bool dungeonRunSeekMeetPrePlaceLate = false;
+    // The walk-out shot waits for the pre-placed receiver (walk 58 F2; runs with DungeonRunSeekMeetPrePlace): in shot
+    // position the puller holds its shot until the pre-placed third tank is within 5 yd of its point, at most 6 s, and
+    // never once the next Blood Siphon is 15 s or less away. No pre-place this cycle: no wait. Off, the shot goes at
+    // once, as before (default off, recommended on).
+    bool dungeonRunSeekShotWaitsReceiver = false;
+    bool dungeonRunSeekMeetPrePlaceHold = false;
+    bool dungeonRunSeekMeetTakeReach = false;
+    bool dungeonRunSeekTakenSonThreatCap = false;
+    // The siphon clock (Hakkar's seek pull; needs dungeonRunSeekPullCycle and dungeonRunSeekWalkoutFaceCast): a walk-out
+    // that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s rather than timing out at
+    // 25 s, and a seek_pull row's start and retry floors are lowered to 50 s (never raised; defaults off, recommended
+    // on). Off keeps today's clock: the 25 s timeout and the row's own 60 s floors.
+    bool dungeonRunSeekSiphonClock = false;
+    // The rolled cycle number (Hakkar's seek pull; needs DungeonRunSeekPullCycle): when a due time rolls past a
+    // missed sighting, the record's cycle number advances by the rolls too, so the walk-out's spent cycle reopens and a
+    // later Son can still be pulled; the estimated sighting time moves with it (default off, recommended on).
+    bool dungeonRunSeekCycleRoll = false;
+    // The Cause Insanity threat window (Hakkar; needs a threat_successor row carrying the reset spell, cycle_spell):
+    // around each expected reset, a damage dealer at or above the row's priority % of the best tank that does not hold
+    // him stops its damage on him (specials and white damage), resuming 5 points under, so the threat wipe hands him to
+    // a tank. Off by default: the walk shows an uncertain net (DPS cost against fewer non-tank deaths), so it ships as
+    // an A/B and turns on only after the siphon clock has a walk.
+    bool dungeonRunThreatResetWindow = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;
     // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
     // ignored (default off).
     bool dungeonRunBossSpread = false;
+    // A seated bot keeps its boss stand seat through Onyxia's Deep Breath instead of walking to the generic safe
+    // spots: off, the breath dodge runs as before even for a seated bot (default off).
+    bool bossStandOutranksBreathDodge = false;
+    // The fixed ranged slots of a live spread row (each ranged bot and healer owns a ring point and stands on it
+    // whenever the seek does not need it): off, today's step-away (default off, recommended on).
+    bool dungeonRunBossSpreadSlots = false;
+    // One BossStand row per bot's stand episode (assigned, arrived, unseated, released) into bot_events.csv: off, the
+    // stand code writes nothing and reads no episode state (needs the boss stand rows and the bot_events.csv log;
+    // default off).
+    bool bossStandEvents = false;
+    // The boss stand seats of the whole raid: a bot in combat with the boss counts even after a threat wipe (threat
+    // 0, not the victim), a bot already clear of its lane stays where it stands instead of walking to its seat, and a
+    // seated bot does not flee (default off).
+    bool bossStandWholeRaid = false;
+    // A boss the raid is fighting stays in every raid bot's fight for 10 s after the last bot saw it in its attacker
+    // list (a melee bot that cannot reach an airborne boss gives up on it): within 150 yd and while the bot itself is
+    // in combat, so its boss-tactic rows and stand seats stay active (default off).
+    bool bossTacticsKeepsEngagedBoss = false;
+    // Protection potions from a boss's spread row: the row's spell names the school (fire, nature or shadow) and its
+    // priority the roles that drink (1 tanks, 2 melee damage, 4 ranged damage, 8 healers). Off, only the bosses of the
+    // built-in entry table use one (default off).
+    bool dungeonRunBossProtectionPotion = false;
+    // The healer top-up reserve (the `heal_reserve` boss-tactic row): outside the row's release window a healer tops
+    // up members above the medium-health line only while its mana is at or above the row's percent; tanks and the
+    // boss's current victim are exempt, and every lower heal tier is unchanged. Off keeps the MediumMana rule
+    // (default off).
+    bool dungeonRunHealReserve = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).
@@ -679,9 +863,67 @@ public:
     // The ranged_only boss-tactic kind (melee bots leave a subject that stands the row's gap above them: Ayamiss in the
     // air, so the melee take the adds): off, the rows and the held target are ignored (default off).
     bool dungeonRunRangedOnly = false;
+    // A ranged reach at a hostile that hovers 8 yd or more above the floor under it inside a dungeon (Onyxia in P2)
+    // walks to the floor under it and stops at the trigger's own combat-reach distance instead of giving up under the
+    // body (default off, recommended on).
+    bool rangedReachHoverTarget = false;
+    // The airborne-boss wand row yields to the class nuke rows for damage-dealing wand casters (Onyxia P2: mage,
+    // warlock and non-healer priest; their class rows already wand only when the nuke cannot go out). Hunters,
+    // melee, tanks and healers keep the row (default off).
+    bool airborneWandYieldsToNukes = false;
+    // A ranged damage dealer whose hovering target stands in spell range takes no `raid spread` spacing step, unless
+    // a live boss `spread` row asks for one (default off).
+    bool hoverCastHoldsSpread = false;
+    // The gate_hold boss-tactic kind (damage dealers stop on a boss at or below the row's health gate while its blocker
+    // still fights): off, the rows are ignored and nothing reads the gate (default off, recommended on).
+    bool dungeonRunGateHold = false;
     // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
     // charmed bot behaves as before (default off).
     bool dungeonRunCharmYield = false;
+    // The escape of a taunt-immune boss's non-tank victim (Feign Death, Vanish, Ice Block, Divine Shield, else a
+    // paladin's Blessing of Protection within 30 yd): off, nothing changes (default off).
+    bool dungeonRunImmuneBossVictimEscape = false;
+    // A cursed healer or off-tank strikes its own Shade (a kill_first row gated by the curse) while the raid is safe:
+    // the lowest member at or above 50 %, the main tank at or above 60 %, two other uncursed healers, 30 % mana and no
+    // pending `now` dispel. The main tank never strikes and an off-tank only while the boss is not on it. Off, the
+    // carrier node is never active (default off).
+    bool dungeonRunCarrierStrike = false;
+    // The carrier scan: a Delusions carrier whose attackers list never showed a Shade finds it by the grid -- the
+    // nearest living unit of the carrier row's entry that is this fight's, in reach, in sight and attackable -- and the
+    // kill-first row says which check kept every grid hit out of the pick. Off, the pick stays as before (default off).
+    bool dungeonRunCarrierScan = false;
+    // Shade healer cover (walk 56 F3): a cursed off-tank that does not hold the boss takes a Shade of Jin'do attacking a
+    // healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it, on its floor, first. Off = as before.
+    bool dungeonRunShadeHealerCover = false;
+    // Carrier hold: a Delusions carrier standing on its Shade keeps it ("not dps target active" stays quiet for it, so
+    // "dps assist" no longer pulls it to Jin'do), and the kill-first trigger checks every second. Off = as before.
+    bool dungeonRunCarrierHold = false;
+    // Threat successor = the tank that does NOT hold the boss: on a `threat_successor` fight the damage dealers are capped
+    // against the real threat of the highest tank that is on the boss and is not the one it is hitting, so an
+    // off-tank holding Jin'do no longer caps them against itself while a Hexed main tank sits below. Off = as before.
+    bool dungeonRunThreatSuccessorNotHolder = false;
+    // Party cures and dispels (CurePartyMemberAction: dispel magic, cure poison/disease, remove curse, cleanse, purify on a
+    // party member) skip the damage threat back-off the way heals do, so a healer high on its own target's threat still
+    // cures Jin'do's Hex on the tank. Off = as before (the cure is vetoed at the high-threat line).
+    bool dungeonRunCureIgnoresThreat = false;
+    // A successor line that holds: on a boss whose `threat_successor` row carries `strict` (a plain row keeps today's
+    // behaviour) the high-threat trigger's 5 s projection escape is off
+    // (a damage dealer at or over 80 % is vetoed even while it projects under the tank), and the melee swing and the
+    // auto-repeat (wand Shoot, Auto Shot) are stopped in the trigger pass at 92 % of the reference; melee and wand start
+    // again under 85 %, Auto Shot under 80 % (its SINGLE veto). A 0 reference (a tank Hex) never stops them
+    // (ThreatCapPolicy.h SuccessorWhiteLatch). Off = as before.
+    bool dungeonRunThreatSuccessorStrict = false;
+    // The successor pick keeps a tank wearing Delusions of Jin'do (24306, on its Shade by design) as on the boss, like a
+    // Hexed one, while its threat is above 0 and at least half the highest tank's (ThreatCapPolicy.h
+    // ThreatCapCursedOnBoss). A charmed tank is still skipped. Off = as before.
+    bool dungeonRunThreatSuccessorKeepsAway = false;
+    // Fact judge for a charmed lead (ZG walk 57 F1): while the lead bot is charmed (Brain Wash, any charm) and an
+    // uncharmed member is fit to judge (RunJudge), the run's fact read, the order's target check and the totem focus'
+    // selection owner test friendliness and engagement against that member, not the charmed lead. Off = as before.
+    bool dungeonRunFactJudgeCharmedLead = false;
+    // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
+    // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
+    bool dungeonRunTauntGate = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
@@ -960,6 +1202,10 @@ public:
     // populated bracket, capped at one concurrent instance (average PC).
     bool randomBotBgAutonomous = true;
     uint32 randomBotBgAutonomousMaxInstances = 1;
+    // WSG team roles (off by default): defenders hold the own flag room,
+    // attackers go for the enemy flag, the rest hold mid/escort - also with
+    // a human on the team. Off keeps the 2026-07-27 mid-field patrol.
+    bool wsgFlagRoles = false;
 
     bool jumpInBg;
     bool jumpWithPlayer;

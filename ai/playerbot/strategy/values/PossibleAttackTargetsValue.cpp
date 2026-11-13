@@ -307,13 +307,13 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
 
     // A needs_aura entry (BossTacticsPolicy.h) is for the carriers of the row's aura alone: a Shade of Jin'do takes no
     // damage from anyone else, and a taunt would only move its damage onto another tank. No explicit-order exception:
-    // such a hit does nothing. With the key off, or no row, the target is as valid as before.
-    if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)
-    {
-        std::uint32_t const requiredAura = GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry());
-        if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura)))
-            return false;
-    }
+    // such a hit does nothing. With the key off, or no row, the target is as valid as before. Read once for both
+    // gates (the refusal here, the combat-gated attackers check below): a null target or player yields 0 (no row),
+    // which refuses nothing and trips no dereference via short-circuit below.
+    std::uint32_t const requiredAura = (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)
+        ? GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry()) : 0;
+    if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura)))
+        return false;
 
     // A tank_ignore entry (t1105h J2, Jin'do's Sacrificed Trolls 14826) is no tank's target while its boss fights: no tank
     // pick, no attacker-of-non-tank or snare taunt, so the tanks stay on the boss and the damage dealers kill it.
@@ -334,11 +334,9 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     // Check for the valid attackers value
     if (checkAttackerValid)
     {
-        std::uint32_t const requiredAura = sPlayerbotAIConfig.dungeonRunAuraGatedTargets
-            ? GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry()) : 0;
         if (!AttackersValue::IsValid(target, player, nullptr,
                 CombatGateApplies(sPlayerbotAIConfig.dungeonRunAuraGatedTargets, requiredAura,
-                    requiredAura != 0 && player->HasAura(requiredAura))))
+                    target && player && requiredAura != 0 && player->HasAura(requiredAura))))
             return false;
     }
 

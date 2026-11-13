@@ -30,6 +30,11 @@ namespace ai
 	virtual uint8 Calculate() override;
         static float GetThreat(Player* player, Unit* target);
         static float GetTankThreat(PlayerbotAI* ai, Unit* target);
+        // The reset successor's threat (DungeonRunThreatResetWindow): the highest threat among the assigned tanks that
+        // do NOT hold the target, on it or away (a tank on a Son keeps its boss threat and is who the boss turns to on a
+        // reset). The cap's own successor pick requires `onBoss` and would drop that away tank. -1 when the target has
+        // no `threat_successor` row, no group or no such tank.
+        static float GetResetSuccessorThreat(PlayerbotAI* ai, Unit* target);
 
     protected:
 	uint8 Calculate(Unit* target);
@@ -44,4 +49,18 @@ namespace ai
     // damage dealers are then measured against the assigned off-tanks' highest threat, so the second tank stays second
     // for a threat reset. A taunt-immune target without the row keeps the highest tank.
     bool ThreatSuccessorTarget(Unit* target);
+
+    // Whether the target's `threat_successor` row carries the mode word `strict` (BossTacticTable::HasStrictThreatSuccessor):
+    // the row's opt-in to AiPlayerbot.DungeonRunThreatSuccessorStrict. Callers gate it with StrictSuccessorTarget.
+    bool StrictThreatSuccessorRow(Unit* target);
+
+    struct RaidTankRoles;
+
+    // The threat cap's own tank list on `target` (ThreatValue::GetTankThreat's successor pick): the raid's tank order
+    // `roles`, a dead, unsafe or creature-charmed tank and `skip` (the reading bot; null: none) left out, the Hex and
+    // Delusions marks and ThreatCapCursedOnBoss applied. `who` (when given) gets each listed tank, in list order. The
+    // nearest take's cap guard (BossTacticsActions SeekTankLeaveCollapsesCap) reads the same list, so the two cannot
+    // drift.
+    std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target, const RaidTankRoles& roles, Player* skip,
+                                                std::vector<Player*>* who = nullptr);
 }

@@ -48,4 +48,19 @@ namespace ai
     private:
         void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
     };
+
+    // Marker only: the move-away actions read it (FleeAction, RunAwayAction).
+    class HoldPositionStrategy : public Strategy
+    {
+    public:
+        HoldPositionStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "hold position"; };
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "hold position"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "The bot keeps following and fighting but never moves away from enemies on its own.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "flee", "kite" }; }
+#endif
+    };
 }

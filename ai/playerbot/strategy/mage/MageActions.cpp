@@ -4,6 +4,14 @@
 
 using namespace ai;
 
+bool CastBlinkAction::isUseful()
+{
+    Map* map = bot->GetMap();
+    if (map && map->IsDungeon() && ai->HasStrategy("no blink instance", BotState::BOT_STATE_COMBAT))
+        return false;
+    return CastBuffSpellAction::isUseful();
+}
+
 bool CastBlinkBackAction::Execute(Event& event)
 {
     Unit* threat = AI_VALUE(Unit*, "current target");

@@ -106,7 +106,7 @@ Damage specs of hybrid classes get `offheal` by default (Shadow priests, Element
 | Druid (Cat/Balance) | *Regrowth*, then *Healing Touch* | *Regrowth* | - |
 
 Retribution's *Blessing of Protection* on an attacked ally sits in the same off-heal kit at critical priority.
-Off-heals outbid damage, so they fire the moment an ally enters a band; outside the bands the bot keeps its normal rotation. Out of combat only the low band (20–50%) heals. Off-heals use the same care as real heals (downranking, no wasteful casts at high health), and are never held back at or below 50% ally health (the `LowHealth` default).
+Off-heals outbid damage, so they fire the moment an ally enters a band; outside the bands the bot keeps its normal rotation. Out of combat only the low band (20–50%) heals. Off-heals use the same care as real heals (downranking, no wasteful casts at high health), and are never held back at or below 50% ally health (the `LowHealth` default). A Shadow priest in *Shadowform* skips the medium-band *Renew* while another healer covers the ally; at or below 50% it always heals.
 
 ### Switching off-spec behavior on and off
 

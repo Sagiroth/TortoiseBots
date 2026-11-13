@@ -135,6 +135,22 @@ bool ClassForFaction(uint8 classId, Team team)
     return true;
 }
 
+// The team whose classes and races this recruiter offers the player: the
+// player's own, or TEAM_NONE (both) at a neutral inn while cross-faction
+// hiring is on. A recruiter carries its innkeeper's faction, so one hostile
+// to neither side stands in a neutral inn.
+Team HireOfferTeam(Player* player, Creature* creature)
+{
+    if (!player)
+        return TEAM_NONE;
+    if (!HireProvisionService::CrossFactionHireEnabled() || !creature)
+        return player->GetTeam();
+    FactionTemplateEntry const* faction = creature->GetFactionTemplateEntry();
+    if (!faction || (faction->hostileMask & (FACTION_MASK_ALLIANCE | FACTION_MASK_HORDE)))
+        return player->GetTeam();
+    return TEAM_NONE;
+}
+
 bool KnownHireClass(uint8 classId)
 {
     for (uint8 candidate : kHireClasses)
@@ -218,7 +234,7 @@ void ShowConfirmMenu(Player* player, Creature* creature, uint8 classId, uint8 ra
 
 void ShowClassMenu(Player* player, Creature* creature)
 {
-    Team team = player ? player->GetTeam() : TEAM_NONE;
+    Team team = HireOfferTeam(player, creature);
     for (uint8 classId : kHireClasses)
     {
         if (!ClassForFaction(classId, team))
@@ -229,13 +245,13 @@ void ShowClassMenu(Player* player, Creature* creature)
 }
 void ShowRaceMenu(Player* player, Creature* creature, uint8 classId)
 {
-    Team team = player ? player->GetTeam() : TEAM_NONE;
+    Team team = HireOfferTeam(player, creature);
     uint32 shown = 0;
     for (uint32 race = 1; race < MAX_RACES && shown < kMaxMenuItems - 1; ++race)
     {
         if (!sObjectMgr.GetPlayerInfo(race, classId))
             continue;
-        if (Player::TeamForRace(race) != team)
+        if (team != TEAM_NONE && Player::TeamForRace(race) != team)
             continue;
         AddItem(player, GOSSIP_ICON_CHAT, RaceName(race), kSenderRace, (uint32(classId) << 8) | race);
         ++shown;
@@ -821,7 +837,7 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
     if (sender == kSenderClass)
     {
         uint8 classId = static_cast<uint8>(action);
-        if (!KnownHireClass(classId) || !ClassForFaction(classId, player->GetTeam()))
+        if (!KnownHireClass(classId) || !ClassForFaction(classId, HireOfferTeam(player, creature)))
         {
             ShowClassMenu(player, creature);
             return true;
@@ -839,7 +855,8 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
             return true;
         }
         uint8 race = static_cast<uint8>(low);
-        if (!sObjectMgr.GetPlayerInfo(race, classId) || Player::TeamForRace(race) != player->GetTeam())
+        Team const team = HireOfferTeam(player, creature);
+        if (!sObjectMgr.GetPlayerInfo(race, classId) || (team != TEAM_NONE && Player::TeamForRace(race) != team))
         {
             ShowRaceMenu(player, creature, classId);
             return true;
@@ -940,6 +957,7 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
             sel.role = specs[specIndex].role;
             sel.specIndex = static_cast<int>(specIndex);
             sel.gearTier = tierPick;
+            sel.anyFaction = HireOfferTeam(player, creature) == TEAM_NONE;
             HireOutcome outcome = HireProvisionService::Instance().Hire(player, sel, true);
             CloseWithHint(player, outcome.message.c_str());
             return true;
@@ -1004,6 +1022,7 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
         sel.gender = gender;
         sel.role = specs[specIndex].role;
         sel.specIndex = static_cast<int>(specIndex);
+        sel.anyFaction = HireOfferTeam(player, creature) == TEAM_NONE;
         HireOutcome outcome = HireProvisionService::Instance().Hire(player, sel, true);
         CloseWithHint(player, outcome.message.c_str());
         return true;

@@ -5,6 +5,8 @@
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/policy/raid/FankrissRaidPolicy.h"
 #include "playerbot/strategy/actions/PatchwerkSafety.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/SeekAuraPolicy.h"
 #include "HealerCoverage.h"
 #include "playerbot/HealTargetPolicy.h"
 #include "playerbot/HealReachPolicy.h"
@@ -112,6 +114,18 @@ uint32 ai::GetIncomingHeal(PlayerbotAI* ai, Unit* target)
         ai->GetAiObjectContext()->GetValue<std::map<ObjectGuid, uint32>>("incoming heals")->Get();
     auto const it = incoming.find(target->GetObjectGuid());
     return it == incoming.end() ? 0 : it->second;
+}
+
+// The heal pick's effective health for one unit: incoming heals credited and predicted damage applied exactly as the
+// pick's candidate carries them (damage only under preheal). Every top-up gate classifies this, never raw health.
+float ai::EffectiveHealHealthPct(PlayerbotAI* ai, Unit* target)
+{
+    if (!ai || !target)
+        return 100.0f;
+    uint32 const incomingDamage =
+        ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT) ? getIncomingdamage(target) : 0;
+    return HealEffectiveHealthPct(target->GetHealth(), target->GetMaxHealth(), GetIncomingHeal(ai, target),
+        incomingDamage, sPlayerbotAIConfig.lowHealth);
 }
 
 float ai::HealReachLimit(PlayerbotAI* ai)
@@ -231,11 +245,26 @@ Unit* PartyMemberToHeal::Calculate()
                 return true;
         return false;
     };
+    // DungeonRunSeekMeetNoHeal: the open meet's puller, read once per pick (0: the key is off or no meet is open), so
+    // a candidate costs one guid compare. Only the puller itself pays for the incoming-damage scan.
+    std::uint64_t const meetPuller = SeekMeetHealPuller(bot->GetInstanceId());
+    auto const meetHealHeld = [&](Unit* target)
+    {
+        if (!SeekMeetHealWalker(target->GetObjectGuid().GetRawValue(), meetPuller))
+            return false;
+        return SeekMeetHealHeld(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, true,
+            SeekMeetHealHpAfterIncoming(target->GetHealthPercent(), getIncomingdamage(target), target->GetMaxHealth()));
+    };
     std::vector<HealingCandidate> candidates;
     std::map<uint64, Unit*> targets;
     auto addTarget = [&](Unit* target, bool tank, bool pet)
     {
         if (!Check(target))
+            return;
+        // DungeonRunSeekMeetNoHeal: while the pulled Son's meet is open, its puller is not a heal target (a heal on it
+        // adds threat on the Son and peels it onto the healer) unless its hp after the incoming hits is under 40 %.
+        // One check for every pick through this value (HoTs and Power Word: Shield included).
+        if (meetHealHeld(target))
             return;
         // Issue #904: in combat an ally this healer cannot reach from where it
         // stands and another healer covers is that healer's to heal. Dropping it
@@ -261,7 +290,14 @@ Unit* PartyMemberToHeal::Calculate()
             tank, pet, false,
             sServerFacade.IsWithinLOSInMap(bot, target)};
         candidate.hunted = huntOn && HuntedByGatedUnit(target);
-        if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
+        if (!NeedsPartyHealing(candidate, bands))
+            return;
+        // D2: with the reserve key on, a top-up candidate the live row refuses is not a pick: the heal falls to a
+        // tank, the boss's victim or a member in a lower tier rather than every healer idling on a refused band. The
+        // reserve classifies the candidate on the same effective health triage does, never on raw health.
+        if (HealReserveRefusesTopUp(ai, bot, target, PredictedHealHealth(candidate)))
+            return;
+        if (targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);
     };
 

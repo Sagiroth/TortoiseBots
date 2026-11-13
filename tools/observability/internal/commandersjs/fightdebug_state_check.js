@@ -30,12 +30,16 @@ const ctx = { console, Date: { now: () => clock } };
 vm.createContext(ctx);
 vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext(fdSrc, ctx, { filename: "fightdebug.js" });
+vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdlive.js"), "utf8"), ctx, { filename: "fdlive.js" });
+vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdview.js"), "utf8"), ctx, { filename: "fdview.js" });
+vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdfilter.js"), "utf8"), ctx, { filename: "fdfilter.js" });
 vm.runInContext([
-  grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
+  grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdViewHandover"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
   grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList"),
   grab("fdShowAllGet"), grab("fdWindowStart"), grab("fdOlderState"),
-  "var fdShowAllMem = null;",
+  "var fdShowAllMem = null, FD_EV_PAGE = 500;",
+  grab("fdLiveFiledRow"), "var fdLive = {};",
   grabConst("FD_DETAIL_TRIES"), grabConst("FD_DAYS_MS"), grabConst("FD_WINDOW_S"), grabConst("FD_SHOWALL_KEY"),
   "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
@@ -45,6 +49,7 @@ vm.runInContext([
   "var fdTabListSeen = () => {};",
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
+  "var cmdFindBind = () => null;",
   "var fdNightParams = () => '';",
   "var fdDayFights = (fd, bind, day, cb) => { if (cb) cb(null); };",
   "var fdNightFights = (fd, bind, night, cb) => { if (cb) cb(null); };",
@@ -191,6 +196,94 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   run("fdLoad(card, hbind)", { card, hbind: { commander: "P", history: true, bots: [] } });
   await settle();
   assert.strictEqual(fdP.day, "2026-10-27", "a past night is selected by its own day");
+
+  // A live share link opened before the commander's first report: the card is the read-only history one for a moment. Its pick of
+  // the live view stands: no night is picked, no newest filed fight replaces it (the bug: the link landed on the newest filed fight).
+  run("cmdFd = {}");
+  const fdLL = run("fdState('LL')");
+  fdLL.days = [{ night: "2026-10-27", fights: 1 }];
+  fdLL.daysAt = clock;
+  fdLL.sel = "live"; fdLL.userSel = true; fdLL.liveLink = true;
+  run("fdLoad(card, hbind)", { card, hbind: { commander: "LL", history: true, bots: [] } });
+  await settle();
+  assert.strictEqual(fdLL.sel, "live", "a live link's pick survives the history card's open");
+  assert.strictEqual(fdLL.userSel, true);
+  assert.strictEqual(fdLL.day, "", "and no night is picked over it");
+  // The report then arrives. No live fight: the pick stays on its "No live fight right now." note (and so does the link's filter);
+  // a fight that runs: the live view, with the link no longer waiting.
+  const listLL = [{ key: "5-5" }];
+  run("fdSyncSel(fd, bind, listLL, {}, null)", { fd: fdLL, bind: { commander: "LL", bots: [] }, listLL });
+  assert.deepStrictEqual([fdLL.sel, fdLL.userSel, fdLL.liveLink], ["live", true, true], "no live fight: the note stands, no filed fight is picked");
+  run("fdSyncSel(fd, bind, listLL, {}, null)", { fd: fdLL, bind: { bots: [{ guid: 1, id: "1" }], combat: { fight_ms: 2000, win_s: 10, bots: [{ g: 1, dps: 5 }] } }, listLL });
+  assert.deepStrictEqual([fdLL.sel, fdLL.liveLink], ["live", false], "a fight that runs: the live view");
+  // The same card with a filed fight picked, or nothing picked, still opens on the newest night.
+  run("cmdFd = {}");
+  const fdNL = run("fdState('NL')");
+  fdNL.days = [{ night: "2026-10-27", fights: 1 }];
+  fdNL.daysAt = clock;
+  run("fdLoad(card, hbind)", { card, hbind: { commander: "NL", history: true, bots: [] } });
+  await settle();
+  assert.strictEqual(fdNL.day, "2026-10-27", "no live pick: the history card still opens on its newest night");
+  assert.ok(/const wantDay = .*&& !fd\.userSel;/.test(grab("fdLoad")), "the guard is in fdLoad's wantDay");
+
+  // The bug the m910q re-proof found: a live share link opened while a fight RUNS. The history card's list answer arrives after the
+  // report: it must be drawn with the live binding. Drawn with the stale history one ("no live fight") it handed the live pick away
+  // (liveLink was already false) and the page landed on the newest filed fight.
+  {
+    run("cmdFd = {}");
+    const fdRun = run("fdState('RUN')");
+    fdRun.days = [{ night: "2026-10-27", fights: 1 }];
+    fdRun.daysAt = clock;
+    fdRun.sel = "live"; fdRun.userSel = true; fdRun.liveLink = true;
+    const liveBind = { commander: "RUN", bots: [{ guid: 1, id: "1" }], combat: { fight_ms: 2000, win_s: 10, bots: [{ g: 1, dps: 5 }] } };
+    const rowsRun = [{ key: "RUN\u00001\u00005-5" }];
+    const drawn = [];
+    ctx.renderFightDebug = (c, b) => { drawn.push(b); run("fdSyncSel(fd, b, rowsRun, {}, null)", { fd: fdRun, b, rowsRun }); };
+    ctx.cmdRaidFights = (b, cb) => setImmediate(() => cb(rowsRun)); // the list answers later
+    ctx.cmdFindBind = () => null;
+    run("fdLoad(card, hbind)", { card, hbind: { commander: "RUN", history: true, bots: [] } }); // the history card starts its load
+    // the report arrives first: the live card draws once (liveLink goes false), the history load's answer comes after
+    run("fdSyncSel(fd, b, rowsRun, {}, null)", { fd: fdRun, b: liveBind, rowsRun });
+    assert.strictEqual(fdRun.liveLink, false, "the report with a running fight clears the live link's wait");
+    ctx.cmdFindBind = (name) => (name === "RUN" ? liveBind : null);
+    await settle();
+    assert.ok(drawn.length > 0, "the list answer drew the card");
+    assert.ok(drawn.every((b) => !b.history), "every late draw uses the live binding, not the stale history one: " + JSON.stringify(drawn.map((b) => !!b.history)));
+    assert.deepStrictEqual([fdRun.sel, fdRun.userSel], ["live", true], "the live pick stands (no newest filed fight)");
+    ctx.renderFightDebug = () => {};
+    ctx.cmdFindBind = () => null;
+  }
+
+  // A filed-fight share link (no n= night) opened before the report: the history card keeps the pick (no newest night over it), the
+  // fight is fetched by its key, and the night that holds it (from its start) becomes the card's night.
+  {
+    const nightOf0 = ctx.FightHistory.nightOf;
+    ctx.FightHistory.nightOf = (ms) => (ms === 1760000000 * 1000 ? "2026-10-09" : "2026-10-29");
+    const asked2 = [];
+    ctx.fetch = (url) => { if (url.indexOf("/combat/fight/") < 0) return Promise.resolve({ days: [] }); asked2.push(decodeURIComponent(url.slice(url.indexOf("/fight/") + 7))); return Promise.resolve({ fight: { id: "x", start: 1760000000 } }); };
+    run("cmdFd = {}; fdPage.open = 'FF'");
+    const fdFF = run("fdState('FF')");
+    fdFF.days = [{ night: "2026-10-27", fights: 1 }, { night: "2026-10-09", fights: 2 }];
+    fdFF.daysAt = clock;
+    fdFF.sel = "old-1"; fdFF.userSel = true;
+    run("fdLoad(card, hbind)", { card, hbind: { commander: "FF", history: true, bots: [] } });
+    await settle();
+    assert.strictEqual(fdFF.sel, "old-1", "a filed link's pick survives the history card's open");
+    assert.strictEqual(fdFF.userSel, true);
+    assert.deepStrictEqual(asked2, ["old-1"], "the fight is fetched by its key");
+    assert.strictEqual(fdFF.day, "2026-10-09", "and its own night is the card's night, not the newest one (2026-10-27)");
+    // A link with n= keeps working: the night is set by the link, so nothing is derived over it.
+    run("cmdFd = {}");
+    const fdN = run("fdState('FN')");
+    fdN.days = [{ night: "2026-10-27", fights: 1 }];
+    fdN.daysAt = clock;
+    fdN.day = "2026-10-20"; fdN.sel = "old-2"; fdN.userSel = true;
+    run("fdPage.open = 'FN'");
+    run("fdLoad(card, hbind)", { card, hbind: { commander: "FN", history: true, bots: [] } });
+    await settle();
+    assert.deepStrictEqual([fdN.day, fdN.sel], ["2026-10-20", "old-2"], "a link with n= keeps its night and its fight");
+    ctx.FightHistory.nightOf = nightOf0;
+  }
 
   // ---- 2c. detail on demand: only the picked fight, whatever its age --------------------------------------------------
   const oldList = Array.from({ length: 60 }, (_, i) => ({ key: "k" + i }));

@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "DruidActions.h"
 
 using namespace ai;
@@ -32,6 +33,10 @@ Unit* ai::FindRejuvenationSpreadTarget(PlayerbotAI* ai, Player* bot)
             continue;
         if (ai->HasMyAura("rejuvenation", member))
             continue;
+        // The almost-full tier's mana rule (HealReservePolicy.h through HealTopUpAllowedFor): a live heal_reserve row
+        // keeps the reserve back outside its release window, tanks and the boss's victim excepted.
+        if (!HealTopUpAllowedFor(ai, bot, member))
+            continue;
         if (bot->GetDistance(member) > maxRange) // 3D, combat reach removed: the cast's own range test
             continue;
         if (!bot->IsWithinLOSInMap(member))
@@ -55,9 +60,10 @@ bool CastRejuvenationSpreadAction::isUseful()
     Unit* target = GetTarget();
     if (!target)
         return false;
-    // The almost-full tier is a mana-gated top-up tier (HealthTriggers): no
-    // healer HoTs below medium mana, and never double-blanket one target.
-    if (AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana)
+    // The almost-full tier is a mana-gated top-up tier (HealReservePolicy.h): no healer
+    // HoTs below medium mana, or below a live heal_reserve row's percent outside its
+    // release window, and never double-blanket one target.
+    if (!HealTopUpAllowedFor(ai, bot, target))
         return false;
     return CastHealingSpellAction::isUseful();
 }

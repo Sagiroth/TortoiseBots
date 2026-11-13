@@ -48,7 +48,14 @@ bool SellAction::Execute(Event& event)
     if (text == "*" || text.empty())
         text = "gray";
 
-    std::list<Item*> items = ai->InventoryParseItems(text, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    //An errand sale sells exactly the list the trip need counted (VendorSaleStock),
+    //so "should I walk to a vendor" and "what does the vendor buy" cannot drift
+    //apart. The occasional AH-stock top-up on full bags stays as it was.
+    std::list<Item*> items;
+    if (event.GetSource() == "rpg action" && text == "vendor")
+        items = VendorSaleStock(ai, AI_VALUE(uint8, "bag space") > 80 && !urand(0, 10));
+    else
+        items = ai->InventoryParseItems(text, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
 
     if (event.GetSource() == "rpg action")
     {
@@ -142,8 +149,18 @@ bool SellAction::Execute(Event& event)
     // "one vendor journey at a time" window (issue #399) so the need - which
     // is false now anyway, the stock just sold - re-arms honestly on the next
     // pickup instead of waiting out the ten minutes.
+    //
+    //The need values cache for a few seconds; left alone they still say "stock
+    //to sell" right after the bags were emptied, and the rpg sell trigger or the
+    //nearby-service verb ran the sale again on the next tick with nothing left
+    //(a SellErrandFailed row and a ten-minute park for a trip that worked).
     if (soldItems)
+    {
         RESET_AI_VALUE2(time_t, "manual time", "vendor trip since");
+        RESET_AI_VALUE(bool, "can sell");
+        RESET_AI_VALUE(bool, "should sell");
+        RESET_AI_VALUE(bool, "vendor trip needed");
+    }
 
     return soldItems;
 }
@@ -186,6 +203,34 @@ std::string SellAction::RefusalReason(PlayerbotAI* botAI)
         }
     }
     return SellRefusalReason(greyItems, vendorInReach);
+}
+
+std::list<Item*> SellAction::VendorSaleStock(PlayerbotAI* ai, bool includeAH)
+{
+    Player* bot = ai->GetBot();
+
+    FindVendorItemsVisitor visitor(bot, includeAH);
+    ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    std::list<Item*> stock = visitor.GetResult();
+
+    // Sell() skips an item without a sell price, and an autonomous sale skips
+    // what a claimed bot may not vendor: neither is stock.
+    bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
+    stock.remove_if([&](Item* item)
+    {
+        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
+        if (!proto || !proto->SellPrice)
+            return true;
+        if (!TortoiseBots::MayClaimedBotAutoVendor(bot->GetLevel(), proto->Quality, isClaimed))
+            return true;
+        // An autonomous alt sells only greys and unneeded whites, never a
+        // soulbound or equipped piece (AltBotPolicy): not stock either.
+        return !TortoiseBots::AltBotItemCountsForVendorNeed(
+            TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()),
+            proto->Quality, item->IsSoulBound(), item->IsEquipped());
+    });
+
+    return stock;
 }
 
 bool SellAction::Sell(Player* requester, Item* item)

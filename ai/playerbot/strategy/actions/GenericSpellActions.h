@@ -524,6 +524,13 @@ namespace ai
         uint32 weaponDelay;
         bool needsAmmo;
     };
+    // The airborne-boss wand row (OnyxiaFightStrategy): "shoot", unless AirborneWandYields.
+    class CastAirborneShootAction : public CastShootAction
+    {
+    public:
+        CastAirborneShootAction(PlayerbotAI* ai) : CastShootAction(ai) {}
+        bool isUseful() override;
+    };
 
     // Stops a running wand so the next tick can cast (see WandPolicy.h).
     // The GCD of the last wand shot runs until the next shot would fire, so

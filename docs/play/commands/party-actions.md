@@ -34,6 +34,7 @@ Companion bots follow special navigation rules inside dungeons and raids to avoi
 | [`.bot action flee`](#bot-action-flee) | Controller | None | Orders bots to break combat and follow passively. |
 | [`.bot action pull`](#bot-action-pull) | Controller | Hostile Target | Sends tank to pull while party waits to engage. |
 | [`.bot action pullback`](#bot-action-pullback) | Controller | Hostile Target | Tank pulls and retreats to your anchor position. |
+| [`.bot action engage`](#bot-action-engage) | Controller | None | Holds bot attacks and pets until your pull arrives or settles. |
 | [`.bot action come`](#bot-action-come) | Controller | None | Commands scoped bots to sprint to your location. |
 | [`.bot action stay`](#bot-action-stay) | Controller | None | Halts scoped bots at their current positions. |
 | [`.bot action follow`](#bot-action-follow) | Controller | None | Resumes tight follow formation behind the leader. |
@@ -195,6 +196,25 @@ Pulls the target from range and retreats to your position, breaking line of sigh
 - The tank holds at your position for the fight the pull brought in.
 - It fights freely and follows again after combat.
 - Eating or drinking tanks are interrupted and stood up first.
+
+### `.bot action engage`
+
+Prepares scoped bots (selected bot if targeted, else party) for a pull you make yourself.
+
+```text
+.bot action engage [seconds]
+```
+
+- `[seconds]` (0 to 60, default 4) sets how long after you enter combat bots wait before joining.
+- Bots keep their current movement mode (`stay` or `follow`).
+- Bots do not attack or cast DoTs, and hunter or warlock pets are held passive.
+- Healers keep healing without attacking.
+- Self-defence stays active: a bot that is itself attacked breaks the hold and fights back.
+- The hold ends automatically and restores bots and pets when either a pulled in-combat mob reaches melee range of you (or the group's tank), or `[seconds]` have passed after you entered combat, whichever comes first.
+- If nothing is pulled, the hold ends automatically after 60 seconds, or when you issue any other `.bot action` order.
+- Reply lines:
+  - Success: `TBM:ACTION_ACK|engage|party|<count>|` (or `TBM:ACTION_ACK|engage|bot:<Name>|1|` when targeting a single bot).
+  - Refusals: `TBM:ACTION_ERR|engage|invalid|<message>`, `TBM:ACTION_ERR|engage|requester|<message>`, `TBM:ACTION_ERR|engage|no-bots|<message>`.
 
 ### `.bot action come`
 

@@ -54,6 +54,17 @@ int main()
     std::vector<LooseAddCandidate> edge = {{true, false, 10.0f}, {true, false, 10.0f}, {true, false, 10.0f}};
     CHECK(CountLooseAddsInReach(edge) == 3);
     CHECK(ShouldAoeTaunt(CountLooseAddsInReach(edge)));
+    CHECK(LooseAddsStillNeedAoeTaunt(edge));
+
+    // The failing case: the same pack, re-walked now, after every victim moved
+    // onto a tank within the trigger value's one-second cache window. The old
+    // cached "trigger active" read would still return the true that queued the
+    // shout; the shared cast-time verdict answers from today's victims and
+    // both area-taunt actions stand down.
+    std::vector<LooseAddCandidate> settled = {{true, true, 5.0f}, {true, true, 5.0f}, {true, true, 5.0f}};
+    CHECK(CountLooseAddsInReach(settled) == 0);
+    CHECK(!LooseAddsStillNeedAoeTaunt(settled));
+    std::cout << "  [PASS] a pack settled onto tanks stands the AoE taunt down at cast time\n";
 
     // Pure policy constants pinned: 3+ loose adds inside 10 yd.
     CHECK(kAoeTauntRadiusYd == 10.0f);

@@ -23,6 +23,13 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
 
+    // A cursed healer or off-tank strikes its own Shade while the raid can spare it (AiPlayerbot.DungeonRunCarrierStrike):
+    // just below a critical heal, so critical heals, every emergency row and reaching a party member to heal win over it,
+    // and above every lower heal band, cure and rotation row.
+    triggers.push_back(new TriggerNode(
+        "boss tactics carrier strike",
+        NextAction::array(0, new NextAction("boss tactics carrier strike", ACTION_CRITICAL_HEAL - 1), NULL)));
+
     // A DPS bot on a boss entry a hold_kill row holds leaves it (the blocker is the kill): below the kill-first pick,
     // which is where it switches to first, and above the generic assist rows the multiplier stands down meanwhile.
     triggers.push_back(new TriggerNode(
@@ -84,6 +91,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics taunt after",
         NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));
 
+    // tank_post: the named tank waits at the row's spot for a unit that is not in the fight yet. Above reach and
+    // assist, so neither pulls it at the boss it cannot reach; below avoid/flee, so a survival walk still wins.
+    triggers.push_back(new TriggerNode(
+        "boss tank post",
+        NextAction::array(0, new NextAction("boss tactics tank post", ACTION_EMERGENCY + 2), NULL)));
+
     // A burn_mana row's boss stands above the row's start % of mana and this bot is one of its burners: the drain
     // cast goes out above the ordinary damage rotation, below every survival and avoid action.
     triggers.push_back(new TriggerNode(
@@ -136,6 +149,18 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "boss tactics stand",
         NextAction::array(0, new NextAction("boss tactics stand", ACTION_EMERGENCY), NULL)));
+
+    // A fixed slot between the doses (DungeonRunBossSpreadSlots): a ranged bot or healer at its own ring point stops
+    // there and walks back to it the tick the seek lets go, below the emergency walk-ins that own their own ticks.
+    triggers.push_back(new TriggerNode(
+        "boss tactics spread slot",
+        NextAction::array(0, new NextAction("boss tactics spread slot", ACTION_EMERGENCY + 1), NULL)));
+
+    // A live spread row names the bot's protection potion (DungeonRunBossProtectionPotion): the drink goes out at the
+    // pull and again once the aura is gone, level with the listed bosses' own potion node.
+    triggers.push_back(new TriggerNode(
+        "boss row protection potion ready",
+        NextAction::array(0, new NextAction("boss protection potion", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "boss tactics front",
@@ -210,6 +235,7 @@ void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
     multipliers.push_back(new BossTacticsDispelHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsSeekHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsSeekPetHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsWalkoutFocusMultiplier(ai));
 }
 
 // The hold on the non-combat engine too: a held bot out of combat itself would walk back to its stay spot in the

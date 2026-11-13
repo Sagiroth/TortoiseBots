@@ -254,9 +254,13 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,", scan)
         self.assertIn("canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready, victim == tank);", scan)
         self.assertIn("available[i] = TauntAfterTankAvailable(inControl, silenced, taunt != nullptr);", scan)
-        self.assertIn("tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", scan)
-        self.assertIn("!tank->IsPolymorphed()", scan)
-        self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", scan)
+        # The control and silence guards are the shared TankTauntGuards (the nearest take reads the same ones).
+        self.assertIn("TankTauntGuards(tank, inControl, silenced);", scan)
+        guards = ACTIONS[ACTIONS.index("void TankTauntGuards(Player* tank, bool& inControl, bool& silenced)"):]
+        guards = guards[:guards.index("\n}\n")]
+        self.assertIn("tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", guards)
+        self.assertIn("!tank->IsPolymorphed()", guards)
+        self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", guards)
         self.assertIn("bool const holderAvailable = holderSlot >= 0 &&", scan)
         self.assertIn("holderSlot < static_cast<int>(available.size()) && available[holderSlot];", scan)
         self.assertIn("inline bool TauntAfterTankAvailable(bool inControl, bool silencedOrPacified, bool hasTaunt)", POLICY)

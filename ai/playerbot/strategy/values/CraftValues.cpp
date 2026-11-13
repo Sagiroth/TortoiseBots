@@ -109,6 +109,24 @@ bool CanCraftSpellValue::Calculate()
     if (!pSpellInfo)
         return false;
 
+    // A craft needs its reagents in the bags even under the item cheat: the
+    // core's Spell::CheckItems refuses the cast without them
+    // (SPELL_FAILED_ITEM_NOT_READY) and nothing mints craft reagents.
+    // "has reagents for" answers 1 for every spell under the cheat (the class
+    // reagents it serves are minted elsewhere), so a cheat bot picked recipes
+    // it held nothing for and every "rpg craft" cast failed quietly.
+    if (ai->HasCheat(BotCheatMask::item))
+    {
+        for (uint8 i = 0; i < MAX_SPELL_REAGENTS; i++)
+        {
+            if (pSpellInfo->Reagent[i] > 0 && pSpellInfo->ReagentCount[i] > 0 &&
+                !bot->HasItemCount(pSpellInfo->Reagent[i], pSpellInfo->ReagentCount[i]))
+                return false;
+        }
+
+        return true;
+    }
+
     if (AI_VALUE2(uint32, "has reagents for", spellId) == 0)
         return false;
 

@@ -196,6 +196,30 @@ class CombatMonitorWiringTest(unittest.TestCase):
         for path in sources:
             self.assertNotIn("RefreshNoRun", path.read_text(), path)
 
+    def test_run_path_names_the_fights_boss(self):
+        # Zul'Gurub walk 52: the Hakkar pull opens the fight on the move step before its boss step, and a boss step
+        # reached in a walk back (FactStep replays the move step) reads boss 0 too. The data pick from the engaged
+        # units names the boss in both; the plan boss is adopted only while he is one of those units, so a trash
+        # fight still open when the step turns to his boss step is never labelled with him. The first pick wins.
+        code = strip_comments(COMMANDER)
+        refresh = definition(code, "static void RefreshCombatMonitor(")
+        feed = refresh.index("FeedCombatMonitor(")
+        adopt = refresh.index("AdoptBoss(")
+        note = refresh.index("NoteFightBoss(")
+        self.assertLess(feed, adopt, "the plan boss lands on the fight the feed just opened")
+        self.assertLess(adopt, note, "the plan boss is adopted before the file's data pick")
+        guard = refresh[refresh.rindex("if (ctx.bossEntry)", 0, adopt):adopt]
+        self.assertIn("for (DungeonRun::UnitFact const& u : facts.engagedUnits)", guard)
+        self.assertIn("if (u.entry == ctx.bossEntry || u.formOf == ctx.bossEntry)", guard)
+        self.assertIn("CombatMonitorService::Instance().", guard)
+        self.assertTrue(refresh[adopt:].startswith("AdoptBoss(binding.groupId, ctx.bossEntry"),
+                        "the adoption is the guarded statement")
+        self.assertIn("CombatMonitorService::Instance().InFight(binding.groupId)", refresh[adopt:note])
+        self.assertIn("CombatMonitorService::Instance().BossEntry(binding.groupId) == 0", refresh[adopt:note])
+        self.assertIn("it->second.AdoptBoss(entry, name);",
+                      definition(strip_comments(SERVICE), "void CombatMonitorService::AdoptBoss("))
+        self.assertIn("NoteBoss(entry, name);", definition(strip_comments(POLICY), "void AdoptBoss("))
+
     def test_forget_retires_instead_of_dropping(self):
         fn = body(strip_comments(SERVICE), "CombatMonitorService::Forget(", "\n}\n")
         self.assertIn("Close(", fn)

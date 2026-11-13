@@ -179,6 +179,95 @@ bool PullHoldExpiredTrigger::IsActive()
     AiObjectContext* context = ai->GetAiObjectContext();
     if (!context)
         return false;
+    if (ai->HasEngagePullWindow())
+    {
+        ai::EngageReleaseFacts facts;
+        facts.delaySeconds = ai->EngageDelaySeconds();
+        facts.timeoutSeconds = ai->EngageTimeoutSeconds();
+        facts.elapsedSinceOrder = ai->PullWindowElapsed();
+
+        Player* requester = sObjectMgr.GetPlayer(ObjectGuid(ai->EngageRequesterGuid()));
+        if (requester && requester->IsInWorld() && requester->IsAlive() && requester->GetMapId() == bot->GetMapId())
+        {
+            facts.requesterAlive = true;
+            facts.requesterInCombat = requester->IsInCombat();
+            if (facts.requesterInCombat)
+                ai->MarkEngageCombatStarted();
+        }
+        facts.combatStarted = ai->EngageCombatStarted();
+        facts.elapsedSinceCombat = ai->EngageCombatElapsed();
+
+        for (Unit* attacker : bot->GetAttackers())
+        {
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == bot)
+            {
+                facts.botIsVictim = true;
+                break;
+            }
+        }
+
+        if (facts.requesterAlive && !facts.botIsVictim)
+        {
+            Player* tank = nullptr;
+            if (bot->GetGroup())
+            {
+                for (Player* member : LiveGroupMembers(bot->GetGroup()))
+                {
+                    if (!member || !member->IsAlive() || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+                        continue;
+                    if (PlayerbotAI::IsTank(member, true))
+                    {
+                        tank = member;
+                        break;
+                    }
+                }
+            }
+
+            auto checkMeleeOn = [&](Player* anchor)
+            {
+                if (!anchor || facts.mobInMelee)
+                    return;
+                for (Unit* attacker : anchor->GetAttackers())
+                {
+                    if (attacker && attacker->IsAlive() && attacker->IsInCombat() &&
+                        anchor->CanReachWithMeleeAutoAttack(attacker))
+                    {
+                        facts.mobInMelee = true;
+                        return;
+                    }
+                }
+            };
+            checkMeleeOn(requester);
+            if (tank && tank != requester)
+                checkMeleeOn(tank);
+
+            if (!facts.mobInMelee)
+            {
+                for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+                {
+                    Unit* unit = ai->GetUnit(guid);
+                    if (!unit || !unit->IsAlive() || !unit->IsInCombat())
+                        continue;
+                    if (unit->GetVictim() == bot)
+                    {
+                        facts.botIsVictim = true;
+                        break;
+                    }
+                    if (requester->CanReachWithMeleeAutoAttack(unit) ||
+                        (tank && tank != requester && tank->CanReachWithMeleeAutoAttack(unit)))
+                    {
+                        facts.mobInMelee = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const char* reason = ai::EngageReleaseReason(facts);
+        if (reason != nullptr)
+            ai->SetPullReleaseReason(reason);
+        return reason != nullptr;
+    }
     // The window's own clock is the ceiling (a pullback that never lands
     // still frees the party when it expires), not the gate: a lead-keyed
     // window asks the lead rule while it still runs, so the early release

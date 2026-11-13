@@ -365,10 +365,29 @@ bool BossProtectionPotionReadyTrigger::IsActive()
         return false;
 
     uint32 buffSpellId = 0;
-    itemID = FindBossProtectionPotion(ai, &buffSpellId);
+    itemID = FindListedBossProtectionPotion(ai, &buffSpellId);
     if (!itemID || bot->HasAura(buffSpellId))
         return false;
 
+    return ItemReadyTrigger::IsActive();
+}
+
+bool BossRowProtectionPotionReadyTrigger::IsActive()
+{
+    // The key's own trigger: with it off there is nothing to ask, and the four listed raid strategies' node (the
+    // entry table) is untouched.
+    if (!sPlayerbotAIConfig.dungeonRunBossProtectionPotion)
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+
+    const ProtectionPotion potion = BossRowProtectionPotion(ai, bot);
+    if (!BossRowPotionDue(potion, potion.itemId && bot->HasAura(potion.buffSpellId),
+            static_cast<std::uint8_t>(bot->GetHealthPercent()),
+            static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth), bot->GetLevel()))
+        return false;
+
+    itemID = potion.itemId;
     return ItemReadyTrigger::IsActive();
 }
 
@@ -489,17 +508,31 @@ bool RaidSpreadNeededTrigger::IsActive()
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
+    // A live spread row widens the spacing and outranks a stay: the run holds the ranged bots on their spots, and the
+    // row's splash (Hakkar's Corrupted Blood) still has to be answered there. Read before the seek gate so the spread
+    // row can name that gate.
+    bool const spreadLive = BossSpreadLive(ai, bot);
+    // The old step-away owns the row with the slots key off; with it on the slot read writes it and these gate words
+    // would only fight it for the bot's 5 s window.
+    const bool logSpread =
+        spreadLive && ai->IsRanged(bot) &&
+        SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy);
     // A seek_aura row is walking the bot into a cloud or to the gather: the step-out would undo the walk.
     if (BossSeeking(ai, bot))
+    {
+        if (logSpread)
+            LogBossSpread(ai, bot, "seek", -1, -1.0f, -1);
         return false;
+    }
     // Generic combat spread (donor "combat formation move" without the opt-in
     // disperse knob): only while fighting, so idle/questing stacking is free.
     Unit* target = GetTarget();
     if (!target)
+    {
+        if (logSpread)
+            LogBossSpread(ai, bot, "no_target", -1, -1.0f, -1);
         return false;
-    // A live spread row widens the spacing and outranks a stay: the run holds the ranged bots on their spots, and the
-    // row's splash (Hakkar's Corrupted Blood) still has to be answered there.
-    bool const spreadLive = BossSpreadLive(ai, bot);
+    }
     // Explicit orders win: a bot told to hug a spot (stay/follow/attack/pull
     // anchors, wait-for-attack, grind) holds it; spread never overrides.
     // Owned/hired bots are exempt via live master OR owner record, so an
@@ -508,17 +541,30 @@ bool RaidSpreadNeededTrigger::IsActive()
     // raid survival and applies to companions too.
     if (!ShouldRaidSurvivalSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
         ai->IsOwnedBot(), bot->GetMap() && bot->GetMap()->IsRaid(),
-        !spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ShouldSpreadStayVeto(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), spreadLive),
         ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+    {
+        if (logSpread)
+            LogBossSpread(ai, bot, "order", -1, -1.0f, -1);
         return false;
+    }
     // Melee/tanks stack by design; spread is a ranged survival behavior.
     if (!ai->IsRanged(bot))
         return false;
     Group* group = bot->GetGroup();
     if (!group)
         return false;
+    // A slot bot holds its fixed point: the old step-away would undo the walk back to it (and the hold).
+    if (sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive)
+    {
+        const BossSpreadSlotTask slot = FindBossSpreadSlot(ai, bot);
+        if (slot.slotBot && (slot.verdict == SpreadSlotVerdict::SlotMove ||
+                             slot.verdict == SpreadSlotVerdict::SlotHold ||
+                             slot.verdict == SpreadSlotVerdict::Cast))
+            return false;
+    }
     float const spreadYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
     for (Player* member : LiveGroupMembers(group))
     {
@@ -529,6 +575,8 @@ bool RaidSpreadNeededTrigger::IsActive()
         if (sServerFacade.getDistance2d(bot, member) < spreadYd)
             return true;
     }
+    if (logSpread)
+        LogBossSpread(ai, bot, "clear", -1, -1.0f, -1);
     return false;
 }
 
@@ -537,8 +585,17 @@ namespace ai
 {
     // Any explicitly ordered aura beats automation: the trigger stays out
     // of the way however the player set it (combat or non-combat engine).
+    // Both the chat "aura <x>" strategy row and the saved `.bot choice`
+    // order count: neither the resist swap nor the restore may fight them.
+    static bool HasStoredAuraChoice(PlayerbotAI* ai)
+    {
+        std::string const stored = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", "choice aura")->Get();
+        return !stored.empty() && stored != "auto";
+    }
     bool HasManualPaladinAuraOverride(PlayerbotAI* ai)
     {
+        if (HasStoredAuraChoice(ai))
+            return true;
         static const char* const kManualAuras[] =
         {
             "aura devotion", "aura retribution", "aura concentration", "aura sanctity",

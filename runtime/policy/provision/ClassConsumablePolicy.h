@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 // Class-consumable policy for the c-cons fix (r-poisons findings): pure
@@ -58,9 +59,11 @@ inline uint32_t SoulShardOverflow(uint32_t shardCount)
 }
 
 // A class-masked consumable (poisons, class reagents) is worth keeping
-// while the bot is inside its level window: usable now (req met) and not
-// yet two tiers stale (+6, mirrors the poison rank spacing).
-inline bool ShouldKeepClassMaskedConsumable(uint32_t playerClass, uint32_t allowableClass, uint32_t reqLevel, uint32_t botLevel)
+// while the bot can use it (req met) and holds no higher tier of the same
+// ladder. The old fixed level window (+6) turned the only tier there is
+// into vendor stock: Crippling Poison (req 20) is the seed tier up to 49,
+// yet it was sold from 27 on and re-seeded on the next ding.
+inline bool ShouldKeepClassMaskedConsumable(uint32_t playerClass, uint32_t allowableClass, uint32_t reqLevel, uint32_t botLevel, bool holdsHigherTier)
 {
     if (playerClass < 1 || playerClass > 12)
         return false;
@@ -68,13 +71,69 @@ inline bool ShouldKeepClassMaskedConsumable(uint32_t playerClass, uint32_t allow
         return false;
     if (botLevel < reqLevel)
         return false;
-    return botLevel <= reqLevel + 6;
+    return !holdsHigherTier;
 }
 
 inline constexpr uint32_t SHARPENING_STONE_ENTRIES[] = { 2862, 2863, 2871, 7964, 12404, 18262, 23122 };
 inline constexpr uint32_t WEIGHTSTONE_ENTRIES[] = { 3239, 3240, 3241, 7965, 12643 };
 inline constexpr uint32_t WIZARD_OIL_ENTRIES[] = { 20744, 20746, 20750, 20749 };
 inline constexpr uint32_t MANA_OIL_ENTRIES[] = { 20745, 20747, 20748 };
+// Poison ladders, lowest rank first: the seed families of
+// PlayerbotFactory::AddConsumables plus Wound Poison I-IV. Ids missing from
+// the world DB simply never match.
+inline constexpr uint32_t INSTANT_POISON_ENTRIES[] = { 6947, 6949, 6950, 8926, 8927, 8928, 21927 };
+inline constexpr uint32_t DEADLY_POISON_ENTRIES[] = { 2892, 2893, 8984, 8985, 20844, 22053, 22054 };
+inline constexpr uint32_t CRIPPLING_POISON_ENTRIES[] = { 3775, 3776 };
+inline constexpr uint32_t MIND_POISON_ENTRIES[] = { 5237, 6951, 9186 };
+inline constexpr uint32_t WOUND_POISON_ENTRIES[] = { 10918, 10920, 10921, 10922 };
+
+// The higher tiers of the ladder an entry sits on (every list above runs
+// lowest tier first). Empty for the top tier and for an entry on no ladder.
+struct ConsumableTiers
+{
+    uint32_t const* ids = nullptr;
+    std::size_t count = 0;
+};
+
+template <std::size_t N>
+inline bool FindHigherTiers(uint32_t const (&ladder)[N], uint32_t itemId, ConsumableTiers& out)
+{
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        if (ladder[i] == itemId)
+        {
+            out.ids = ladder + i + 1;
+            out.count = N - i - 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+inline ConsumableTiers HigherTiersOf(uint32_t itemId)
+{
+    ConsumableTiers out;
+    if (FindHigherTiers(SHARPENING_STONE_ENTRIES, itemId, out) || FindHigherTiers(WEIGHTSTONE_ENTRIES, itemId, out) ||
+        FindHigherTiers(WIZARD_OIL_ENTRIES, itemId, out) || FindHigherTiers(MANA_OIL_ENTRIES, itemId, out) ||
+        FindHigherTiers(INSTANT_POISON_ENTRIES, itemId, out) || FindHigherTiers(DEADLY_POISON_ENTRIES, itemId, out) ||
+        FindHigherTiers(CRIPPLING_POISON_ENTRIES, itemId, out) || FindHigherTiers(MIND_POISON_ENTRIES, itemId, out) ||
+        FindHigherTiers(WOUND_POISON_ENTRIES, itemId, out))
+        return out;
+    return ConsumableTiers();
+}
+
+// True when the bot holds any higher tier of the entry's ladder. `holds`
+// answers "is at least one of this item id in the bags"; it is asked only
+// for the handful of higher tiers, never for the whole inventory.
+template <typename HoldsItem>
+inline bool HoldsHigherTier(uint32_t itemId, HoldsItem holds)
+{
+    ConsumableTiers higher = HigherTiersOf(itemId);
+    for (std::size_t i = 0; i < higher.count; ++i)
+        if (holds(higher.ids[i]))
+            return true;
+    return false;
+}
 
 inline bool IsStoneEntry(uint32_t itemId)
 {
@@ -110,25 +169,26 @@ inline bool UsesOils(uint32_t playerClass)
            playerClass == CLASS_DRUID_ID;
 }
 
-// Stones/oils carry no class mask, so the class gate lives here. Window
-// is +10 (stone/oil tiers sit ~10 levels apart); stale lower tiers fall
-// out and become sellable again.
-inline bool ShouldKeepStone(uint32_t playerClass, uint32_t reqLevel, uint32_t botLevel)
+// Stones/oils carry no class mask, so the class gate lives here. A lower
+// tier becomes sellable once the bot holds a higher tier of the same line;
+// the old +10 level window sold the seed tier itself (Dense stones, req 35,
+// are the seed tier up to 60 but were sold from 46 on).
+inline bool ShouldKeepStone(uint32_t playerClass, uint32_t reqLevel, uint32_t botLevel, bool holdsHigherTier)
 {
     if (!UsesStones(playerClass))
         return false;
     if (botLevel < reqLevel)
         return false;
-    return botLevel <= reqLevel + 10;
+    return !holdsHigherTier;
 }
 
-inline bool ShouldKeepOil(uint32_t playerClass, uint32_t reqLevel, uint32_t botLevel)
+inline bool ShouldKeepOil(uint32_t playerClass, uint32_t reqLevel, uint32_t botLevel, bool holdsHigherTier)
 {
     if (!UsesOils(playerClass))
         return false;
     if (botLevel < reqLevel)
         return false;
-    return botLevel <= reqLevel + 10;
+    return !holdsHigherTier;
 }
 
 } // namespace TortoiseBots

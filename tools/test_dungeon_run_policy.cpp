@@ -8063,6 +8063,369 @@ static void TestNoCrowdControlWithoutAMageOrPlanList()
     CHECK(Tick(c, h) == "pullback 2");
 }
 
+// The run's skull came from the plan's kill_first list alone. Scarlet Library's list names one entry (4291, its
+// Scarlet Diviner), so the tank marked that entry and nothing else: the other packs were pulled with no skull on any
+// unit. With no kill_first unit of the fight, the pack's own best unit is focused: a healer or caster (a mana user)
+// first, then the nearest of the rest.
+static void TestEveryPullFocusesThePack()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296, 4299})};
+    CHECK(plan.killFirst.empty());
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 10), Unit(2, 4296, 12), Unit(3, 4299, 14)};
+    CHECK(Tick(r, f) == "pullback 1");
+    // The pack engaged: the nearest unit (the melee Gallant) never takes the skull; the nearer mana user does (the
+    // Adept), and only a change sends an order.
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 4)), Engaged(Unit(2, 4296, 6)), Engaged(Unit(3, 4299, 9))};
+    f.engagedUnits[1].caster = true;
+    f.engagedUnits[2].caster = true;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2);
+    CHECK(Tick(r, f).empty());
+    // A nearer mana user joins: the held focus stays (no skull thrash as the pack moves).
+    f.engagedUnits.push_back(Engaged(Unit(4, 4296, 2)));
+    f.engagedUnits.back().caster = true;
+    CHECK(Tick(r, f).empty());
+    // The focused unit died (the read lists living ones only: it left): the nearest mana user takes the skull.
+    f.engagedUnits.erase(f.engagedUnits.begin() + 1);
+    CHECK(Tick(r, f) == "focus 4");
+    f.engagedUnits.erase(f.engagedUnits.begin() + 2);
+    // A melee unit 4 yd away never outranks a caster 9 yd away.
+    CHECK(Tick(r, f) == "focus 3");
+    // A refused focus is passed over (kFocusRefusedIgnoreMs) and the next unit takes it; nothing pauses.
+    OrderRefused(r, "focus 3", "invalid-target");
+    CHECK(r.state == State::Running);
+    CHECK(Tick(r, f) == "focus 1");
+    // Nothing of the pack is left to take it (the units left the read): the focus is over.
+    f.engagedUnits.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0);
+}
+
+// The pack focus never takes a unit the party may not fight right now: one it cannot attack, one the run holds (an
+// order out or the aura) and one that is evading are passed over, the rest of the pack is not.
+static void TestPackFocusLeavesHeldAndUnattackableUnitsOut()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296, 4299, 4304})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 4), Unit(2, 4296, 6), Unit(3, 4299, 8), Unit(4, 4304, 10)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 4)), Engaged(Unit(2, 4296, 6)), Engaged(Unit(3, 4299, 8)),
+        Engaged(Unit(4, 4304, 10))};
+    for (UnitFact& u : f.engagedUnits)
+        u.caster = true;
+    f.engagedUnits[1].attackable = false;   // cannot be attacked (a GM, a phasing unit)
+    f.engagedUnits[2].polymorphed = true;   // the run's own crowd control holds it
+    f.engagedUnits[3].evading = true;       // running home
+    // Only the first mana user is clean.
+    CHECK(Tick(r, f) == "focus 1");
+    // The held pack focus is passed over while its order is out to the run's crowd control instead.
+    Run::CcWatch w;
+    w.guid = 1;
+    r.ccWatch = {w};
+    r.ccSent.insert(1);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0); // FocusGone: the focus was crowd-controlled
+}
+
+// The pack focus is bounded like a kill_first one on a pull or move step (the order sends every bot at it): a caster
+// far off the tank is left to come in.
+static void TestPackFocusIsBoundedOnTheStep()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run pull = Start(&plan, 0);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 4), Unit(2, 4296, 20)};
+    CHECK(Tick(pull, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 4)), Engaged(Unit(2, 4296, 20))};
+    f.engagedUnits[1].caster = true;
+    // 20 yd off the tank: the caster is left to come in, the close melee is the skull.
+    CHECK(Tick(pull, f) == "focus 1");
+}
+
+// A boss step's fight with adds: with no kill_first unit of the fight the fallback puts the skull on an add, never on
+// the boss, and never on an add a kill_first or linked_death row names. Once only the boss is left, no fallback skull.
+static void TestBossAddsGetTheSkull()
+{
+    DungeonPlan plan;
+    plan.map = 249;
+    plan.steps = {Step(PlanStepKind::Boss, 10, 0, 0)};
+    plan.steps[0].entry = 4287; // the boss
+    plan.steps[0].entries = {4296, 4299, 4304};
+    ai::NormalizePlanStep(plan.steps[0]);
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 4287;
+    row.kind = ai::BossTacticKind::KillFirst;
+    row.targetEntry = 4299;
+    row.priority = 1;
+    CHECK(table.Add(row));
+    ai::BossTacticRow linked;
+    linked.map = 249;
+    linked.bossEntry = 4287;
+    linked.kind = ai::BossTacticKind::LinkedDeath;
+    linked.targetEntry = 4304;
+    linked.param = 20.0f;
+    CHECK(table.Add(linked));
+    table.Seal();
+    Run r = Start(&plan);
+    r.liveTactics = &table;
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    // The boss is the nearest unit; the rows' adds 4299 and 4304 are casters; the free add 4296 is melee.
+    f.engagedUnits = {Engaged(Unit(1, 4287, 2)), Engaged(Unit(2, 4299, 3)), Engaged(Unit(3, 4296, 9)),
+        Engaged(Unit(4, 4304, 5))};
+    f.engagedUnits[1].caster = true;
+    f.engagedUnits[3].caster = true;
+    CHECK(Tick(r, f) == "focus 3");
+    CHECK(r.focusGuid == 3);
+    CHECK(r.focusIconGuid == 3);
+    // Only the boss and the rows' own adds are left: none takes the fallback skull.
+    f.engagedUnits = {f.engagedUnits[0], f.engagedUnits[1], f.engagedUnits[3]};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0);
+    // Only the boss: still no fallback skull.
+    f.engagedUnits.erase(f.engagedUnits.begin() + 1);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0);
+}
+
+// A pack that aggros during a move step is focused like a pulled one.
+static void TestMoveAggroGetsTheSkull()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50, 0, 0)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    CHECK(Tick(r, f) == "move 50.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 4)), Engaged(Unit(2, 4296, 8))};
+    f.engagedUnits[1].caster = true;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2);
+    // The fight over, the walk goes on with no skull left.
+    f.anyInCombat = false;
+    f.engagedUnits.clear();
+    std::string const after = Tick(r, f);
+    CHECK(after.empty() || after == "move 50.0 0.0 0.0");
+    CHECK(r.focusGuid == 0);
+}
+
+// A skull a player puts on a living hostile of the group is adopted as the focus: the run drops its own pick and sends
+// the bots to the player's target by guid, leaving the mark where the player put it. While that target lives the
+// player's choice stands; once it dies, the run's own pick resumes.
+static void TestHumanSkullIsAdopted()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8))};
+    f.engagedUnits[0].caster = true;
+    // The run's own fallback focus: the caster.
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1);
+    // A player moves the skull to the melee add: the run adopts it and never puts the skull back on its own pick.
+    f.raidIconsRead = true;
+    f.raidIcons[kFocusIcon] = 2;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2);
+    CHECK(r.focusIconGuid == 1); // the run's own mark record is untouched: the player's skull stays theirs
+    // The player's target lives: the better-class caster does not take the focus back.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 2);
+    // The player takes the skull off: the run's own pick resumes.
+    f.raidIcons[kFocusIcon] = 0;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1);
+}
+
+// A run mark's record dies with its unit: once the recorded unit leaves the fight its guid is not the run's mark any
+// more, so a new spawn carrying that guid and skulled by a player is the player's to keep.
+static void TestSkullRecordDiesWithItsUnit()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss, 10, 0, 0)};
+    plan.steps[0].entry = 5000; // the boss, alive throughout
+    plan.steps[0].entries = {4287, 4296};
+    ai::NormalizePlanStep(plan.steps[0]);
+    plan.killFirst = {4287}; // the run's own mark
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8)), Engaged(Unit(7, 5000, 9))};
+    f.killFirst = {Engaged(Unit(1, 4287, 6))};
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusIconGuid == 1);
+    // A player moves the skull to an add: the run follows the player and keeps its own record.
+    f.raidIconsRead = true;
+    f.raidIcons[kFocusIcon] = 2;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 1);
+    // The recorded unit dies: its record is dropped, and the player's mark stays the focus.
+    f.engagedUnits = {Engaged(Unit(2, 4296, 8)), Engaged(Unit(7, 5000, 9))};
+    f.killFirst.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 2);
+    CHECK(r.focusIconGuid == 0); // a dead unit's guid is not the run's mark
+    // A new spawn carries the dead unit's guid and a player skulls it: the run adopts it as the player's.
+    f.units = {Unit(1, 4296, 7)};
+    f.raidIcons[kFocusIcon] = 1;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1);
+    CHECK(r.focusIconGuid == 0); // the player's skull is not the run's: it is never moved or cleared
+}
+
+// The run's own mark goes with its unit and the run re-skulls: the dead mark is handed to the glue to take off where
+// it still is, and the pack's next pick gets the mark.
+static void TestRunSkullsAgainAfterItsOwnTargetDied()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8))};
+    f.engagedUnits[0].caster = true;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusIconGuid == 1 && r.focusIconMs == r.runMs);
+    f.raidIcons[kFocusIcon] = 1; // the glue set the mark
+    // The focused unit dies: the pack's next best unit gets a new mark.
+    f.engagedUnits.erase(f.engagedUnits.begin());
+    f.units.erase(f.units.begin());
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2);
+    CHECK(r.prevFocusIconGuid == 0 && r.focusIconClear == 0); // the dead record never became a pending clear
+}
+
+// A run mark on a unit that left the fight alive (an evade home, still within the step's units) is not a player's
+// skull: the run hands its own mark to the glue to take off, and the pack's next unit gets the new one.
+static void TestRunsMarkOnAUnitThatLeftIsNotThePlayers()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6))};
+    CHECK(Tick(r, f) == "focus 1");
+    f.raidIcons[kFocusIcon] = 1;
+    // The marked unit leaves the fight; the melee add stays engaged and takes the mark.
+    f.engagedUnits = {Engaged(Unit(2, 4296, 8))};
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2 && r.focusIconClear == 0);
+}
+
+// The run's previous mark is not the player's: a re-skull leaves the old skull on the group's icon until the new order
+// lands, and the tick must read it as the run's own, not adopt it and fight its own order.
+static void TestPreviousRunSkullIsNotThePlayers()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6))};
+    CHECK(Tick(r, f) == "focus 1");
+    // A caster of a better class takes the mark; the group's skull still shows the old one.
+    f.engagedUnits.push_back(Engaged(Unit(2, 4296, 8)));
+    f.engagedUnits[1].caster = true;
+    f.raidIcons[kFocusIcon] = 1;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2 && r.prevFocusIconGuid == 1);
+    // The old mark is the run's own: no order, and no adoption of the run's own skull.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 2 && r.prevFocusIconGuid == 1);
+    // The new mark lands: the old record is done.
+    f.raidIcons[kFocusIcon] = 2;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.prevFocusIconGuid == 0);
+    // A player's skull on that unit is the player's again.
+    f.raidIcons[kFocusIcon] = 1;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 2); // the player's mark: the run's own record stays where it was
+}
+
+// The plan's own kill_first unit still wins over the pack's fallback: the fallback fills a gap, it never outranks the
+// list the plan names.
+static void TestPackFocusNeverOutranksThePlan()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    plan.killFirst = {4287};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 10), Unit(2, 4296, 12)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 8)), Engaged(Unit(2, 4296, 4))};
+    f.engagedUnits[1].caster = true;
+    f.killFirst = {Engaged(Unit(1, 4287, 8))};
+    CHECK(Tick(r, f) == "focus 1");
+}
+
+// A valid kill_first target that is only passive (in no combat) keeps the run's skull: a skull the run set from the
+// plan's kill_first unit is never replaced by the pack's fallback while that unit lives and can be attacked. Only its
+// death frees the skull for the engaged add.
+static void TestPassiveKillFirstKeepsTheSkull()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    plan.killFirst = {4287};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 10), Unit(2, 4296, 12)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    // The kill_first unit fights: it is focused and the glue sets the run's skull.
+    f.engagedUnits = {Engaged(Unit(1, 4287, 8))};
+    f.killFirst = {Engaged(Unit(1, 4287, 8))};
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1);
+    f.raidIcons[kFocusIcon] = 1;
+    // It goes passive (in no combat, so in no engaged unit) while an add keeps fighting: the skull stays on it.
+    f.engagedUnits = {Engaged(Unit(2, 4296, 6))};
+    f.killFirst = {Unit(1, 4287, 8)}; // still this fight's candidate: a bot's target, not engaged
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1 && r.focusIconClear == 0);
+    // It leaves the kill_first read too (the step's own units still carry it): the skull stays, and the fallback
+    // does not take it over.
+    f.killFirst.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1 && r.focusIconClear == 0);
+    // It dies: the pack's fallback picks the engaged add.
+    f.units = {Unit(2, 4296, 6)};
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2);
+}
+
 // Codex on #1001: the Polymorph is pending until its aura shows on that unit
 // in the fight (the mage's cc strategy is a combat one): not within
 // kCcLandMs, the mark once more; still not, noted, and the fight goes on.
@@ -26168,6 +26531,556 @@ static void TestRaidBossWhelpOnlyTwiceAtTheSameMob()
     CHECK(orders == static_cast<int>(kGuardOrdersPerUnit));
 }
 
+// Onyxia walk 2 (AiPlayerbot.DungeonRunGuardLeavesAssignedTank): a unit a tank row assigns to a tank slot stays with
+// that tank, so the off-tank round robin never takes it. The plan's until_tank row gives Cindarion (50143) to tank
+// slot 1; with the key on, the whelp-ish add on the healer is passed over and the guard orders nobody (the failure
+// without the skip: the round robin's first turn sends Offy).
+static void AssignCindarionToTankSlotOne(DungeonPlan& plan, ai::BossTacticTable& table)
+{
+    plan.map = 249;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 10184;
+    row.kind = ai::BossTacticKind::TauntAfterCast;
+    row.targetEntry = 50143;
+    row.priority = 1;
+    row.param = 10.0f;
+    row.mode = ai::TacticMode::UntilTank;
+    CHECK(table.Add(row));
+    table.Seal();
+}
+
+// The assigned slot's tank is alive (the raid tank order drops dead tanks, so this is the tank in the slot).
+static void AssignTankSlot(Facts& f, std::size_t slot)
+{
+    if (f.raid.tanks.size() <= slot)
+        f.raid.tanks.resize(slot + 1);
+    f.raid.tanks[slot].alive = true;
+}
+
+// One guard tick as CheckGuard runs it: the assignment clocks first, then the off-tank picks.
+static bool AssignedGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    UpdateGuardAssignedLoose(r, f, dt);
+    return RaidGuardTick(r, f, dt, order);
+}
+
+static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true; // the row's own key: an until_tank row is read only with it
+    AssignTankSlot(f, 1); // alive: inside the 8 s grace
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order.empty());
+    CHECK(r.offTankTurn == 0); // no turn spent on it
+    // Every other add is still the round robin's: only the assigned unit is left alone.
+    f.partyAttackers = {Hitter(45002, 11262, 20, true)};
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45002 Offy");
+}
+
+// The guard flag is on but the assigning row's own key is off: an until_tank row is not read without
+// AiPlayerbot.DungeonRunAuraTactics, so no tank holds the unit and the guard must take it (the failure before this
+// fix: the guard skipped it and a healer was left unprotected).
+static void TestRaidGuard_TakesAssignedUnitWhenAuraTacticsOff()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+}
+
+// A tank_post row without AiPlayerbot.DungeonRunTankPost is not read either, so the guard takes the unit even with the
+// aura tactic key on (it is the post kind that names the unit, and that key is off).
+static void TestRaidGuard_TakesAssignedUnitWhenTankPostOff()
+{
+    DungeonPlan plan;
+    plan.map = 249;
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 10184;
+    row.kind = ai::BossTacticKind::TankPost;
+    row.targetEntry = 50143;
+    row.priority = 2;
+    row.param = 25.0f;
+    row.spotX = 8.0f;
+    row.spotY = -200.0f;
+    row.spotZ = -85.8f;
+    row.windowSec = 120.0f;
+    CHECK(table.Add(row));
+    table.Seal();
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+}
+
+// Both kinds name the unit and only one key is on: the enabled kind's own slot assigns it, so the guard leaves it. The
+// until_tank row is slot 1 and the post slot 2; only the enabled kind's slot has a tank, so a shared slot or the other
+// kind's slot would read no tank and the guard would take the unit.
+static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
+{
+    for (bool const untilTankOn : {true, false})
+    {
+        DungeonPlan plan;
+        plan.map = 249;
+        ai::BossTacticTable table;
+        ai::BossTacticRow untilTank;
+        untilTank.map = 249;
+        untilTank.bossEntry = 10184;
+        untilTank.kind = ai::BossTacticKind::TauntAfterCast;
+        untilTank.targetEntry = 50143;
+        untilTank.priority = 1;
+        untilTank.param = 10.0f;
+        untilTank.mode = ai::TacticMode::UntilTank;
+        CHECK(table.Add(untilTank));
+        ai::BossTacticRow post;
+        post.map = 249;
+        post.bossEntry = 10184;
+        post.kind = ai::BossTacticKind::TankPost;
+        post.targetEntry = 50143;
+        post.priority = 2;
+        post.param = 25.0f;
+        post.spotX = 8.0f;
+        post.spotY = -200.0f;
+        post.spotZ = -85.8f;
+        post.windowSec = 120.0f;
+        CHECK(table.Add(post));
+        table.Seal();
+        Run r = RaidBossRun(plan);
+        r.liveTactics = &table;
+        Facts f = RaidBossGuardFacts();
+        f.raid.guardLeavesAssigned = true;
+        f.raid.auraTactics = untilTankOn;
+        f.raid.tankPost = !untilTankOn;
+        AssignTankSlot(f, untilTankOn ? 1 : 2); // the enabled kind's slot has a tank
+        f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+        std::string order;
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+        CHECK(r.offTankTurn == 0); // no turn spent on it
+    }
+}
+
+// The row's own key is on and its slot's tank is alive, but the tank has not taken the unit: the guard leaves it for
+// kGuardAssignedGraceMs (t = 0 to 7999), then takes it (t = 8000). The clock is the guard's own: a tank that lost the
+// unit or never came must not leave a healer unprotected.
+static void TestRaidGuard_TakesAssignedUnitAfterGrace()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1); // alive
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The raid tank order drops a dead tank, so slot 1's tank dying moves the next tank into slot 1 rather than emptying
+// the slot: that tank has not taken the unit, and the unit's loose clock is not restarted, so the guard leaves it for
+// the rest of the grace and takes it at t = 8000 (the failure before: a dead slot read as no hold and the unit went at
+// once to a tank the row did not name).
+static void TestRaidGuard_TakesAssignedUnitWhenItsSlotTankDies()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 0); // the main tank's slot
+    AssignTankSlot(f, 1); // the next tank, in the dead one's place
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The slot's tank is alive and the unit is on a healer: the grace alone bounds the hold, and at t = 8000 the guard
+// takes the unit; a tank's selected target is no hold, so a tank that cannot take the unit (taunt-immune, parked on a
+// breath seat, stuck) does not keep it on the healer.
+static void TestRaidGuard_TakesAssignedUnitAfterGraceEvenIfTankTargetsIt()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1);
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000: the tank's selection did not keep it
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The loose clock runs while the unit cannot be picked: loose at t = 0, out of the guard's reach (polymorphed) from
+// t = 1000 to 7000, eligible again at t = 8000. The grace ended with the loose time, so the guard takes it at once (the
+// failure with the clock advanced only for eligible units: a fresh 8 s at t = 8000).
+static void TestRaidGuard_GraceRunsWhileUnitIneligible()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1); // alive
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order)); // t = 0: loose, its grace starts
+    CHECK(order.empty());
+    for (std::uint32_t t = 1000; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        Facts g = f;
+        g.partyAttackers[0].polymorphed = true;
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order)); // t = 1000 .. 7000: ineligible, still loose
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000: the grace is spent, taken at once
+    CHECK(order == "attack 45001 Offy");
+}
+
+// No off-tank is alive from t = 0 to t = 8000: the loose clock runs through the guard's early return. One is alive at
+// t = 9000 and the unit is taken on that tick, not after a fresh grace (the failure before: the clock started afresh
+// when an off-tank appeared).
+static void TestRaidGuard_GraceRunsWithNoFreeOffTank()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1); // alive
+    f.raid.offTanksAlive.clear();
+    f.raid.bossOffTanksAlive.clear();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < 9000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    f.raid.offTanksAlive = {"Offy"};
+    f.raid.bossOffTanksAlive = f.raid.offTanksAlive;
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 9000: no fresh grace
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The loose clock runs through the ticks the healer guard orders on: with dt = 2000 it orders every tick (the order
+// spacing is kGuardRepeatMs), so the off-tank pick never runs until t = 8000, when no healer add is left and the
+// assigned unit is taken at once. With the clock advanced only inside RaidGuardTick the unit gets a fresh 8 s there.
+static void TestRaidGuard_GraceRunsThroughHealerGuardOrders()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.healerGuard = true;
+    f.leadHeldEntries = {10184}; // the main tank holds the boss: the healer guard's gate
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1); // alive
+    MemberFact dps = Mem("NearDps", 21);
+    dps.ranged = true;
+    dps.rangedDps = true;
+    f.members = {Mem("Tanky", 0), dps};
+    UnitFact assigned = Hitter(45001, 50143, 30, true);
+    assigned.x = 31.0f; // 10 yd from the dps: the fresh add at 0 yd is the healer guard's pick
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += 2000)
+    {
+        Facts g = f;
+        UnitFact add = Hitter(46000 + t, 11368, 20, true);
+        add.x = 21.0f;
+        g.partyAttackers = {assigned, add};
+        CHECK(Tick(r, g, 2000) == "attack " + std::to_string(46000 + t) + " NearDps"); // t = 0 .. 6000
+    }
+    f.partyAttackers = {assigned};
+    f.raid.healerGuard = false; // no healer add left: the off-tank guard's turn
+    CHECK(Tick(r, f, 2000) == "attack 45001 Offy"); // t = 8000: 8 s loose, no fresh grace
+}
+
+// The loose clock runs through the tick the main tank's join takes: RaidBossLeadJoin sends the lead bot at the plan boss
+// an off-tank holds at t = 6000, the one tick the off-tank pick never runs (its wait is kRaidAssistWaitMs). At t = 8000
+// the join is spent (kRaidGuardRearmMs) and the assigned unit is taken at once: no fresh grace from the paused tick.
+static void TestRaidGuard_GraceRunsThroughLeadJoin()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    f.carrier = "Lead";
+    AssignTankSlot(f, 1); // alive
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Offy"; // held by an off-tank, the join's case
+    UnitFact assigned = Hitter(45001, 50143, 30, true);
+    std::string const join = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Lead";
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += 2000)
+    {
+        f.partyAttackers = {boss, assigned};
+        std::string const order = Tick(r, f, 2000);
+        if (t < 6000)
+            CHECK(order.empty()); // the grace (and the join still waiting)
+        else
+            CHECK(order == join); // t = 6000: the join, the guard's pick paused
+    }
+    f.partyAttackers = {boss, assigned};
+    // Offy still holds the joined boss, so Offz is the free off-tank; the unit is taken all the same.
+    CHECK(Tick(r, f, 2000) == "attack 45001 Offz"); // t = 8000: 8 s loose, no fresh grace
+}
+
+// With the key off the assignment clocks are no one's: loose attackers over several fight ticks leave them at zero,
+// and the map empty, so turning the key on mid-run starts its grace clean (the failure before: every raid-boss fight
+// tick advanced the clock and wrote each loose attacker).
+static void TestRaidGuard_ClockUntouchedWithKeyOff()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45001, 11262, 20, true), Hitter(45002, 11262, 18, false)};
+    for (int k = 0; k < 10; ++k)
+        Tick(r, f);
+    CHECK(r.guardAssignedLooseSinceMs.empty());
+    CHECK(r.guardAssignedClockMs == 0);
+}
+
+// The same unit with the key off: today's order, the off-tank takes it.
+static void TestRaidGuardAssignedUnitTakenWithFlagOff()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+    CHECK(r.note == "fighting: the off-tank Offy takes 50143 off the healer (20.0 yd)");
+}
+// Onyxia walk 2e (AiPlayerbot.DungeonRunGuardClockHittable): Cindarion hits healers from the air in P1, so the 8 s
+// grace was spent before touchdown. With the key on the assigned-unit clock starts on the first hittable tick
+// (attackable and selectable): a tank_post unit is loose and unhittable for 10 s, then hittable, and the guard leaves
+// it at 10 + 14 s and takes it at 10 + 15 s (the failure without the key: the guard takes it at 8 s).
+static Facts GuardClockHittableFacts()
+{
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    f.raid.tankPost = true;
+    f.raid.guardClockHittable = true;
+    AssignTankSlot(f, 1); // alive
+    return f;
+}
+
+// The post names the unit alone: the table answers tankPostSlot only, so the skip's fromPost is true and the 15 s
+// grace applies (an until_tank row would name untilTankSlot instead).
+static void AssignCindarionToTankPostSlotOne(DungeonPlan& plan, ai::BossTacticTable& table)
+{
+    plan.map = 249;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 10184;
+    row.kind = ai::BossTacticKind::TankPost;
+    row.targetEntry = 50143;
+    row.priority = 1;
+    row.param = 25.0f;
+    row.spotX = 8.0f;
+    row.spotY = -200.0f;
+    row.spotZ = -85.8f;
+    row.windowSec = 120.0f;
+    CHECK(table.Add(row));
+    table.Seal();
+}
+
+static void TestGuardAssignedClock_StartsWhenHittable()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankPostSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = GuardClockHittableFacts();
+    UnitFact loose = Hitter(45001, 50143, 20, true);
+    loose.selectable = false;
+    loose.attackable = false;
+    f.partyAttackers = {loose};
+    std::string order;
+    for (std::uint32_t t = 0; t < 10000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    Facts g = GuardClockHittableFacts();
+    g.partyAttackers = {Hitter(45001, 50143, 20, true)}; // hittable at 10 s: the clock starts here
+    for (std::uint32_t t = 10000; t < 24000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(!AssignedGuardTick(r, g, kTickMs, order)); // 10 + 14 s: still the post's 15 s
+    CHECK(order.empty());
+    CHECK(AssignedGuardTick(r, g, kTickMs, order)); // 10 + 15 s
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedClock_KeyOffUnchanged()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1); // alive
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedClock_ShortBlipKeepsStart()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankPostSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = GuardClockHittableFacts();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)}; // hittable at 0: the clock starts here
+    std::string order;
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order.empty());
+    Facts g = GuardClockHittableFacts();
+    UnitFact lift = Hitter(45001, 50143, 20, true);
+    lift.attackable = false;
+    g.partyAttackers = {lift};
+    for (std::uint32_t t = 1000; t < 4000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order)); // 3 s unhittable, under the grace: the start holds
+        CHECK(order.empty());
+    }
+    Facts h = GuardClockHittableFacts();
+    h.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    for (std::uint32_t t = 4000; t < 15000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, h, kTickMs, order)); // the post's 15 s, kept through the blip
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, h, kTickMs, order)); // t = 15000 from the 0 s start, not a fresh clock
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedClock_LongLiftOffRestarts()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankPostSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = GuardClockHittableFacts();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)}; // hittable at 0: the clock starts here
+    std::string order;
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order.empty());
+    Facts g = GuardClockHittableFacts();
+    UnitFact lift = Hitter(45001, 50143, 20, true);
+    lift.selectable = false;
+    g.partyAttackers = {lift};
+    for (std::uint32_t t = 1000; t <= 9000; t += kTickMs) // 9 unhittable ticks: banked at the first, so 8000 ms pass
+    {                                                      // on the ninth (clock 10000 - 2000) and the start clears
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(r.guardAssignedLooseSinceMs.empty()); // the long lift-off cleared the start
+    // The next hittable tick restarts the clock: 15 s more from the restart, and the take lands 15 s later.
+    Facts h = GuardClockHittableFacts();
+    h.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    CHECK(!AssignedGuardTick(r, h, kTickMs, order)); // restarted
+    CHECK(order.empty());
+    for (int k = 0; k < 14; ++k)
+    {
+        CHECK(!AssignedGuardTick(r, h, kTickMs, order)); // still the post's 15 s
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, h, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedGrace_PostRowUses15s()
+{
+    CHECK(ai::GuardAssignedGraceFor(true, true) == 15000);
+    CHECK(ai::GuardAssignedGraceFor(true, false) == 8000);
+    CHECK(ai::GuardAssignedGraceFor(false, true) == 8000);
+    CHECK(ai::GuardAssignedGraceFor(false, false) == 8000);
+}
+
 // The main tank on stay is still engaged on the mob on itself (the boss), first and at once; the whelp on the healer
 // goes to an off-tank after the order spacing, never to the main tank.
 static void TestRaidBossMainTankOnStayEngagesItsOwnMob()
@@ -27993,6 +28906,63 @@ static void TestCharmedMemberIsNoRunFact()
     CHECK(!RunFactSkipsMember(true, false));  // a hostile player outside the group is still a fight's
     CHECK(!RunFactSkipsMember(false, true));  // a creature
     CHECK(!RunFactSkipsMember(false, false));
+}
+
+// AiPlayerbot.DungeonRunFactJudgeCharmedLead (walk 57 F1): a lead tank Brain-Washed by Jin'do is friendly to Jin'do and
+// his Brain Wash Totem, so the fact read judged against him (ReadKillFirst) read the totem's owner as not engaged and the
+// totem focus went silent (16 of 19 main-tank charm windows of 10 s or more). With the key on, a charmed lead and an
+// uncharmed judge found, the judge replaces the lead (RunFactJudgeReplacesLead): Jin'do reads as engaged and the totem is
+// picked. The read below mirrors the glue's: the owner is engaged unless it is friendly to the fact lead, and only the
+// charmed lead finds it friendly. (The name stays the spec's, snake_case unlike its neighbours, so the spec finds it.)
+static void charmed_lead_totem_stays_a_fact()
+{
+    std::uint64_t const jindo = 500;
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    auto const read = [&](bool keyOn)
+    {
+        bool const leadCharmed = true;
+        bool const judgeFound = true;
+        bool const byJudge = RunFactJudgeReplacesLead(keyOn, leadCharmed, judgeFound);
+        bool const ownerFriendlyToFactLead = !byJudge; // the charmed lead is Jin'do's; the judge is not
+        Facts f = Party(0);
+        f.anyInCombat = true;
+        f.totemFocus = true;
+        UnitFact totem = Unit(501, 15112, 5);
+        totem.hostile = true;
+        totem.attackable = true;
+        totem.creatureType = kCreatureTotem;
+        totem.owner = jindo;
+        totem.engaged = false;                               // a wild summon in no attackers list
+        totem.ownerEngaged = !ownerFriendlyToFactLead;       // && EngagedWithParty(Jin'do): he is fighting the raid
+        f.killFirst = {totem};
+        return f;
+    };
+    Run on = Start(&plan);
+    Facts const judged = read(true);
+    const UnitFact* const pick = PickKillFirst(on, judged);
+    CHECK(pick && pick->guid == 501);
+    CHECK(Tick(on, judged) == "focus 501");
+    // Key off: the charmed lead judges, Jin'do reads as friendly, and the totem is no pick (today's silent focus).
+    Run off = Start(&plan);
+    Facts const leadJudged = read(false);
+    CHECK(PickKillFirst(off, leadJudged) == nullptr);
+    CHECK(Tick(off, leadJudged) != "focus 501");
+}
+
+// The helper's truth table: only key on, lead charmed and a judge found replace the lead; key off, a lead that is not
+// charmed, or no fit judge (the whole group charmed) keep the lead exactly as before.
+static void TestRunFactJudgeKeepsTheLeadOtherwise()
+{
+    CHECK(RunFactJudgeReplacesLead(true, true, true));
+    CHECK(!RunFactJudgeReplacesLead(false, true, true));   // key off: byte-identical
+    CHECK(!RunFactJudgeReplacesLead(false, true, false));
+    CHECK(!RunFactJudgeReplacesLead(false, false, true));
+    CHECK(!RunFactJudgeReplacesLead(false, false, false));
+    CHECK(!RunFactJudgeReplacesLead(true, false, true));   // the lead is not charmed: it judges itself
+    CHECK(!RunFactJudgeReplacesLead(true, false, false));
+    CHECK(!RunFactJudgeReplacesLead(true, true, false));   // no uncharmed member: today's behaviour
 }
 
 // A whelp 60 yd from the main tank (past kGuardYd, inside kRaidBossGuardYd) still goes to an off-tank.
@@ -36964,6 +37934,18 @@ int main()
     TestPullCrowdControlsTheHealer();
     TestBossStepNeverCrowdControlsItsAdds();
     TestNoCrowdControlWithoutAMageOrPlanList();
+    TestEveryPullFocusesThePack();
+    TestPackFocusLeavesHeldAndUnattackableUnitsOut();
+    TestPackFocusIsBoundedOnTheStep();
+    TestBossAddsGetTheSkull();
+    TestMoveAggroGetsTheSkull();
+    TestHumanSkullIsAdopted();
+    TestSkullRecordDiesWithItsUnit();
+    TestRunSkullsAgainAfterItsOwnTargetDied();
+    TestRunsMarkOnAUnitThatLeftIsNotThePlayers();
+    TestPreviousRunSkullIsNotThePlayers();
+    TestPackFocusNeverOutranksThePlan();
+    TestPassiveKillFirstKeepsTheSkull();
     TestCrowdControlMustLand();
     TestKillFirstIsThisFightsOnly();
     TestAuraOnEngagedKeepsThePullBound();
@@ -37400,6 +38382,24 @@ int main()
     TestRaidBossWhelpsGoToAnOffTank();
     TestRaidBossWhelpsGoPastTheFightOrderCap();
     TestRaidBossWhelpOnlyTwiceAtTheSameMob();
+    TestRaidGuardLeavesAssignedTankUnitToItsRows();
+    TestRaidGuard_TakesAssignedUnitWhenAuraTacticsOff();
+    TestRaidGuard_TakesAssignedUnitWhenTankPostOff();
+    TestRaidGuard_LeavesUnitWhenAnySourceOn();
+    TestRaidGuard_TakesAssignedUnitAfterGrace();
+    TestRaidGuard_TakesAssignedUnitWhenItsSlotTankDies();
+    TestRaidGuard_TakesAssignedUnitAfterGraceEvenIfTankTargetsIt();
+    TestRaidGuard_GraceRunsWhileUnitIneligible();
+    TestRaidGuard_GraceRunsWithNoFreeOffTank();
+    TestRaidGuard_GraceRunsThroughHealerGuardOrders();
+    TestRaidGuard_GraceRunsThroughLeadJoin();
+    TestRaidGuard_ClockUntouchedWithKeyOff();
+    TestRaidGuardAssignedUnitTakenWithFlagOff();
+    TestGuardAssignedClock_StartsWhenHittable();
+    TestGuardAssignedClock_KeyOffUnchanged();
+    TestGuardAssignedClock_ShortBlipKeepsStart();
+    TestGuardAssignedClock_LongLiftOffRestarts();
+    TestGuardAssignedGrace_PostRowUses15s();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();
     TestRaidBossGuardReadModes();
@@ -37452,6 +38452,8 @@ int main()
     TestGuardSkipsAuraGatedShade();
     TestTotemFocusBeatsGuard();
     TestCharmedMemberIsNoRunFact();
+    charmed_lead_totem_stays_a_fact();
+    TestRunFactJudgeKeepsTheLeadOtherwise();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();

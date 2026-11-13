@@ -245,6 +245,9 @@ namespace ai
 
             creators["spell id"] = [](PlayerbotAI* ai) { return new SpellIdValue(ai); };
             creators["hold kill blockers"] = [](PlayerbotAI* ai) { return new HoldKillBlockersValue(ai); };
+            creators["fighting blockers"] = [](PlayerbotAI* ai) { return new GateHoldFightingBlockersValue(ai); };
+            creators["tank post units"] = [](PlayerbotAI* ai) { return new TankPostUnitsValue(ai); };
+            creators["add crew"] = [](PlayerbotAI* ai) { return new AddCrewValue(ai); };
             creators["sole kill candidates"] = [](PlayerbotAI* ai) { return new SoleKillCandidatesValue(ai); };
             creators["kill first grid units"] = [](PlayerbotAI* ai) { return new KillFirstGridUnitsValue(ai); };
             creators["item for spell"] = [](PlayerbotAI* ai) { return new ItemForSpellValue(ai); };
@@ -353,6 +356,7 @@ namespace ai
             creators["bg type"] = [](PlayerbotAI* ai) { return new BgTypeValue(ai); };
             creators["rpg bg type"] = [](PlayerbotAI* ai) { return new RpgBgTypeValue(ai); };
             creators["bg role"] = [](PlayerbotAI* ai) { return new BgRoleValue(ai); };
+            creators["wsg flag role"] = [](PlayerbotAI* ai) { return new WsgFlagRoleValue(ai); };
             creators["bg master"] = [](PlayerbotAI* ai) { return new BgMasterValue(ai); };
             creators["enemy flag carrier"] = [](PlayerbotAI* ai) { return new FlagCarrierValue(ai, false, true); };
             creators["team flag carrier"] = [](PlayerbotAI* ai) { return new FlagCarrierValue(ai, true, true); };

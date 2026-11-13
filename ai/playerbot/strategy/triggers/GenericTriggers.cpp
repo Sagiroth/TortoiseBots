@@ -3,18 +3,23 @@
 #include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/ThreatCapPolicy.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
 #include "playerbot/MainTankPolicy.h"
 #include "playerbot/TankAddPickupPolicy.h"
-#include "playerbot/policy/combat/AoeTauntPolicy.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/policy/combat/LoseAggroPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/travel/PointDangerPolicy.h"
 #include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "GenericTriggers.h"
+#include "playerbot/strategy/generic/ThreatStrategy.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -148,12 +153,17 @@ bool ai::NoGroupMemberNear(Player* bot)
     return true;
 }
 
+bool ai::IsGroupedHealer(PlayerbotAI* ai)
+{
+    return ai->GetBot()->GetGroup() && ai->ContainsStrategy(STRATEGY_TYPE_HEAL);
+}
+
 bool ai::HealerWandAllowed(PlayerbotAI* ai, Unit* target)
 {
     Player* const bot = ai->GetBot();
     Group* const group = bot->GetGroup();
     HealerWandGate gate;
-    gate.groupedHealer = group && ai->ContainsStrategy(STRATEGY_TYPE_HEAL);
+    gate.groupedHealer = IsGroupedHealer(ai);
     if (!gate.groupedHealer)
         return true;
 
@@ -357,18 +367,21 @@ bool LoseAggroTrigger::IsActive()
 
     if(!AI_VALUE2(bool, "has aggro", "current target"))
     {
-        // Check if the aggro has been taken by another tank
+        // Check if the aggro has been taken by another tank. A mob with no
+        // victim yet (a fresh refill mob before its first swing) is not
+        // held by anyone: stay quiet, the mob picks a victim within a tick
+        // and the rules below then decide (LoseAggroPolicy.h).
         if(ai->IsTank(bot))
         {
             Unit* target = AI_VALUE(Unit*, "current target");
             if(target && !target->IsPlayer())
             {
                 Unit* targetsTarget = target->GetVictim();
-                if(targetsTarget && targetsTarget->IsPlayer())
-                {
-                    Player* targetsPlayerTarget = (Player*)targetsTarget;
-                    return !ai->IsTank(targetsPlayerTarget);
-                }
+                LoseAggroSeen seen;
+                seen.victimExists = targetsTarget != nullptr;
+                seen.victimIsPlayer = targetsTarget && targetsTarget->IsPlayer();
+                seen.victimIsTank = seen.victimIsPlayer && ai->IsTank((Player*)targetsTarget);
+                return LoseAggroTankBranch(seen);
             }
         }
 
@@ -380,50 +393,7 @@ bool LoseAggroTrigger::IsActive()
 
 bool LooseAddsNearTrigger::IsActive()
 {
-    Group* group = bot->GetGroup();
-    if (!group)
-        return false;
-
-    // The "attackers" value collapses to the focus RTI mark while a "focus
-    // rti targets" strategy runs, so a marked pack hides its own loose adds.
-    // Count group victims straight from the core instead: every group member
-    // (and the bot) reports the units attacking it, before any strategy
-    // filter runs. Players are not mobs (PvP: skip them).
-    std::vector<LooseAddCandidate> candidates;
-    std::set<ObjectGuid> seen;
-    std::list<Unit*> members;
-    members.push_back(bot);
-    for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
-    {
-        if (Player* member = sObjectMgr.GetPlayer(itr->guid))
-            members.push_back(member);
-    }
-    for (Unit* member : members)
-    {
-        if (!member || !member->IsInWorld())
-            continue;
-        for (Unit* attacker : member->GetAttackers())
-        {
-            if (!attacker || !attacker->IsAlive())
-                continue;
-            if (attacker->IsPlayer())
-                continue;
-            if (!seen.insert(attacker->getObjectGuid()).second)
-                continue;
-            if (!attacker->GetVictim())
-                continue;
-            Player* victimPlayer = attacker->GetVictim()->ToPlayer();
-            if (!victimPlayer || !group->IsMember(victimPlayer->GetObjectGuid()))
-                continue;
-            LooseAddCandidate candidate;
-            candidate.victimIsGroupPlayer = true;
-            candidate.victimIsTank = ai->IsTank(victimPlayer);
-            candidate.distanceToBot = bot->GetDistance(attacker);
-            candidates.push_back(candidate);
-        }
-    }
-
-    return ShouldAoeTaunt(CountLooseAddsInReach(candidates));
+    return AoeTauntStillNeeded(ai, bot);
 }
 
 bool HasAggroTrigger::IsActive()
@@ -787,11 +757,18 @@ bool MyAttackerCountTrigger::IsActive()
 
 bool HighThreatTrigger::IsActive()
 {
-    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (FankrissBurnSpawn(ai, target)) return false;
     uint8 relativeThreat = AI_VALUE2(uint8, "threat", "current target");
 
-    if (relativeThreat >= 80)
+    if (relativeThreat >= kThreatHighLinePct)
     {
+        // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a boss whose `threat_successor` row carries `strict` the 5 s
+        // projection escape is off, so the 80 % line binds (ThreatCapPolicy.h HighThreatProjectionEscapes). A successor
+        // row without the opt-in keeps the escape. The row is read only with the key on.
+        const bool strict = sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict;
+        const bool successorTarget = StrictSuccessorTarget(strict, strict && StrictThreatSuccessorRow(target));
+
         //Watch delta.
         uint32 lastTime = MEM_AI_VALUE(float, "my threat::current target")->GetLastTime();
 
@@ -804,9 +781,8 @@ bool HighThreatTrigger::IsActive()
             {
                 float tankThreat = AI_VALUE2(float, "tank threat", "current target");
 
-                float newThreat = currentThreat + deltaThreat * 5.0f; //No agro in 5 seconds.
-
-                if (newThreat < tankThreat)
+                //No agro in 5 seconds.
+                if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))
                     return false;
             }
         }
@@ -823,6 +799,76 @@ bool MediumThreatTrigger::IsActive()
     if (AI_VALUE2(uint8, "threat", "current target") >= 60)
         return true;
 
+    return false;
+}
+
+// The successor white-damage stop (AiPlayerbot.DungeonRunThreatSuccessorStrict). The melee swing and the auto-repeat
+// (wand Shoot, Auto Shot) keep running once started, so over 92 % of the successor reference this trigger stops them on
+// the spot, in the engine's trigger pass at the start of the decision cycle (ThreatCapPolicy.h SuccessorWhiteStopNow):
+// a queued stop action could lose the cycle to any higher action (a heal, a move, an emergency) while the swing went on.
+// It stops them again on every pass while the latch holds (another attack action may restart the swing), and the
+// threat multiplier keeps the white-damage actions from starting until the threat is under 85 %. The trigger itself
+// never fires an action. Tanks are never stopped, a target without a `strict` successor row clears the latch, and a 0 reference (a tank
+// Hex) leaves the white damage running. Key off: returns at once and the latch is never read.
+bool SuccessorWhiteCapTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (FankrissBurnSpawn(ai, target)) return false;
+    if (!AI_VALUE(bool, "group")) return false;
+    if (AI_VALUE(bool, "neglect threat")) return false;
+    // The row decides before the percentage is read: a trash target never pays for the tank scan the threat value costs.
+    // Only a `threat_successor` row carrying `strict` latches; a plain successor row (Hakkar) clears it like trash.
+    if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, StrictThreatSuccessorRow(target)))
+    {
+        ai->SuccessorWhiteCap().Update(false, false, 0);
+        return false;
+    }
+    // Only white damage on the successor itself is stopped: a swing or shot an action put on a Shade or an add is left alone.
+    // Each attack mode is judged on its own target (SuccessorWhiteStopsOf): melee on the boss with the wand on an add stops
+    // the swing only, and the reverse interrupts the auto-repeat only.
+    Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
+    const bool meleeOnSuccessor = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;
+    const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;
+    const bool whiteRunning = SuccessorWhiteOnTarget(meleeOnSuccessor, true, autoRepeatOnSuccessor, true);
+    const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;
+    const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true,
+            PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning),
+        meleeOnSuccessor, autoRepeatOnSuccessor);
+    if (stops.melee)
+        bot->AttackStop();
+    if (stops.autoRepeat)
+        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+    return false;
+}
+
+// The reset-window white stop (AiPlayerbot.DungeonRunThreatResetWindow). The same trigger-pass shape as the successor
+// white stop: a swing or auto-repeat aimed at the boss stops on the spot while the hold against the best non-holding
+// tank fires, and it stops them again on the next pass while the hold lasts. The target is never cleared (walk 57's
+// target strip cost about 3 points) and the trigger never queues an action. Key off: returns at once.
+bool ThreatResetWhiteStopTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+        return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (!target || target->IsPlayer())
+        return false;
+    if (!AI_VALUE(bool, "group"))
+        return false;
+    if (AI_VALUE(bool, "neglect threat"))
+        return false;
+    if (!ThreatResetHolds(ai, bot, target))
+        return false;
+    Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
+    const bool meleeOnTarget = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;
+    const bool autoRepeatOnTarget = repeating && autoRepeat->m_targets.getUnitTarget() == target;
+    const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(true, meleeOnTarget, autoRepeatOnTarget);
+    if (stops.melee)
+        bot->AttackStop();
+    if (stops.autoRepeat)
+        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
     return false;
 }
 
@@ -886,6 +932,7 @@ bool AoeTrigger::IsActive()
                 return false;
         }
     }
+
     return true;
 }
 
@@ -1519,18 +1566,22 @@ bool NotDpsTargetActiveTrigger::IsActive()
 
         if(sServerFacade.IsAlive(target))
         {
-            // do not switch if enemy target
+            // do not switch if enemy target (read first, unchanged: a hostile player always wins over the hold)
             Unit* enemy = AI_VALUE(Unit*, "enemy player target");
-            if (enemy)
+
+            // AiPlayerbot.DungeonRunCarrierHold: a Delusions carrier on its Shade keeps it; "dps assist" would pull it
+            // to the skull (Jin'do). It suppresses only the dps-target comparison below. Key off, or not a
+            // needs_aura subject the bot carries the aura for: as before.
+            bool holdsCurrent = false;
+            if (!enemy && sPlayerbotAIConfig.dungeonRunCarrierHold)
             {
-                return target != enemy;
+                std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
+                holdsCurrent = CarrierHoldsCurrent(sPlayerbotAIConfig.dungeonRunCarrierHold, requiredAura != 0,
+                    requiredAura != 0 && bot->HasAura(requiredAura));
             }
 
-            Unit* dps = AI_VALUE(Unit*, "dps target");
-            if (dps)
-            {
-                return target != dps;
-            }
+            Unit* dps = (!enemy && !holdsCurrent) ? AI_VALUE(Unit*, "dps target") : nullptr;
+            return NotDpsTargetFires(enemy != nullptr, target == enemy, holdsCurrent, dps != nullptr, target == dps);
         }
     }
 

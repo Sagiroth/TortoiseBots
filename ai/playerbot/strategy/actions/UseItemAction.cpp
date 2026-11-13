@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/ProtectionPotionPolicy.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/TravelMgr.h"
 
 // The "opening object/lock" spell target flag in this core; the shim's old 0x100 was TARGET_FLAG_UNIT_UNK.
@@ -1291,10 +1292,12 @@ bool UseItemIdAction::isUseful()
     return false;
 }
 
-uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
+uint32 ai::FindListedBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
 {
     // The bot's own cached attacker list: a listed boss only shows up once
-    // its pull has started, so trash pulls never spend the potion.
+    // its pull has started, so trash pulls never spend the potion. The entry
+    // table only: a spread row's potion is not a listed boss's, and the legacy
+    // trigger that reads this carries no row health rule.
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     for (const ObjectGuid& attackerGuid : attackers)
@@ -1315,6 +1318,32 @@ uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
     return 0;
 }
 
+uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)
+{
+    // `fromRow` tells the caller that a spread row, not the entry table, named the potion, so only the row's own
+    // health rule is applied to it.
+    if (fromRow)
+        *fromRow = false;
+
+    const uint32 listed = FindListedBossProtectionPotion(ai, buffSpellId);
+    if (listed)
+        return listed;
+
+    // No listed boss among the attackers: a live spread row can name the school for its own boss and the roles that
+    // drink it (DungeonRunBossProtectionPotion). The table answers first, so a listed boss never changes.
+    const ProtectionPotion row = BossRowProtectionPotion(ai, ai->GetBot());
+    if (row.itemId)
+    {
+        if (buffSpellId)
+            *buffSpellId = row.buffSpellId;
+        if (fromRow)
+            *fromRow = true;
+        return row.itemId;
+    }
+
+    return 0;
+}
+
 bool UseBossProtectionPotionAction::isUseful()
 {
     // All three Greater Protection Potions need level 48 (same gate as the
@@ -1323,7 +1352,18 @@ bool UseBossProtectionPotionAction::isUseful()
         return false;
 
     uint32 buffSpellId = 0;
-    if (!FindBossProtectionPotion(ai, &buffSpellId))
+    bool fromRow = false;
+    const uint32 itemId = FindBossProtectionPotion(ai, &buffSpellId, &fromRow);
+    if (!itemId)
+        return false;
+
+    // The row potion's own health rule, re-read at execution time: the trigger may have picked it above the low line
+    // and the bot can drop below it before the action runs, where a healing potion comes first. A listed boss's potion
+    // never reads it (fromRow false), so the entry table behaves exactly as before.
+    const ProtectionPotion rowPotion = { itemId, buffSpellId };
+    if (fromRow && !BossRowPotionDue(rowPotion, bot->HasAura(buffSpellId),
+            static_cast<std::uint8_t>(bot->GetHealthPercent()),
+            static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth), bot->GetLevel()))
         return false;
 
     return UseItemIdAction::isUseful() && !bot->HasAura(buffSpellId);

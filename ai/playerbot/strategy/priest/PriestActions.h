@@ -1,10 +1,23 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/policy/heal/ShieldTargetPolicy.h"
+#include "playerbot/policy/heal/ShadowformHealPolicy.h"
 #include "playerbot/AoeFearPolicy.h"
 
 namespace ai
 {
+    bool PriestShadowformHealGateOpen(PlayerbotAI* ai, std::string const& spell, Unit* target);
+
+    template <class Base>
+    class PriestFormGatedHeal : public Base
+    {
+    public:
+        using Base::Base;
+        bool isUseful() override
+        {
+            return Base::isUseful() && PriestShadowformHealGateOpen(this->ai, this->GetSpellName(), this->GetTarget());
+        }
+    };
     // disc
     BUFF_ACTION(CastPowerWordFortitudeAction, "power word: fortitude");
     BUFF_PARTY_ACTION(CastPowerWordFortitudeOnPartyAction, "power word: fortitude");
@@ -86,16 +99,107 @@ namespace ai
     BUFF_ACTION(CastAscendanceAction, "ascendance");
 
     // holy
-    HEAL_ACTION(CastLesserHealAction, "lesser heal");
-    HEAL_PARTY_ACTION_E(CastLesserHealOnPartyAction, "lesser heal", 50, HealManaEfficiency::MEDIUM);
-    HEAL_ACTION(CastHealAction, "heal");
-    HEAL_PARTY_ACTION_E(CastHealOnPartyAction, "heal", 50, HealManaEfficiency::MEDIUM);
-    HEAL_ACTION(CastGreaterHealAction, "greater heal");
-    HEAL_PARTY_ACTION_E(CastGreaterHealOnPartyAction, "greater heal", 50, HealManaEfficiency::MEDIUM);
-    HEAL_ACTION(CastFlashHealAction, "flash heal");
-    HEAL_PARTY_ACTION_E(CastFlashHealOnPartyAction, "flash heal", 15, HealManaEfficiency::LOW);
-    HEAL_ACTION(CastRenewAction, "renew");
-    HEAL_HOT_PARTY_ACTION_E(CastRenewOnPartyAction, "renew", 15, HealManaEfficiency::VERY_HIGH);
+    class CastLesserHealActionBase : public CastHealingSpellAction
+    {
+    public:
+        CastLesserHealActionBase(PlayerbotAI* ai) : CastHealingSpellAction(ai, "lesser heal") {}
+    };
+    class CastLesserHealAction : public PriestFormGatedHeal<CastLesserHealActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastLesserHealActionBase>::PriestFormGatedHeal;
+    };
+    class CastLesserHealOnPartyActionBase : public HealPartyMemberAction
+    {
+    public:
+        CastLesserHealOnPartyActionBase(PlayerbotAI* ai) : HealPartyMemberAction(ai, "lesser heal", 50, HealManaEfficiency::MEDIUM) {}
+    };
+    class CastLesserHealOnPartyAction : public PriestFormGatedHeal<CastLesserHealOnPartyActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastLesserHealOnPartyActionBase>::PriestFormGatedHeal;
+    };
+    class CastHealActionBase : public CastHealingSpellAction
+    {
+    public:
+        CastHealActionBase(PlayerbotAI* ai) : CastHealingSpellAction(ai, "heal") {}
+    };
+    class CastHealAction : public PriestFormGatedHeal<CastHealActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastHealActionBase>::PriestFormGatedHeal;
+    };
+    class CastHealOnPartyActionBase : public HealPartyMemberAction
+    {
+    public:
+        CastHealOnPartyActionBase(PlayerbotAI* ai) : HealPartyMemberAction(ai, "heal", 50, HealManaEfficiency::MEDIUM) {}
+    };
+    class CastHealOnPartyAction : public PriestFormGatedHeal<CastHealOnPartyActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastHealOnPartyActionBase>::PriestFormGatedHeal;
+    };
+    class CastGreaterHealActionBase : public CastHealingSpellAction
+    {
+    public:
+        CastGreaterHealActionBase(PlayerbotAI* ai) : CastHealingSpellAction(ai, "greater heal") {}
+    };
+    class CastGreaterHealAction : public PriestFormGatedHeal<CastGreaterHealActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastGreaterHealActionBase>::PriestFormGatedHeal;
+    };
+    class CastGreaterHealOnPartyActionBase : public HealPartyMemberAction
+    {
+    public:
+        CastGreaterHealOnPartyActionBase(PlayerbotAI* ai) : HealPartyMemberAction(ai, "greater heal", 50, HealManaEfficiency::MEDIUM) {}
+    };
+    class CastGreaterHealOnPartyAction : public PriestFormGatedHeal<CastGreaterHealOnPartyActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastGreaterHealOnPartyActionBase>::PriestFormGatedHeal;
+    };
+    class CastFlashHealActionBase : public CastHealingSpellAction
+    {
+    public:
+        CastFlashHealActionBase(PlayerbotAI* ai) : CastHealingSpellAction(ai, "flash heal") {}
+    };
+    class CastFlashHealAction : public PriestFormGatedHeal<CastFlashHealActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastFlashHealActionBase>::PriestFormGatedHeal;
+    };
+    class CastFlashHealOnPartyActionBase : public HealPartyMemberAction
+    {
+    public:
+        CastFlashHealOnPartyActionBase(PlayerbotAI* ai) : HealPartyMemberAction(ai, "flash heal", 15, HealManaEfficiency::LOW) {}
+    };
+    class CastFlashHealOnPartyAction : public PriestFormGatedHeal<CastFlashHealOnPartyActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastFlashHealOnPartyActionBase>::PriestFormGatedHeal;
+    };
+    class CastRenewActionBase : public CastHealingSpellAction
+    {
+    public:
+        CastRenewActionBase(PlayerbotAI* ai) : CastHealingSpellAction(ai, "renew") {}
+    };
+    class CastRenewAction : public PriestFormGatedHeal<CastRenewActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastRenewActionBase>::PriestFormGatedHeal;
+    };
+    class CastRenewOnPartyActionBase : public HealHotPartyMemberAction
+    {
+    public:
+        CastRenewOnPartyActionBase(PlayerbotAI* ai) : HealHotPartyMemberAction(ai, "renew", 15, HealManaEfficiency::VERY_HIGH) {}
+    };
+    class CastRenewOnPartyAction : public PriestFormGatedHeal<CastRenewOnPartyActionBase>
+    {
+    public:
+        using PriestFormGatedHeal<CastRenewOnPartyActionBase>::PriestFormGatedHeal;
+        bool isUseful() override;
+    };
 
     // Prayer of Healing targets an injured party member and heals that
     // member's nearby group. Use the mature AOE-heal target/reach path rather

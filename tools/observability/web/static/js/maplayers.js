@@ -2,7 +2,7 @@
 // Commanders tab map layers: which things a map draws. One choice for every card (and every map), kept in the browser once, not per
 // map. Pure logic (no page, no markup) so a test can run it under node (internal/commandersjs). app.js draws and shows the panel.
 //
-// The panel offers 28 layers in 7 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects): the plan is three of
+// The panel offers 32 layers in 8 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects, Fight): the plan is three of
 // them (planroute, planstands and the aggro layer's planrings part), and raid presets (Pathing, Trash pull, Healing, Boss, All)
 // switch the raid's keys in one click. Several layers are merges of the finer switches the maps used before: `effective(state)`
 // returns those older keys (mobhostile, mobneutral, trail, threatcolors, ...) computed from the new ones, and app.js's drawing code
@@ -68,9 +68,14 @@
     feed: { def: false, needs: "events", why: "nothing has happened since this page started watching" },
     runinfo: { def: false },
     objects: { def: false, needs: "objects", why: "the game server does not report objects yet (it needs the newer module)" },
+    // The Fight group: drawn only in the Fight debugger, over the range of the fight it shows (FightMap, fightmap.js).
+    fighttrails: { def: true, needs: "fightMap", why: "In the Fight debugger" },
+    fightmarks: { def: true, needs: "fightMap", why: "In the Fight debugger" },
+    fightheat: { def: false, needs: "fightMap", why: "In the Fight debugger" },
+    fightsummons: { def: true, needs: "fightMap", why: "In the Fight debugger" },
   };
 
-  // The 28 layers the panel offers, in panel order. `parts` are the old switches each one replaces; `styleFrom` is the old line key
+  // The 32 layers the panel offers, in panel order. `parts` are the old switches each one replaces; `styleFrom` is the old line key
   // whose opacity and thickness a merged line layer takes over (its first old key that had a style).
   const DEFS = [
     { key: "bg", label: "Map picture", group: "Map", def: true, parts: ["bg"],
@@ -129,6 +134,14 @@
       tip: "Pins where a unit died, a boss fell, a wipe happened or an object was opened or looted, and the feed under the map. Shown when there is an event." },
     { key: "objects", label: "Doors, chests, levers, altars and gongs", group: "Objects", def: false, parts: ["objects"],
       tip: "Game objects the bots have seen near them, with what they are and whether they are used." },
+    { key: "fighttrails", label: "Trails over the range", group: "Fight", def: true, parts: ["fighttrails"],
+      tip: "Where each bot walked inside the range picked in the fight debugger (the whole fight with no range, the follow window while a fight runs), coloured by role. Sampled every 2 s after a fight, every 0.5 s while it runs. Fight debugger only." },
+    { key: "fightmarks", label: "Mechanic markers (anchor, stand, clouds, puller)", group: "Fight", def: true, parts: ["fightmarks"],
+      tip: "The boss's anchor circle and the raid's stand point from the data's tactic rows, the cloud each dying Son of Hakkar leaves (20 s, the radius of its seek_aura row), and the path of the bot the first Son went for. The platform's edge is not in the data and is not drawn. Fight debugger only." },
+    { key: "fightheat", label: "Damage and death heat", group: "Fight", def: false, parts: ["fightheat"],
+      tip: "Hp lost per place (sampled every 2 s) and deaths, in 4 yd cells over the range. Fight debugger only." },
+    { key: "fightsummons", label: "Summons and adds", group: "Fight", def: true, parts: ["fightsummons"],
+      tip: "The trails of the boss and of the summons the page names (Son of Hakkar, Shade of Jin'do). Fight debugger only." },
   ];
 
   const OLD_KEYS = Object.keys(OLD_LAYERS);
@@ -307,7 +320,7 @@
     return out;
   }
 
-  // What each of the 28 layers can be drawn from, for one map (one card): {key: {ok, why}}. ctx has the booleans named in
+  // What each of the 32 layers can be drawn from, for one map (one card): {key: {ok, why}}. ctx has the booleans named in
   // OLD_LAYERS' `needs`; a missing one counts as false. ok when ANY of the layer's parts has its data (the rest is simply not drawn);
   // why lists the missing parts' reasons.
   function availability(ctx) {

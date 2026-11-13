@@ -1203,6 +1203,270 @@ int main()
         CHECK(plans.size() == 3 && plans[groupA] == 1 && plans[groupB] == 2 && plans[noGroup] == 3);
     }
 
+    // AiPlayerbot.BossStandEvents: one episode per bot and window. The first read of an open window records it and logs
+    // the assignment; the arrival is logged once it is on the seat; a closed window releases the episode.
+    {
+        StandEpisodeIn in;
+        in.windowOn = true;
+        in.seatValid = true;
+        StandEpisodeOut out = StandEpisodeStep(in);
+        CHECK(!out.release);
+        CHECK(out.start);
+        CHECK(out.assigned);
+        CHECK(!out.arrived);
+        CHECK(!out.unseated);
+
+        in.have = true;
+        in.sameWindow = true;
+        in.assignedLogged = true;
+        in.arrived = true;
+        out = StandEpisodeStep(in);
+        CHECK(!out.release && !out.start && !out.assigned);
+        CHECK(out.arrived);
+        CHECK(!out.unseated);
+
+        in.arrivedLogged = true;
+        out = StandEpisodeStep(in);
+        CHECK(!out.arrived);
+
+        in.windowOn = false;
+        out = StandEpisodeStep(in);
+        CHECK(out.release);
+        CHECK(!out.start && !out.assigned && !out.arrived && !out.unseated);
+    }
+
+    // An unseated read logs once per episode, and only while no seat was ever assigned in it (a bot that left its seat
+    // after arriving is released, not unseated).
+    {
+        StandEpisodeIn in;
+        in.windowOn = true;
+        StandEpisodeOut out = StandEpisodeStep(in);
+        CHECK(out.start && out.unseated && !out.assigned);
+
+        in.have = true;
+        in.sameWindow = true;
+        in.unseatedLogged = true;
+        out = StandEpisodeStep(in);
+        CHECK(!out.unseated && !out.start);
+
+        StandEpisodeIn arrivedIn;
+        arrivedIn.have = true;
+        arrivedIn.sameWindow = true;
+        arrivedIn.windowOn = true;
+        arrivedIn.assignedLogged = true;
+        out = StandEpisodeStep(arrivedIn);
+        CHECK(!out.unseated && !out.assigned && !out.start);
+    }
+
+    // Another window takes over: the recorded episode is released and a new one starts, whether or not the read seats
+    // the bot (a bot that then goes unseated logs that for the new episode).
+    {
+        StandEpisodeIn in;
+        in.have = true;
+        in.sameWindow = false;
+        in.windowOn = true;
+        in.seatValid = true;
+        in.assignedLogged = true;
+        in.arrivedLogged = true;
+        StandEpisodeOut out = StandEpisodeStep(in);
+        CHECK(out.release);
+        CHECK(out.start);
+        CHECK(out.assigned);
+        CHECK(!out.arrived);   // the arrival of the old episode does not carry over
+
+        in.seatValid = false;
+        out = StandEpisodeStep(in);
+        CHECK(out.release);
+        CHECK(out.start);
+        CHECK(out.unseated);
+        CHECK(!out.assigned && !out.arrived);
+    }
+
+    // StandEpisode_FreshAssignedArrivedLogsOnce: a fresh episode whose first read assigns and arrives together logs
+    // each row once. The record the start read stores carries those flags, so the next read of the same window logs
+    // neither (the caller's sequence: step, then keep the read on the record, then log what the step says).
+    {
+        StandEpisode record;
+        int assignedRows = 0, arrivedRows = 0, unseatedRows = 0;
+        for (int read = 0; read < 2; ++read)
+        {
+            StandEpisodeIn in;
+            in.have = read > 0;
+            in.sameWindow = read > 0;
+            in.windowOn = true;
+            in.seatValid = true;
+            in.arrived = true;
+            in.assignedLogged = record.assignedLogged;
+            in.arrivedLogged = record.arrivedLogged;
+            in.unseatedLogged = record.unseatedLogged;
+            const StandEpisodeOut out = StandEpisodeStep(in);
+            if (read == 0)
+                CHECK(out.start);
+            else
+                CHECK(!out.start);
+            CHECK(!out.release);
+            StandEpisodeKeep(record, out, 1000);
+            if (out.assigned)
+                ++assignedRows;
+            if (out.arrived)
+                ++arrivedRows;
+            if (out.unseated)
+                ++unseatedRows;
+        }
+        CHECK(assignedRows == 1);
+        CHECK(arrivedRows == 1);
+        CHECK(unseatedRows == 0);
+        CHECK(record.assignedLogged && record.arrivedLogged);
+        CHECK(record.assignedMs == 1000);
+    }
+
+    // AiPlayerbot.BossStandWholeRaid: a member counts while it is in combat with the boss, so Onyxia's Fireball
+    // (-100 % threat on its target) no longer costs the wiped bot its seat; with the key off only threat and the
+    // victim count, as before.
+    {
+        CHECK(StandMemberEngaged(false, false, true, true, true));    // threat-wiped, both in combat, key on
+        CHECK(!StandMemberEngaged(false, false, false, true, true));  // the same with the key off
+        CHECK(StandMemberEngaged(true, false, false, false, false));  // threat alone counts with the key off
+        CHECK(StandMemberEngaged(false, true, false, false, false));  // the victim alone too
+        CHECK(!StandMemberEngaged(false, false, true, false, true));  // out of combat: never counts
+        CHECK(!StandMemberEngaged(false, false, true, true, false));  // boss out of combat
+    }
+
+    // StandStay_MidLaneNearEndSeatsDoesNotStay: anchor 2's real rows (data/sql/world/20261110120300_world.sql) put
+    // its side-1 seats at laterals 25.4-33.5, past the tick chain's ends. A mid-lane bot at lateral -27 (along +34) is
+    // inside the 30 yd tick radius; compared with its assigned far seat it would stay, so the rule compares with the
+    // seats next to it along the lane: none is there, and it walks. Next to the real seats the farthest of them wins.
+    {
+        const float ax = -31.4963f;
+        const float ay = -250.123f;
+        const float bx = -33.5561f;
+        const float by = -182.682f;
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = bx - ax;
+        lane.dy = by - ay;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        const auto spot = [&](float along, float lateral, float& x, float& y)
+        {
+            x = ax + (lane.dx / length) * along + (-lane.dy / length) * lateral;
+            y = ay + (lane.dy / length) * along + (lane.dx / length) * lateral;
+        };
+        std::vector<BossStandRow> rows;
+        rows.push_back(Row(2, ax, ay, 6, StandRole::Healer, 18576, 1, 0, -6.0f, -254.0f, 0, 0));    // -25.37, -4.65
+        rows.push_back(Row(2, ax, ay, 6, StandRole::Ranged, 18576, 1, 8, 0.0f, -256.0f, 0, 0));      // -31.30, -6.84
+        rows.push_back(Row(2, ax, ay, 6, StandRole::Melee, 18576, 1, 4, 0.0f, -224.0f, 0, 0));       // -32.28, 25.15
+        rows.push_back(Row(2, ax, ay, 6, StandRole::Healer, 18576, 1, 5, -6.0f, -178.0f, 0, 0));     // -27.69, 71.31
+        rows.push_back(Row(2, ax, ay, 6, StandRole::Healer, 18576, 0, 0, -68.0f, -216.0f, 0, 0));    // side 0
+        const BossStandRow& window = rows[0];
+        float botX = 0.0f, botY = 0.0f;
+        spot(34.0f, -27.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, window, rows, botX, botY, -6.0f, -254.0f));  // mid-lane: no seat next to it
+        spot(-4.65f, -30.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, window, rows, botX, botY, -6.0f, -254.0f));  // past the assigned seat, inside -31.30
+        spot(-4.65f, -32.0f, botX, botY);
+        CHECK(StandAlreadyClear(lane, window, rows, botX, botY, -6.0f, -254.0f));   // past the farthest seat next to it
+        spot(25.15f, -33.0f, botX, botY);
+        CHECK(StandAlreadyClear(lane, window, rows, botX, botY, 0.0f, -224.0f));   // the melee seat at along 25.15
+        spot(25.15f, -20.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, window, rows, botX, botY, 0.0f, -224.0f));  // nearer the lane: walks
+        spot(-4.65f, 32.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, window, rows, botX, botY, -6.0f, -254.0f));  // other side: walks
+    }
+
+    // AiPlayerbot.BossStandWholeRaid, the stay: a bot at least as far from the lane line as the seats next to it along
+    // the lane, on their side, stays where it stands. The lane is the walk 2b one, anchor (22.9, -217.2) to
+    // (-65.8, -213.8).
+    {
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = -65.8f - 22.9f;
+        lane.dy = -213.8f + 217.2f;
+        const float ax = 22.9f;
+        const float ay = -217.2f;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        const auto point = [&](float along, float lateral, float& x, float& y)
+        {
+            x = ax + (lane.dx / length) * along + (-lane.dy / length) * lateral;
+            y = ay + (lane.dy / length) * along + (lane.dx / length) * lateral;
+        };
+        float seatX = 0.0f, seatY = 0.0f;
+        float farX = 0.0f, farY = 0.0f;
+        float botX = 0.0f, botY = 0.0f;
+        point(0.0f, 35.0f, seatX, seatY);
+        point(20.0f, 38.0f, farX, farY);  // farther out, but twenty yards along the lane: it says nothing here
+        std::vector<BossStandRow> rows;
+        rows.push_back(Row(1, ax, ay, 8, StandRole::Ranged, 777, 0, 0, seatX, seatY, 1, 0));
+        rows.push_back(Row(1, ax, ay, 8, StandRole::Ranged, 777, 0, 1, farX, farY, 1, 0));
+        const BossStandRow& window = rows[0];
+        point(0.0f, 40.0f, botX, botY);
+        CHECK(StandAlreadyClear(lane, window, rows, botX, botY, seatX, seatY));   // farther out next to the seat: stays
+        point(0.0f, 20.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, window, rows, botX, botY, seatX, seatY));  // nearer the lane: walks
+        point(0.0f, -40.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, window, rows, botX, botY, seatX, seatY));  // other side: walks (never crosses)
+        StandLane invalid;
+        CHECK(!StandAlreadyClear(invalid, window, rows, botX, botY, seatX, seatY));
+    }
+
+    // Equal distance from the lane line stays (the seat next to the bot is no farther out than it).
+    {
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = -88.7f;
+        lane.dy = 3.4f;
+        const float ax = 22.9f;
+        const float ay = -217.2f;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        const auto lateralPoint = [&](float lateral, float& x, float& y)
+        {
+            x = ax + (-lane.dy / length) * lateral;
+            y = ay + (lane.dx / length) * lateral;
+        };
+        float seatX = 0.0f, seatY = 0.0f;
+        float botX = 0.0f, botY = 0.0f;
+        lateralPoint(35.0f, seatX, seatY);
+        lateralPoint(35.0f, botX, botY);
+        std::vector<BossStandRow> rows;
+        rows.push_back(Row(1, ax, ay, 8, StandRole::Ranged, 777, 0, 0, seatX, seatY, 1, 0));
+        CHECK(StandAlreadyClear(lane, rows[0], rows, botX, botY, seatX, seatY));
+    }
+
+    // A seat on the lane line is never "already clear", and with no seat of the bot's side next to it along the lane
+    // the bot walks: the seat's own lateral alone never keeps it.
+    {
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = -88.7f;
+        lane.dy = 3.4f;
+        const float ax = 22.9f;
+        const float ay = -217.2f;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        const auto point = [&](float along, float lateral, float& x, float& y)
+        {
+            x = ax + (lane.dx / length) * along + (-lane.dy / length) * lateral;
+            y = ay + (lane.dy / length) * along + (lane.dx / length) * lateral;
+        };
+        std::vector<BossStandRow> rows;
+        rows.push_back(Row(1, ax, ay, 8, StandRole::Ranged, 777, 0, 0, ax, ay, 1, 0));
+        float botX = 0.0f, botY = 0.0f;
+        point(0.0f, 40.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, rows[0], rows, botX, botY, ax, ay));
+        float seatX = 0.0f, seatY = 0.0f;
+        point(0.0f, 35.0f, seatX, seatY);
+        rows.clear();
+        rows.push_back(Row(1, ax, ay, 8, StandRole::Ranged, 777, 0, 0, seatX, seatY, 1, 0));
+        point(20.0f, 40.0f, botX, botY);  // the only seat is twenty yards along the lane
+        CHECK(!StandAlreadyClear(lane, rows[0], rows, botX, botY, seatX, seatY));
+    }
+
+    // A seated bot does not flee, and only with the key.
+    {
+        CHECK(FleeYieldsToStand(true, true));
+        CHECK(!FleeYieldsToStand(false, true));
+        CHECK(!FleeYieldsToStand(true, false));
+        CHECK(!FleeYieldsToStand(false, false));
+    }
+
     std::cout << "All boss stand policy tests passed.\n";
     return 0;
 }

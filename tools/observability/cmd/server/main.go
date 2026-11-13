@@ -37,6 +37,7 @@ import (
 	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/mapdir"
+	"tortoise-observability/internal/mechanics"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
 	"tortoise-observability/internal/plans"
@@ -391,6 +392,9 @@ func main() {
 			historyStore = nil
 		} else {
 			historyStore.SetMetrics(metricsRegistry)
+			// The fight's damage and healing series is built when the fight is written (the writer waits for the last reports) and kept
+			// in its history line, so a past night's fight still draws its meters.
+			historyStore.SetMeters(func(commander string, f combat.Fight) json.RawMessage { return metersJSON(store, f) })
 			log.Printf("[History] fights kept in %s (at most %d days, %d MiB)", *fightHistoryDir, history.HistoryDays, history.HistoryMaxBytes>>20)
 		}
 	}
@@ -550,25 +554,9 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/logout", logoutHandler(authService))
 
 	requireSession := func(next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if *devNoAuth {
-				next(w, r, nil)
-				return
-			}
-			session, err := authService.GetSessionFromRequest(r)
-			if err != nil {
-				if strings.HasPrefix(r.URL.Path, "/api/") {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusUnauthorized)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized: GM session required"})
-					return
-				}
-				http.Redirect(w, r, "/login", http.StatusFound)
-				return
-			}
-			next(w, r, session)
-		}
+		return sessionGate(authService, *devNoAuth, next)
 	}
+
 	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
 		return requireSession(func(w http.ResponseWriter, r *http.Request, _ *auth.SessionData) {
 			next(w, r)
@@ -689,7 +677,9 @@ func main() {
 	// it, groups with their leaders, offline members and live combat window.
 	// Read-only: the tab draws, it never orders.
 	mux.HandleFunc("/api/v1/raids", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, store.Raids())
+		view := store.Raids()
+		combatStore.AnnotateRaids(&view) // the live rows' boss names, for the Raids list's tile ranking
+		writeJSON(w, view)
 	}))
 	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
 
@@ -705,41 +695,9 @@ func main() {
 	// run's fights per bot for the debugger's "Total" view.
 	mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))
 	mux.HandleFunc("/api/v1/combat/run-totals", requireAuth(runTotalsHandler(combatStore, historyStore)))
-	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		// The detail key is (commander, session, id): fight ids repeat
-		// across commanders and sessions. The list rows carry the composed
-		// key; callers may also pass the three parts as query params.
-		q := r.URL.Query()
-		key := strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/")
-		f, warnings, ok := combatStore.GetKey(key)
-		if !ok {
-			if commander, session, id, qok := combatFightKey(q); qok {
-				f, warnings, ok = combatStore.Get(commander, session, id)
-			}
-		}
-		if !ok {
-			// Not in memory: a past night's fight, re-read from its history file and judged now with the same rules.
-			if historyStore != nil {
-				if hf, row, hok := historyStore.Fight(key); hok {
-					writeJSON(w, struct {
-						Fight    combat.Fight     `json:"fight"`
-						Warnings []combat.Warning `json:"warnings"`
-						Hist     bool             `json:"hist,omitempty"`
-						PackKey  string           `json:"pack_key,omitempty"`
-					}{hf, combat.Judge(hf, combatStore.Rules()), true, row.PackKey})
-					return
-				}
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"error":"no such fight"}`))
-			return
-		}
-		writeJSON(w, struct {
-			Fight    combat.Fight     `json:"fight"`
-			Warnings []combat.Warning `json:"warnings"`
-		}{f, warnings})
-	}))
+	// The live fight's catch-up: the held events at or after a cursor, bounded by the live row's own rings.
+	mux.HandleFunc("GET /api/v1/combat/live", requireAuth(combatLiveHandler(combatStore)))
+	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(combatFightDetailHandler(combatStore, historyStore, store)))
 
 	// The fight history across nights: the night picker's days, one day's fights, and the same pack across runs. Fights the
 	// daemon still remembers and ones only on disk answer alike; the history disabled answers the empty shapes.
@@ -757,6 +715,12 @@ func main() {
 	}
 	mux.HandleFunc("GET /api/v1/combat/underperformers", requireAuth(underperf.Handler(underperf.Sources{
 		Mem: combatStore, Hist: histSource, Rules: combatStore.Rules, Specs: armoryService.SpecsFor, Now: time.Now,
+	})))
+
+	// The night's boss scorecard, one row per boss (Hakkar's dosed share at each Blood Siphon, Jin'do's Hex on the main tank and
+	// Shade deaths): the same sources and window parameters as the underperforming bots above.
+	mux.HandleFunc("GET /api/v1/combat/mechanics", requireAuth(mechanics.Handler(underperf.Sources{
+		Mem: combatStore, Hist: histSource, Now: time.Now,
 	})))
 
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
@@ -798,6 +762,11 @@ func main() {
 			return
 		}
 		frames, names, tracked := store.TrackWindow(c, from, to)
+		if r.URL.Query().Get("x") == "1" {
+			// The live view's form: dps, hps and the boss debuff ids per bot, and the window length per frame.
+			writeJSON(w, state.TrackJSONX(c, frames, names, tracked))
+			return
+		}
 		writeJSON(w, state.TrackJSON(c, frames, names, tracked))
 	}))
 
@@ -1095,6 +1064,29 @@ func serve(ctx context.Context, server *http.Server, udpListener *udp.Listener, 
 	return err
 }
 
+// sessionGate runs next for a request with a GM session (or for every request with noAuth, the dev flag): an API path without one
+// gets 401 and a JSON error, any other path a redirect to the login page.
+func sessionGate(authService *auth.Service, noAuth bool, next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if noAuth {
+			next(w, r, nil)
+			return
+		}
+		session, err := authService.GetSessionFromRequest(r)
+		if err != nil {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized: GM session required"})
+				return
+			}
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		next(w, r, session)
+	}
+}
+
 // logoutHandler ends the session. Logout is POST-only: a GET or HEAD must not
 // clear the cookie, or a sandboxed page could log a GM out with a plain request.
 // POST alone is not enough: a cross-site HTML form POST is a top-level
@@ -1162,6 +1154,40 @@ func qUint(s string) uint32 {
 		return 0
 	}
 	return uint32(v)
+}
+
+// combatLiveHandler serves GET /api/v1/combat/live?commander=<name>&since=<cursor>[&key=<fight key>]: the live row's header and the events whose
+// index is at or past the cursor (from 0 when key names another fight than the live one) (the page's catch-up after a gap, a resync or a fresh open). A bad name or cursor is a 400, a
+// commander with no live fight a 404.
+func combatLiveHandler(combatStore *combat.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fail := func(code int, msg string) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(`{"error":"` + msg + `"}`))
+		}
+		q := r.URL.Query()
+		names, err := live.ParseCommanders(q)
+		if err != nil || len(names) != 1 || len(q["commander"]) != 1 {
+			fail(http.StatusBadRequest, "bad commander")
+			return
+		}
+		var since uint64
+		if raw := q.Get("since"); raw != "" {
+			since, err = strconv.ParseUint(raw, 10, 64)
+			if err != nil {
+				fail(http.StatusBadRequest, "bad since")
+				return
+			}
+		}
+		// key: the fight the caller's cursor belongs to; another live fight answers from 0 (a cursor of an older fight means nothing).
+		d, ok := combatStore.LiveSince(names[0], since, q.Get("key"))
+		if !ok {
+			fail(http.StatusNotFound, "no live fight")
+			return
+		}
+		writeJSON(w, d)
+	}
 }
 
 // combatFightsHandler serves GET /api/v1/combat/fights?commander=: the memory list, newest first, with the stored pack key and

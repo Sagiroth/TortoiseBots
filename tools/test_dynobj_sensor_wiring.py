@@ -157,11 +157,15 @@ class DynObjHazardWiring(unittest.TestCase):
 
     def test_the_shared_flee_has_no_tank_or_cloud_clause(self):
         # The shared "flee" serves panic, outnumbered, critical health and range
-        # control: it must stay as before this branch, with no isUseful override.
-        self.assertNotIn("FleeAction::isUseful", MOVEMENT)
+        # control: the tank and cloud clauses stay in the area twin. Its one gate is the boss stand seat
+        # (AiPlayerbot.BossStandWholeRaid): a bot on its seat does not flee, with the key off it is the plain flee.
         i = MOVEMENT_H.index("class FleeAction : public MovementAction")
         decl = MOVEMENT_H[i:MOVEMENT_H.index("};", i)]
-        self.assertNotIn("isUseful", decl)
+        self.assertIn("virtual bool isUseful() override;", decl)
+        fn = body(MOVEMENT, "bool FleeAction::isUseful()")
+        self.assertNotIn("IsTank", fn)
+        self.assertNotIn("CollectDamagingDynObjHazards", fn)
+        self.assertIn("FleeYieldsToStand(true, FindBossStand(ai, bot).valid)", fn)
 
     def test_the_area_flee_is_a_flee_action_registered_live(self):
         i = MOVEMENT_H.index("class FleeFromAreaAction")

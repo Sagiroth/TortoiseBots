@@ -6,6 +6,7 @@ using namespace ai;
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/raid/OnyxiaBreathPolicy.h"
 #include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
+#include "playerbot/BossTacticsStand.h"
 #include "ChooseTargetActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
@@ -22,6 +23,15 @@ BreathSafeSpot const kBreathSafeSpots[4][2] =
     { { 7.0f, -185.0f, -86.2f }, { -60.0f, -240.0f, -85.2f } },
 };
 } // namespace
+
+bool OnyxiaBreathSafeZoneAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    if (!sPlayerbotAIConfig.bossStandOutranksBreathDodge)
+        return true;
+    return !BreathDodgeYieldsToStand(sPlayerbotAIConfig.bossStandOutranksBreathDodge, FindBossStand(ai, bot).valid);
+}
 
 bool OnyxiaBreathSafeZoneAction::Execute(Event& event)
 {
@@ -118,7 +128,11 @@ OnyxiaWhelpScan ai::ScanOnyxiaWhelps(PlayerbotAI* ai, Player* bot)
 
 bool ai::IsOnyxiaWhelpDuty(PlayerbotAI* ai, Player* bot)
 {
-    return IsOnyxiaWhelpHunter(bot->GetClass(), PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    bool const today = IsOnyxiaWhelpHunter(bot->GetClass(), PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    if (!sPlayerbotAIConfig.dungeonRunAddCrew)
+        return today;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return OnyxiaWhelpDutyFor(today, AI_VALUE2(uint8, "add crew", static_cast<int32>(kOnyxiaEntry)));
 }
 
 std::vector<GameObject*> ai::CollectOnyxiaEggs(PlayerbotAI* ai)
@@ -173,6 +187,26 @@ bool OnyxiaKillWhelpsAction::Execute(Event& event)
     if (!PossibleAttackTargetsValue::IsValid(scan.whelp, bot))
         return false;
     return Attack(bot, scan.whelp);
+}
+
+bool OnyxiaAttackBossAction::Execute(Event& event)
+{
+    (void)event;
+    if (!sPlayerbotAIConfig.dungeonRunAddCrew || bot->GetMapId() != kOnyxiaMapId)
+        return false;
+    Unit* boss = nullptr;
+    for (const ObjectGuid& attackerGuid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (attacker && attacker->GetEntry() == kOnyxiaEntry && sServerFacade.IsAlive(attacker))
+        {
+            boss = attacker;
+            break;
+        }
+    }
+    if (!boss || !PossibleAttackTargetsValue::IsValid(boss, bot))
+        return false;
+    return Attack(bot, boss);
 }
 
 float OnyxiaWhelpHoldMultiplier::GetValue(Action* action)

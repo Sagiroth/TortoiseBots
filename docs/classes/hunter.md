@@ -34,12 +34,12 @@ Hunters deliver consistent ranged physical damage, pet management, crowd control
 - Keeps *Serpent Sting* ticking on high-health targets (skipping targets near death).
 - Replaces Serpent Sting with *Viper Sting* when the hunter's mana is below 50% and the target has mana (10% or more); manual `sting viper` or `sting serpent` orders override this gate.
 - Beast Mastery activates *Bestial Wrath* and *Kill Command* on cooldown. *Rapid Fire* fires for all specs on cooldown.
-- Switches between *Aspect of the Hawk* for damage and *Aspect of the Viper* when low on mana.
+- Switches between *Aspect of the Hawk* for damage and *Aspect of the Viper* when low on mana. [`.bot choice`](../play/commands/bot-panel.md#bot-choice) orders one aspect per hunter instead; the Hawk upkeep and the low-mana Viper switch both stand down.
 - Threat handling (Feign Death, Disengage, multi-mob kiting): see [Threat drops](#threat-drops).
 
 ### Survival (Melee / Ranged Hybrid)
 - Fights at range with the full shot kit and weaves melee strikes when enemies close in.
-- Delivers front-cone melee cleave using *Carve* on AoE packs.
+- Delivers front-cone melee cleave using *Carve* on targets already in melee reach; `AiPlayerbot.HunterCarveInReachOnly` is off by default but recommended on: with `1` it never walks in for it, so a hunter at a tank-held boss stays at range.
 - Stacks bleed damage using *Lacerate* (manual action, only cast by player order).
 - Uses *Raptor Strike* and *Mongoose Bite* on cooldown without requiring a dodge proc.
 - Employs *Counterattack* after parrying incoming strikes (parry legality is enforced by the core).
@@ -112,4 +112,5 @@ Bots learn pre-set talent orders at 5-level checkpoints (levels 10–60):
 
 ## Class settings
 
+- [`AiPlayerbot.HunterCarveInReachOnly`](../server/settings/class-behaviour.md#aiplayerbothuntercarveinreachonly): Survival hunters cast Carve only on a target already in melee reach.
 - [`AiPlayerbot.HunterViperOnLowMana`](../server/settings/class-behaviour.md#aiplayerbothunterviperonlowmana): Controls whether hunters swap to Aspect of the Viper when low on mana.

@@ -1050,6 +1050,9 @@ type RaidGroupView struct {
 	Combat     *CommanderCombat  `json:"combat,omitempty"`
 	Detail     []RaidDetailEntry `json:"detail,omitempty"`
 	Trimmed    string            `json:"trimmed,omitempty"`
+	// BossName is the boss the commander's live fight row names (joined from the combat store when the view is served; empty
+	// when the group has no live row or no boss yet). The Raids list ranks its live tiles with it.
+	BossName string `json:"boss_name,omitempty"`
 }
 
 // RaidRun is one live raid instance copy (map + instance id).

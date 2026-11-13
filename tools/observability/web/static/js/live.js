@@ -178,7 +178,7 @@
   let reopenTimer = null;
   let handlersNow = null;
 
-  const NAMES = ["snapshot", "commander", "pos", "events", "fight_live", "fight", "resync"];
+  const NAMES = ["snapshot", "commander", "pos", "events", "fight_live", "fight", "resync", "raid_combat"];
 
   function open(u) {
     if (typeof EventSource === "undefined") return;
@@ -245,7 +245,7 @@
 
   const api = {
     MAX_COMMANDERS, FALLBACK_ERRORS, FALLBACK_WINDOW_MS, GLIDE_BUDGET,
-    url, applyPos, posAllowed, fallback, scheduler, noteReport, connect, close,
+    NAMES, url, applyPos, posAllowed, fallback, scheduler, noteReport, connect, close,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.LiveView = api;
 })(typeof self !== "undefined" ? self : this);

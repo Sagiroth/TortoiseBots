@@ -67,6 +67,13 @@
     const errorBox = document.getElementById('error-box');
     const submitBtn = document.getElementById('submit-btn');
 
+    // Where the dashboard opens after a login. A shared link survives it: its #/... route goes on as the fragment of /dashboard. A route
+    // over 4096 characters is not carried; a flag (#/?toolong=1) tells the dashboard to say so in one line. Anything else is dropped.
+    function dashboardTarget(h) {
+      if (typeof h !== 'string' || !h.startsWith('#/')) return '/dashboard';
+      return '/dashboard' + (h.length <= 4096 ? h : '#/?toolong=1');
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       errorBox.style.display = 'none';
@@ -85,7 +92,7 @@
 
         const data = await res.json();
         if (res.ok && data.success) {
-          window.location.href = '/dashboard';
+          window.location.href = dashboardTarget(window.location.hash);
         } else {
           errorBox.textContent = data.error || 'Authentication failed';
           errorBox.style.display = 'block';

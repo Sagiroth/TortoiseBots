@@ -6,13 +6,29 @@
 // getElementById walks the document tree like the browser's, so an element inside a removed card is no longer found: that is
 // what the layer-panel check needs to see.
 
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+// An attribute as the browser's selectors see it: one setAttribute wrote (own properties only, so "constructor" is not an attribute), or a
+// data-* one that was written through el.dataset (data-fd-panel is dataset.fdPanel). null when there is none.
+function attrOf(el, k) {
+  if (hasOwn(el.attributes, k)) return el.attributes[k];
+  if (k.startsWith("data-")) {
+    const key = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    if (hasOwn(el.dataset, key)) return String(el.dataset[key]);
+  }
+  return null;
+}
+
 function simpleTest(sel) {
-  const m = /^([a-zA-Z][\w-]*)?((?:[.#][\w-]+)*)$/.exec(sel);
+  const m = /^([a-zA-Z][\w-]*)?((?:[.#][\w-]+|\[[\w-]+(?:="[^"]*")?\])*)$/.exec(sel);
   if (!m) throw new Error("fakedom: unsupported selector " + sel);
   const tag = m[1] ? m[1].toLowerCase() : null;
   const classes = Array.from(m[2].matchAll(/\.([\w-]+)/g), (x) => x[1]);
   const id = /#([\w-]+)/.exec(m[2]);
-  return (el) => (!tag || el.tagName === tag) && (!id || el.id === id[1]) && classes.every((c) => el.classList.contains(c));
+  // [attr] and [attr="value"] read the attributes setAttribute wrote
+  const attrs = Array.from(m[2].matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g), (x) => [x[1], x[2]]);
+  return (el) => (!tag || el.tagName === tag) && (!id || el.id === id[1]) && classes.every((c) => el.classList.contains(c))
+    && attrs.every(([k, v]) => { const got = attrOf(el, k); return got !== null && (v === undefined || got === v); });
 }
 
 function Element(tag) {
@@ -21,7 +37,13 @@ function Element(tag) {
   this.children = [];
   this.parentElement = null;
   this.dataset = {};
+  // a style object a page can set properties on, with the setProperty/removeProperty pair (the methods do not show as properties)
   this.style = {};
+  Object.defineProperties(this.style, {
+    setProperty: { value(k, v) { this[k] = String(v); } },
+    removeProperty: { value(k) { delete this[k]; } },
+    getPropertyValue: { value(k) { return k in this ? this[k] : ""; } },
+  });
   this.attributes = {};
   this.textContent = "";
   this.hidden = false;
@@ -87,7 +109,11 @@ Element.prototype.remove = function () {
 
 Element.prototype.setAttribute = function (k, v) { this.attributes[k] = String(v); };
 
-Element.prototype.getAttribute = function (k) { return k in this.attributes ? this.attributes[k] : null; };
+Element.prototype.removeAttribute = function (k) { delete this.attributes[k]; };
+
+Element.prototype.hasAttribute = function (k) { return attrOf(this, k) !== null; };
+
+Element.prototype.getAttribute = function (k) { return attrOf(this, k); };
 
 Element.prototype.contains = function (el) {
   for (let n = el; n; n = n.parentElement) if (n === this) return true;

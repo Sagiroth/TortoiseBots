@@ -1,4 +1,11 @@
-"""Threat back-off wiring pins (ThreatMultiplier::GetValue and its policy, ai/playerbot/ThreatCapPolicy.h).
+"""Wiring pins for the plain 80 % high-threat line, the shorter Son holds (Hakkar) and the threat back-off's exemptions.
+
+The rules are pure and tested in tools/test_threat_cap_policy.cpp (ThreatPctSaturated) and
+tools/test_seek_aura_policy.cpp (the 3 s take, the 5 s burn, the 20 s hold cap). These pins prove the live code feeds
+them: the high-threat trigger reads the named 80 % line on every target, the 65 % cap trigger removed by 405801e86
+stays gone (the white-damage stop of AiPlayerbot.DungeonRunThreatSuccessorStrict replaces it behind its key),
+ThreatValue::Calculate still saturates, the hold read feeds the hold clock, and the docs state the
+shipped timings.
 
 InterruptIgnoresThreat: behind AiPlayerbot.InterruptIgnoresThreat (default 0) a pure interrupt joins the heals in the
 exemption the multiplier checks before its high-threat veto. A rogue at the 80 % line stood idle at full energy in 21
@@ -13,19 +20,45 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 THREAT_POLICY = (ROOT / "ai/playerbot/ThreatCapPolicy.h").read_text()
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
+SEEK_POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
+SEEK_FIGHT = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
+BOSS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
+DOC = (ROOT / "docs/play/boss-tactics.md").read_text()
 STRATEGY = (ROOT / "ai/playerbot/strategy/generic/ThreatStrategy.cpp").read_text()
-SPELL_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/GenericSpellActions.h").read_text()
-SHAMAN_ACTIONS = (ROOT / "ai/playerbot/strategy/shaman/ShamanActions.h").read_text()
-WARLOCK_ACTIONS = (ROOT / "ai/playerbot/strategy/warlock/WarlockActions.h").read_text()
 CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 CONF = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
-SETTINGS = (ROOT / "docs/server/settings/combat.md").read_text()
-ROGUE_DOC = (ROOT / "docs/classes/rogue.md").read_text()
+SETTINGS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text()
+COMBAT_SETTINGS = (ROOT / "docs/server/settings/combat.md").read_text()
+SPELL_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/GenericSpellActions.h").read_text()
+SHAMAN_ACTIONS = (ROOT / "ai/playerbot/strategy/shaman/ShamanActions.h").read_text()
+WARLOCK_ACTIONS = (ROOT / "ai/playerbot/strategy/warlock/WarlockActions.h").read_text()
+ROGUE_DOC = (ROOT / "docs/classes/rogue.md").read_text()
+
+
+def ai_tree_text():
+    parts = []
+    for path in sorted((ROOT / "ai").rglob("*")):
+        if path.is_file():
+            try:
+                parts.append(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return "\n".join(parts)
+
+
+AI_TREE = ai_tree_text()
 
 
 def body(text, signature):
+    start = text.index(signature)
+    end = text.index("\n}\n", start)
+    return text[start:end]
+
+
+def brace_body(text, signature):
     """The brace-matched body that follows `signature` in `text`."""
     start = text.index(signature)
     open_brace = text.index("{", start)
@@ -40,6 +73,340 @@ def body(text, signature):
     raise AssertionError("unbalanced braces after %s" % signature)
 
 
+class HighLine(unittest.TestCase):
+    def test_the_line_is_a_named_constant(self):
+        self.assertIn("constexpr std::uint8_t kThreatHighLinePct = 80;", THREAT_POLICY)
+
+    def test_the_high_threat_trigger_reads_the_line_on_every_target(self):
+        trigger = body(TRIGGERS, "bool HighThreatTrigger::IsActive()")
+        self.assertIn("relativeThreat >= kThreatHighLinePct", trigger)
+
+    def test_no_65_percent_cap_survives_in_ai(self):
+        # The removed 65 % trigger and its line, built without spelling them: they must appear nowhere under ai/.
+        self.assertNotIn("successor" + " threat cap", AI_TREE)
+        self.assertNotIn("kThreatSuccessor" + "HighLinePct", AI_TREE)
+        self.assertNotIn("SuccessorCap" + "Hysteresis", AI_TREE)
+
+
+class ThreatSuccessorStrict(unittest.TestCase):
+    """AiPlayerbot.DungeonRunThreatSuccessorStrict: no projection escape and the 92/85 % white stop on successor bosses."""
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunThreatSuccessorStrict = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorStrict", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorStrict = 0", CONF)
+
+    def test_the_high_threat_trigger_calls_the_escape_helper(self):
+        trigger = body(TRIGGERS, "bool HighThreatTrigger::IsActive()")
+        self.assertIn("const bool strict = sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict;", trigger)
+        self.assertIn("const bool successorTarget = StrictSuccessorTarget(strict, strict && StrictThreatSuccessorRow(target));",
+                      trigger)
+        self.assertIn(
+            "if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))", trigger)
+        self.assertNotIn("newThreat < tankThreat", trigger)
+
+    def test_the_white_stop_trigger_stops_in_the_trigger_pass(self):
+        trigger = body(TRIGGERS, "bool SuccessorWhiteCapTrigger::IsActive()")
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;", trigger)
+        # t1106m: only a `threat_successor` row carrying `strict` latches; a plain row clears it like trash.
+        self.assertIn("if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, "
+                      "StrictThreatSuccessorRow(target)))", trigger)
+        self.assertNotIn("ThreatSuccessorTarget(target)", trigger.replace("StrictThreatSuccessorRow(target)", ""))
+        self.assertIn('const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;', trigger)
+        self.assertIn("SuccessorWhiteStopsOf(SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true,", trigger)
+        # t1106m: each attack mode stops on its own target, never both on either.
+        self.assertIn("const bool meleeOnSuccessor = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;",
+                      trigger)
+        self.assertIn("const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;",
+                      trigger)
+        self.assertIn("meleeOnSuccessor, autoRepeatOnSuccessor);", trigger)
+        self.assertIn("    if (stops.melee)\n        bot->AttackStop();\n", trigger)
+        self.assertIn("    if (stops.autoRepeat)\n        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);\n", trigger)
+        self.assertEqual(1, trigger.count("bot->AttackStop();"))
+        self.assertEqual(1, trigger.count("bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);"))
+        self.assertIn("stops.melee = stopNow && meleeOnSuccessor;", THREAT_POLICY)
+        self.assertIn("stops.autoRepeat = stopNow && autoRepeatOnSuccessor;", THREAT_POLICY)
+        # The stop is never a queued action that a higher action could beat: the trigger is never active, no stop
+        # action exists, and the node queues nothing.
+        self.assertTrue(trigger.rstrip().endswith("return false;"))
+        self.assertNotIn("return true", trigger)
+        self.assertNotIn('"stop auto attack"', AI_TREE)
+        self.assertIn('creators["successor white cap"]', (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
+        self.assertIn("const bool whiteRunning = SuccessorWhiteOnTarget(meleeOnSuccessor, true, autoRepeatOnSuccessor, true);",
+                      trigger)
+        self.assertIn("return latch.Update(successorTarget, isTank, pct, refZero) && whiteRunning;", THREAT_POLICY)
+
+    def test_the_trigger_is_checked_on_minimal_ticks(self):
+        # successor_white_cap_runs_in_minimal_cycles (failed with the empty node, first relevance -1): a model of
+        # Engine::ProcessTriggers(minimal=true) built from the live sources. The engine skips a node whose first handler's
+        # relevance is under 100 on a minimal tick; the node's first handler must therefore be at 100 or more.
+        import re
+        engine = (ROOT / "ai/playerbot/strategy/Engine.cpp").read_text()
+        process = body(engine, "void Engine::ProcessTriggers(bool minimal)")
+        gate = re.search(r"if \(minimal && node->getFirstRelevance\(\) < (\d+)\)\n\s+continue;", process)
+        self.assertIsNotNone(gate)
+        threshold = int(gate.group(1))
+        self.assertLess(process.index("getFirstRelevance()"), process.index("trigger->Check()"))
+        trigger_cpp = (ROOT / "ai/playerbot/strategy/Trigger.cpp").read_text()
+        self.assertIn("return handlers[0] ? handlers[0]->getRelevance() : -1;", trigger_cpp)
+        strategy_h = (ROOT / "ai/playerbot/strategy/Strategy.h").read_text()
+        priorities = {name: int(value) for name, value in re.findall(r"(ACTION_[A-Z_]+) = (\d+)", strategy_h)}
+        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
+        node = re.search(r'new TriggerNode\("successor white cap",\s*NextAction::array\(0, new NextAction\("([^"]+)", '
+                         r'(ACTION_[A-Z_]+)(?: \+ (\d+))?\), NULL\)\)', triggers)
+        self.assertIsNotNone(node, "the node needs a first handler, or its relevance is -1")
+        relevance = priorities[node.group(2)] + int(node.group(3) or 0)
+
+        def checked(minimal, first_relevance):
+            return not (minimal and first_relevance < threshold)
+
+        self.assertFalse(checked(True, -1))           # the old empty node: skipped on a minimal tick
+        self.assertTrue(checked(True, relevance))     # now checked on a minimal tick
+        self.assertTrue(checked(False, relevance))
+        # The handler can never take an action slot: the trigger never fires, and the action is never useful.
+        self.assertEqual(node.group(1), "successor white cap noop")
+        actions_h = (ROOT / "ai/playerbot/strategy/actions/GenericActions.h").read_text()
+        noop = actions_h[actions_h.index("class SuccessorWhiteCapNoopAction"):]
+        noop = noop[:noop.index("};")]
+        self.assertIn("virtual bool isUseful() override { return false; }", noop)
+        self.assertIn('creators["successor white cap noop"]', (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text())
+
+    def test_the_threat_cap_row_carries_the_white_field_under_the_key(self):
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        log = body(values, "void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit* offTankTarget)")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict)", log)
+        self.assertIn("holder=%s white=%s ref0=%d", log)
+        self.assertIn('ai->SuccessorWhiteCap().stopped ? "held" : "free"', log)
+        self.assertIn("pick.threat == 0.0f ? 1 : 0", log)
+        self.assertIn("if (last != 0 && nowMs - last < kThreatCapLogGapMs)", log)
+
+    def test_the_multiplier_holds_white_damage_behind_the_key(self):
+        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))", multiplier)
+        self.assertIn("ai->SuccessorWhiteCap().Update(false, false, 0);", multiplier)
+        self.assertIn("if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, "
+                      "StrictThreatSuccessorRow(target)))", multiplier)
+        self.assertNotIn("!ThreatSuccessorTarget(target)", multiplier)
+        self.assertIn('AI_VALUE2(float, "tank threat", "current target") == 0.0f))', multiplier)
+        # The latch runs before the old ACTION_THREAT_NONE exemption, or a wand/melee restart would slip through.
+        self.assertLess(multiplier.index("AutoAttackAction(action)"),
+                        multiplier.index("action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE"))
+        self.assertIn("kSuccessorWhiteStopPct = 92;", THREAT_POLICY)
+        self.assertIn("kSuccessorWhiteResumePct = 85;", THREAT_POLICY)
+
+    def test_the_row_opt_in_reads_the_strict_table(self):
+        # t1106m: the scope is the boss data's `strict` word, never a boss id in the code.
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        row = body(values, "bool ai::StrictThreatSuccessorRow(Unit* target)")
+        self.assertIn("GetBossTactics().HasStrictThreatSuccessor(target->GetMapId(), target->GetEntry())", row)
+        self.assertIn("return strictKey && rowOptIn;", THREAT_POLICY)
+        for code in (TRIGGERS, STRATEGY):
+            self.assertNotIn("11380", code)
+            self.assertNotIn("14834", code)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorStrict`", SETTINGS)
+        self.assertIn("DungeonRunThreatSuccessorStrict", DOC)
+        self.assertIn("DoT ticks", DOC)
+        self.assertIn("92 % of walk 56", DOC)
+        self.assertIn("DungeonRunThreatSuccessorStrict", CHANGELOG)
+        for text in (SETTINGS, DOC, CONF, CHANGELOG):
+            self.assertIn("`strict`", text)
+
+
+class ThreatValueSaturation(unittest.TestCase):
+    def test_the_threat_value_returns_the_saturated_percentage(self):
+        # Every threat user reads this uint8: the value itself has to saturate before the cast, or 300 % wraps to 44 %
+        # and the cap lets the attack through where the margin matters most.
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        calc = body(values, "uint8 ThreatValue::Calculate(Unit* target)")
+        self.assertIn("return ThreatPctOf(botThreat, maxThreat, target->IsInCombat(), fleeing);", calc)
+        self.assertIn("return ThreatPctSaturated(botThreat, maxThreat);", THREAT_POLICY)
+        self.assertNotIn("botThreat * 100 / maxThreat", values)
+        self.assertIn("inline std::uint8_t ThreatPctSaturated(float botThreat, float maxThreat)", THREAT_POLICY)
+
+
+class SonHoldTimings(unittest.TestCase):
+    def test_the_policy_constants(self):
+        self.assertIn("constexpr std::uint32_t kSeekHealerTakeMs = 3000;", SEEK_POLICY)
+        self.assertIn("constexpr std::uint32_t kSeekNonTankBurnMs = 5000;", SEEK_POLICY)
+        self.assertIn("constexpr std::uint32_t kSeekHoldMaxMs = 20000;", SEEK_POLICY)
+        decision = body(SEEK_POLICY, "inline SeekHoldWhy SeekHoldWhyOf(")
+        self.assertIn("if (heldMs >= kSeekHoldMaxMs)", decision)
+        self.assertIn("if (nonTankHeldMs >= kSeekNonTankBurnMs)", decision)
+        self.assertIn("SeekHoldWhyHolds(SeekHoldWhyOf(", body(SEEK_POLICY, "inline bool SeekHoldDecision("))
+
+    def test_the_hold_read_feeds_the_hold_clock(self):
+        hold = body(BOSS, "bool SeekHoldsUnit(const SeekFight& state, Unit* unit)")
+        self.assertIn("SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs)", hold)
+        read = body(BOSS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows)", read)
+        self.assertIn("SeekHoldClockTick(record.holdSince, holdSeen, nowMs,", BOSS)
+        # The alive/feed composition is the policy's (SeekSonTicks), so the release can be tested without the action.
+        self.assertIn("SeekSonTicks(alive, SeekHoldClockTicks(", BOSS)
+        self.assertNotIn("capped ||", BOSS)
+        self.assertIn("inline bool SeekSonTicks(bool seenAlive, bool ticks, bool holds)", SEEK_POLICY)
+        self.assertIn("SeekHoldClockTick", SEEK_FIGHT)
+        self.assertIn("SeekHeldMs", SEEK_FIGHT)
+
+    def test_the_docs_state_the_shipped_timings(self):
+        self.assertIn("for 3 s is the first off-tank's take", DOC)
+        self.assertIn("kept fighting for 20 s is released to the damage dealers", DOC)
+
+
+class CureIgnoresThreat(unittest.TestCase):
+    """AiPlayerbot.DungeonRunCureIgnoresThreat: party cures join the heals in the threat back-off's exemption."""
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunCureIgnoresThreat = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunCureIgnoresThreat", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunCureIgnoresThreat = 0", CONF)
+
+    def test_the_multiplier_exempts_party_cures_behind_the_key(self):
+        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        self.assertIn("bool const heal = dynamic_cast<CastHealingSpellAction*>(action) != nullptr;", multiplier)
+        self.assertIn("bool const cure = dynamic_cast<CurePartyMemberAction*>(action) != nullptr;", multiplier)
+        self.assertIn("ThreatCapExempt(heal, cure, sPlayerbotAIConfig.dungeonRunCureIgnoresThreat)", multiplier)
+        # The exemption runs before the high-threat veto it skips.
+        self.assertLess(multiplier.index("ThreatCapExempt("), multiplier.index('"trigger active", "high threat"))\n    {'))
+        self.assertIn("return heal || (partyCure && cureIgnoresThreat);", THREAT_POLICY)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunCureIgnoresThreat`", SETTINGS)
+        self.assertIn("DungeonRunCureIgnoresThreat", DOC)
+        self.assertIn("DungeonRunCureIgnoresThreat", CHANGELOG)
+
+
+class ThreatSuccessorKeepsAway(unittest.TestCase):
+    """AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: cursed and charmed tanks stay in the successor pick."""
+
+    VALUES = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunThreatSuccessorKeepsAway = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0", CONF)
+
+    def test_the_pick_marks_cursed_tanks_behind_the_key(self):
+        # The list is built by the shared helper (walk 57 F4 review M3), which GetTankThreat calls before the pick.
+        caller = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
+        self.assertIn("ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);", caller)
+        self.assertLess(caller.index("ThreatCapTanksOf("), caller.index("ThreatCapPickReference("))
+        tank = body(self.VALUES, "std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target,")
+        self.assertIn("const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;", tank)
+        self.assertIn("tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);", tank)
+        self.assertIn("if (keepsAway)\n        ThreatCapCursedOnBoss(tanks);", tank)
+        self.assertLess(tank.index("ThreatCapCursedOnBoss(tanks);"), tank.index("return tanks;"))
+        self.assertIn("constexpr std::uint32_t kJindoDelusionsSpellId = 24306;", THREAT_POLICY)
+        self.assertIn("return threat > 0.0f && threat >= highest * kThreatCapOffTankAwayShare;", THREAT_POLICY)
+
+    def test_a_charmed_tank_is_still_skipped(self):
+        # The charm half was dropped (round-1 review): a charmed tank's old threat would lift the cap on Hakkar.
+        tank = body(self.VALUES, "std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target,")
+        self.assertIn("!ai->IsSafe(player) || player == skip", tank)
+        self.assertIn("if (!charmer.IsEmpty() && !charmer.IsPlayer())\n            continue;", tank)
+        self.assertNotIn("CharmThreat" + "Memo", AI_TREE)
+        self.assertNotIn("CharmMemo" + "Threat", AI_TREE)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorKeepsAway`", SETTINGS)
+        self.assertIn("DungeonRunThreatSuccessorKeepsAway", DOC)
+        self.assertIn("DungeonRunThreatSuccessorKeepsAway", CHANGELOG)
+
+
+class ThreatResetWindow(unittest.TestCase):
+    """AiPlayerbot.DungeonRunThreatResetWindow: a damage dealer holds around Hakkar's Cause Insanity."""
+
+    VALUES = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+    TRIGGER_CPP = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunThreatResetWindow = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatResetWindow", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunThreatResetWindow = 0", CONF)
+
+    def test_the_multiplier_holds_damage_behind_the_key(self):
+        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatResetWindow)", multiplier)
+        self.assertIn("ThreatResetHolds(ai, bot, resetTarget)", multiplier)
+        self.assertIn("ThreatCapExempt(", multiplier)
+        # After the null-action return and before the strict block: a held action stops before the 80 % line reads.
+        self.assertLess(multiplier.index("if (action == NULL)"), multiplier.index("ThreatResetHolds("))
+        self.assertLess(multiplier.index("ThreatResetHolds("), multiplier.index("dungeonRunThreatSuccessorStrict"))
+        # Only the action's own target is held.
+        self.assertIn("(!action->GetTarget() || action->GetTarget() == resetTarget)", multiplier)
+
+    def test_the_white_stop_trigger_stops_in_the_trigger_pass(self):
+        trigger = body(self.TRIGGER_CPP, "bool ThreatResetWhiteStopTrigger::IsActive()")
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunThreatResetWindow)", trigger)
+        self.assertIn("if (!ThreatResetHolds(ai, bot, target))", trigger)
+        self.assertIn("SuccessorWhiteStopsOf(true, meleeOnTarget, autoRepeatOnTarget)", trigger)
+        self.assertIn("    if (stops.melee)\n        bot->AttackStop();\n", trigger)
+        self.assertIn("    if (stops.autoRepeat)\n        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);\n", trigger)
+        self.assertTrue(trigger.rstrip().endswith("return false;"))
+        self.assertNotIn("ClearTarget", trigger)
+        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
+        self.assertIn('"threat reset white stop"', triggers)
+        self.assertIn('new NextAction("threat reset white stop noop", ACTION_PASSTROUGH)', triggers)
+        self.assertIn('creators["threat reset white stop"]',
+                      (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
+        self.assertIn('creators["threat reset white stop noop"]',
+                      (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text())
+
+    def test_the_reset_reference_reads_the_shared_tank_list(self):
+        fn = body(self.VALUES, "float ThreatValue::GetResetSuccessorThreat(PlayerbotAI* ai, Unit* target)")
+        self.assertIn("ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);", fn)
+        self.assertIn("ai::ThreatResetReference(tanks)", fn)
+        self.assertIn("ai::ThreatSuccessorTarget(target)", fn)
+        self.assertLess(fn.index("ThreatCapTanksOf("), fn.index("ThreatResetReference("))
+
+    def test_the_charm_scan_records_the_reset_time(self):
+        scan = body(SEEK_FIGHT, "inline void SeekCharmScan(SeekCycleRecord& record, std::uint64_t charmed,")
+        self.assertIn("record.prevResetMs = record.lastResetMs;", scan)
+        self.assertIn("record.lastResetMs = nowMs;", scan)
+        self.assertIn("std::uint32_t lastResetMs = 0;", SEEK_FIGHT)
+        view = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
+        self.assertIn("std::uint32_t lastResetMs = 0, engageMs = 0;", view)
+        self.assertIn("out.lastResetMs = record.lastResetMs;", BOSS)
+
+    def test_the_load_warns_when_the_seek_is_off(self):
+        # Round-1 review (Codex HIGH, kept off): the reset clock is the seek fight read's charm scan, so the key alone
+        # does nothing. The config load says so once, naming both keys, and the docs and template state the dependency.
+        keys = body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()")
+        self.assertIn("if (dungeonRunThreatResetWindow && !dungeonRunSeekAura)", keys)
+        self.assertIn("sLog.outString(\"TortoiseBots: AiPlayerbot.DungeonRunThreatResetWindow = 1 needs "
+                      "AiPlayerbot.DungeonRunSeekAura = 1:", keys)
+        self.assertIn("the reset clock is the seek fight's charm scan", keys)
+        self.assertIn("Needs AiPlayerbot.DungeonRunSeekAura", CONF)
+        self.assertIn("needs `AiPlayerbot.DungeonRunSeekAura`", SETTINGS)
+
+    def test_the_hold_checks_the_window_before_the_tank_list(self):
+        # Round-1 L5: a shut window clears the latch and returns before the reference's tank scan.
+        hold = body(STRATEGY, "bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)")
+        self.assertIn("const std::uint32_t windowIndex = ThreatResetWindowIndex(sinceMs, win->minGapMs, win->maxGapMs);",
+                      hold)
+        self.assertIn("if (windowIndex == 0)", hold)
+        self.assertLess(hold.index("if (windowIndex == 0)"), hold.index("ThreatValue::GetResetSuccessorThreat("))
+        self.assertIn("ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);", hold)
+        self.assertLess(hold.index("ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);"),
+                        hold.index("ThreatValue::GetResetSuccessorThreat("))
+
+    def test_the_hold_log_is_once_per_gap_window(self):
+        # Round-1 L7: the key carries the window index, so the k = 2 and k = 3 gaps after one reset log too.
+        log = body(STRATEGY, "void LogThreatResetHold(PlayerbotAI* ai, Player* bot, std::uint8_t pct, float ref,")
+        self.assertIn("std::uint32_t windowIndex)", log)
+        self.assertIn("const std::uint64_t windowKey = (static_cast<std::uint64_t>(lastResetMs) << 8) | windowIndex;",
+                      log)
+        self.assertIn("if (it != g_threatResetLog.end() && it->second == windowKey)", log)
+        self.assertIn("LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, "
+                      "view.lastResetMs, windowIndex);", STRATEGY)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunThreatResetWindow`", SETTINGS)
+        self.assertIn("DungeonRunThreatResetWindow", DOC)
+        self.assertIn("DungeonRunThreatResetWindow", CHANGELOG)
+
+
 class InterruptIgnoresThreat(unittest.TestCase):
     """AiPlayerbot.InterruptIgnoresThreat: pure interrupts join the heals in the threat back-off's exemption."""
 
@@ -49,7 +416,7 @@ class InterruptIgnoresThreat(unittest.TestCase):
         self.assertIn("\nAiPlayerbot.InterruptIgnoresThreat = 0\n", CONF)
         # Reloadable with the other run keys, so a BEFORE/AFTER trial needs no restart.
         self.assertIn('config.GetBoolDefault("AiPlayerbot.InterruptIgnoresThreat", false)',
-                      body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()"))
+                      brace_body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()"))
 
     def test_the_policy_needs_the_key_and_the_pull_line(self):
         self.assertIn(
@@ -63,33 +430,32 @@ class InterruptIgnoresThreat(unittest.TestCase):
         self.assertIn("constexpr float kAggroPullMeleeFactor = 1.1f;", THREAT_POLICY)
         self.assertIn("constexpr float kAggroPullRangedFactor = 1.3f;", THREAT_POLICY)
         self.assertIn("return ranged ? kAggroPullRangedFactor : kAggroPullMeleeFactor;", THREAT_POLICY)
-        # No ThreatCapExempt here: the cure branches own a 3-bool ThreatCapExempt(heal, partyCure, cureIgnoresThreat).
-        self.assertNotIn("ThreatCapExempt(", THREAT_POLICY)
         self.assertNotIn("kThreatCapInterruptCeilingPct", THREAT_POLICY)
 
     def test_the_multiplier_exempts_interrupts_behind_the_key(self):
-        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        multiplier = brace_body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
         self.assertIn("bool const heal = dynamic_cast<CastHealingSpellAction*>(action) != nullptr;", multiplier)
         self.assertIn("dynamic_cast<CastInterruptSpellAction*>(action)", multiplier)
         self.assertIn("bool const interrupt = interruptAction != nullptr && interruptAction->IgnoresThreatCap();",
                       multiplier)
-        self.assertIn(
-            "if (heal || ThreatCapInterruptExempt(interrupt, sPlayerbotAIConfig.interruptIgnoresThreat, "
-            "interruptBotThreat,\n                                         interruptTankThreat, interruptFlatThreat, "
-            "interruptRanged))\n        return 1.0f;", multiplier)
+        exempt = multiplier[multiplier.index("ThreatCapExempt(heal"):]
+        self.assertIn("ThreatCapInterruptExempt(interrupt, sPlayerbotAIConfig.interruptIgnoresThreat, "
+                      "interruptBotThreat,", exempt)
+        self.assertIn("interruptTankThreat, interruptFlatThreat, interruptRanged))", exempt)
+        self.assertLess(exempt.index("ThreatCapInterruptExempt("), exempt.index("return 1.0f;"))
         self.assertIn('#include "playerbot/ThreatCapPolicy.h"', STRATEGY)
         # The exemption runs before the high-threat veto it skips (and before the AoE veto, which an interrupt never
         # reaches: it is a SINGLE-threat action).
-        exempt = multiplier.index("ThreatCapInterruptExempt(")
-        self.assertLess(exempt, multiplier.index('if (AI_VALUE2(bool, "trigger active", "high threat"))\n    {'))
-        self.assertLess(exempt, multiplier.index("ActionThreatType::ACTION_THREAT_AOE)\n"))
+        exemptAt = multiplier.index("ThreatCapInterruptExempt(")
+        self.assertLess(exemptAt, multiplier.index('if (AI_VALUE2(bool, "trigger active", "high threat"))\n    {'))
+        self.assertLess(exemptAt, multiplier.index("ActionThreatType::ACTION_THREAT_AOE)\n"))
         # The old heal-only exit is gone, so heals pass through the same call.
         self.assertNotIn("if (dynamic_cast<CastHealingSpellAction*>(action))\n", multiplier)
 
     def test_the_numbers_are_read_on_the_interrupt_target(self):
-        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        multiplier = brace_body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
         inputs = multiplier[multiplier.index("if (interruptKey)\n    {"):
-                            multiplier.index("if (heal || ThreatCapInterruptExempt(")]
+                            multiplier.index("ThreatCapInterruptExempt(")]
         self.assertIn("bool const interruptKey = interrupt && sPlayerbotAIConfig.interruptIgnoresThreat;", multiplier)
         self.assertIn("Unit* const interruptTarget = action->GetTarget();", inputs)
         self.assertIn("interruptBotThreat = ThreatValue::GetThreat(bot, interruptTarget);", inputs)
@@ -106,23 +472,23 @@ class InterruptIgnoresThreat(unittest.TestCase):
         self.assertNotIn('"threat"', inputs)
 
     def test_a_veto_logs_its_numbers(self):
-        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
-        veto = body(multiplier, 'if (AI_VALUE2(bool, "trigger active", "high threat"))\n    {')
+        multiplier = brace_body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        veto = brace_body(multiplier, 'if (AI_VALUE2(bool, "trigger active", "high threat"))\n    {')
         self.assertIn("if (interruptKey)\n            LogInterruptVeto(ai, bot, interruptAction, interruptBotThreat, "
                       "interruptTankThreat, interruptFlatThreat,\n                             interruptRanged);"
                       "\n        return 0.0f;", veto)
-        log = body(STRATEGY, "void LogInterruptVeto(")
+        log = brace_body(STRATEGY, "void LogInterruptVeto(")
         self.assertIn('"ThreatCap interrupt spell=%s pct=%.0f flat=%.0f line=%.2f bot=%.0f tank=%.0f"', log)
         self.assertIn("ai::botdiag::BotActionLog::Write(ai, \"THREAT\", \"%s\", info);", log)
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "ThreatCapInterrupt", info, "");', log)
         self.assertIn("constexpr uint32 kInterruptVetoLogGapMs = 1000;", STRATEGY)
 
     def test_pure_interrupts_opt_in_and_nukes_stay_gated(self):
-        interrupt = body(SPELL_ACTIONS, "class CastInterruptSpellAction : public CastSpellAction")
+        interrupt = brace_body(SPELL_ACTIONS, "class CastInterruptSpellAction : public CastSpellAction")
         self.assertIn("virtual bool IgnoresThreatCap() const { return true; }", interrupt)
-        earth_shock = body(SHAMAN_ACTIONS, "class CastEarthShockInterruptAction : public CastInterruptSpellAction")
+        earth_shock = brace_body(SHAMAN_ACTIONS, "class CastEarthShockInterruptAction : public CastInterruptSpellAction")
         self.assertIn("bool IgnoresThreatCap() const override { return false; }", earth_shock)
-        death_coil = body(WARLOCK_ACTIONS, "class CastDeathCoilAction : public CastInterruptSpellAction")
+        death_coil = brace_body(WARLOCK_ACTIONS, "class CastDeathCoilAction : public CastInterruptSpellAction")
         self.assertIn("bool IgnoresThreatCap() const override { return false; }", death_coil)
 
     def test_no_other_interrupt_overrides_the_exemption(self):
@@ -134,15 +500,15 @@ class InterruptIgnoresThreat(unittest.TestCase):
         self.assertEqual(sorted(overrides), ["ShamanActions.h", "WarlockActions.h"])
 
     def test_docs_and_changelog(self):
-        self.assertIn("### `AiPlayerbot.InterruptIgnoresThreat`", SETTINGS)
-        self.assertIn("(#aiplayerbotinterruptignoresthreat)", SETTINGS)
+        self.assertIn("### `AiPlayerbot.InterruptIgnoresThreat`", COMBAT_SETTINGS)
+        self.assertIn("(#aiplayerbotinterruptignoresthreat)", COMBAT_SETTINGS)
         self.assertIn("InterruptIgnoresThreat", ROGUE_DOC)
         self.assertIn("InterruptIgnoresThreat", CHANGELOG)
-        section = SETTINGS[SETTINGS.index("### `AiPlayerbot.InterruptIgnoresThreat`"):]
+        section = COMBAT_SETTINGS[COMBAT_SETTINGS.index("### `AiPlayerbot.InterruptIgnoresThreat`"):]
         self.assertIn("110 %", section)
         self.assertIn("130 %", section)
         self.assertIn("ThreatCapInterrupt", section)
-        self.assertIn("on enemy healer", SETTINGS[SETTINGS.index("### `AiPlayerbot.InterruptIgnoresThreat`"):])
+        self.assertIn("on enemy healer", COMBAT_SETTINGS[COMBAT_SETTINGS.index("### `AiPlayerbot.InterruptIgnoresThreat`"):])
 
 
 if __name__ == "__main__":

@@ -485,3 +485,44 @@ func TestDatagramWithoutReplayKeyAppliesEitherWay(t *testing.T) {
 		t.Fatalf("accept: %+v", v)
 	}
 }
+
+// The events frame carries the fight key and the cursor range of the datagram's events next to the datagram's own
+// fields, for the commander and for each raid key.
+func TestEventsFrameCarriesTheCursor(t *testing.T) {
+	l, _, _ := newTestListener()
+	l.combat = combat.NewStore(nil)
+	hub := live.NewHub()
+	c, err := hub.Subscribe([]string{"Zfmagea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetLiveSink(hub)
+
+	l.processPacket([]byte(combatEventsDatagram))
+	frames := drainLive(c)
+	if len(frames) == 0 || frames[0].Event != "events" {
+		t.Fatalf("no events frame: %+v", frames)
+	}
+	var got struct {
+		Key       string            `json:"key"`
+		From      *uint64           `json:"from"`
+		Cur       *uint64           `json:"cur"`
+		Commander string            `json:"commander"`
+		Events    []json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal(frames[0].Data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Key != combat.Key("Zfmagea", 77, "55-6") || got.From == nil || *got.From != 0 || got.Cur == nil || *got.Cur != 2 {
+		t.Fatalf("frame key/from/cur: %s", frames[0].Data)
+	}
+	if got.Commander != "Zfmagea" || len(got.Events) != 2 {
+		t.Fatalf("the datagram's own fields must stay: %s", frames[0].Data)
+	}
+	next := strings.Replace(combatEventsDatagram, `"seq":9`, `"seq":10`, 1)
+	l.processPacket([]byte(next))
+	frames = drainLive(c)
+	if len(frames) == 0 || !strings.Contains(string(frames[0].Data), `"from":2,"cur":4`) {
+		t.Fatalf("the next frame must continue the cursor: %+v", frames)
+	}
+}

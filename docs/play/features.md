@@ -47,6 +47,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | All gear tier quests offered at once | No | [`AiPlayerbot.HireGearAllQuestsAvailable`](../server/settings/hiring.md#aiplayerbothiregearallquestsavailable) | [Recruiter services](commands/roster-and-hiring.md#capital-recruiter-services) |
 | Hires loot and roll on loot | No | [`AiPlayerbot.HireLoot`](../server/settings/hiring.md#aiplayerbothireloot) | [Loot rules](dungeons-and-raids.md#loot-rolling-rules) |
 | Hires come along into battlegrounds | No | [`AiPlayerbot.HireAllowPvP`](../server/settings/hiring.md#aiplayerbothireallowpvp) | [Battlegrounds](../world/queues.md#battlegrounds-with-your-own-party-bots) |
+| Hire the other faction at neutral inns | No | [`AiPlayerbot.HireCrossFactionNeutralInns`](../server/settings/hiring.md#aiplayerbothirecrossfactionneutralinns) | [Hiring](commands/roster-and-hiring.md) |
 | Buy world buffs at capital recruiters | Yes | [`AiPlayerbot.WorldBuffsEnabled`](../server/settings/hiring.md#aiplayerbotworldbuffsenabled) | [World buffs](commands/roster-and-hiring.md#world-buffs-at-capital-recruiters) |
 | Keep world buffs when entering a raid | No | [`AiPlayerbot.WorldBuffsKeepInRaids`](../server/settings/hiring.md#aiplayerbotworldbuffskeepinraids) | [World buffs](commands/roster-and-hiring.md#world-buffs-at-capital-recruiters) |
 
@@ -198,7 +199,10 @@ New here? Read [Getting Started](getting-started.md) first.
 | Pool bots fill battleground queues when players queue | Yes | [`AiPlayerbot.RandomBotBgEnabled`](../server/settings/queues.md#aiplayerbotrandombotbgenabled) | [Battlegrounds](../world/queues.md#battleground-auto-queue-human-demand) |
 | Bot-only Warsong Gulch matches when no player queues | Yes | [`AiPlayerbot.RandomBotBgAutonomous`](../server/settings/queues.md#aiplayerbotrandombotbgautonomous) | [Bot matches](../world/queues.md#autonomous-bot-only-matches) |
 | Your alts join a battleground with you (Join as Group; hires stay out unless allowed in) | Always | — | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
-| Bots play the objectives in WSG, AB and AV | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
+| Bots play the objectives in WSG, AB, AV, Sunnyglade Valley and Blood Ring | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
+| WSG teams split into attackers, defenders and midfielders | No | [`AiPlayerbot.WsgFlagRoles`](../server/settings/queues.md#aiplayerbotwsgflagroles) | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
+| Level-up gear top-up for pool bots | No | [`AiPlayerbot.PoolGearTopUpOnLevel`](../server/settings/economy.md#aiplayerbotpoolgeartopuponlevel) | [Economy](../server/settings/economy.md#aiplayerbotpoolgeartopuponlevel) |
+| Level-up money top-up for pool bots | No | [`AiPlayerbot.PoolMoneyTopUp`](../server/settings/economy.md#aiplayerbotpoolmoneytopup) | [Economy](../server/settings/economy.md#aiplayerbotpoolmoneytopup) |
 
 ## Server & Monitoring (Dashboard, Logs)
 

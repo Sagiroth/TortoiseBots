@@ -46,6 +46,7 @@ struct PlayerbotAI {
     Player* GetBot() const { return bot; }
     bool IsSafe(Player* p) const { return p->safe; }
     bool IsTank(Player* p) const { return p->tank; }
+    bool HasAura(unsigned, Player*) const { return false; }
 };
 struct ThreatManager { float getThreat(Player* p) const { return p->threat; } };
 struct RaidTankRoles { std::vector<Player*> tanks; };
@@ -62,7 +63,12 @@ RaidTankRoles GetRaidTankRoles(PlayerbotAI* ai)
     return roles;
 }
 bool gThreatSuccessor = false;
-struct BossTacticsStub { bool HasThreatSuccessor(unsigned, unsigned) const { return gThreatSuccessor; } };
+namespace ai { struct ThreatResetWindow; }
+struct BossTacticsStub {
+    bool HasThreatSuccessor(unsigned, unsigned) const { return gThreatSuccessor; }
+    bool HasStrictThreatSuccessor(unsigned, unsigned) const { return false; }
+    const ai::ThreatResetWindow* ThreatResetWindowOf(unsigned, unsigned) const { return nullptr; }
+};
 BossTacticsStub GetBossTactics() { return {}; }
 struct Facade {
     bool IsFriendlyTo(Unit* unit, Player*) const { return unit->friendly; }
@@ -70,14 +76,17 @@ struct Facade {
     ThreatManager GetThreatManager(Unit*) const { return {}; }
 } sServerFacade;
 std::vector<Player*> LiveGroupMembers(Group* g) { return g->members; }
+struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; bool dungeonRunThreatSuccessorKeepsAway = false; } sPlayerbotAIConfig;
 struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
+    static float GetResetSuccessorThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
 void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
-namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); }
+void LogHexSnapshot(PlayerbotAI*, Unit*, const RaidTankRoles&, Group*) {}
+namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); bool StrictThreatSuccessorRow(Unit* target); }
 using namespace ai;
 """
         return root, harness + methods
@@ -143,6 +152,35 @@ int main() {
 }
 """)
 
+
+    @unittest.skipUnless(shutil.which("g++"), "g++ unavailable")
+    def test_charmed_holder_does_not_lift_cap(self):
+        # charmed_holder_does_not_lift_cap: AiPlayerbot.DungeonRunThreatSuccessorKeepsAway keeps no charmed tank. The main
+        # tank held the boss at 10000 and is charmed (Cause Insanity / Brain Wash); the off-tank at 4000 now holds. With the
+        # keep-away and not-holder keys on, the reference stays the off-tank's 4000: a charmed tank's old threat must never
+        # lift the cap above what the boss can turn to (walk 41 on Hakkar).
+        self._compile_and_run(r"""
+int main() {
+    Player bot, main, off;
+    main.tank = true; main.assigned = true; main.threat = 10000;
+    off.assigned = true; off.threat = 4000;
+    Group group{{&bot, &main, &off}}; bot.group = &group;
+    PlayerbotAI ai{&bot};
+    Unit enemy;
+    main.victim = &enemy; off.victim = &enemy; enemy.victim = &main;
+    gThreatSuccessor = true;
+    sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway = true;
+    for (int notHolder = 0; notHolder < 2; ++notHolder)
+    {
+        sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = notHolder == 1;
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4000);  // free, holding main tank: the off-tank is the successor
+        main.charmer = Guid{false, false}; enemy.victim = &off;
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) <= 4000);  // charmed: skipped, never its old 10000
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4000);
+        main.charmer = Guid{}; enemy.victim = &main;
+    }
+}
+""")
 
 if __name__ == "__main__":
     unittest.main()

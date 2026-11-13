@@ -180,7 +180,7 @@ class BossAnchorFixRound1(unittest.TestCase):
 class BossAnchorChase(unittest.TestCase):
     def test_chase_to_enforces_a_live_anchor(self):
         fn = body(MOVEMENT, "bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)")
-        self.assertIn("const bool anchored = LiveBossAnchor(ai, bot, anchor);", fn)
+        self.assertIn("const bool anchored = LiveBossAnchor(ai, bot, anchor) && !(chased && MeetSonChaseExempt(ai, bot, chased));", fn)
         # Refused before any chase branch: a hostile beyond the radius plus the melee reach.
         refuse = fn.index("AnchorAllowsChase(anchor, obj->GetPositionX(), obj->GetPositionY(), kBossAnchorChaseReachYd)")
         self.assertLess(refuse, fn.index("if (distanceToTarget > sPlayerbotAIConfig.sightDistance"))

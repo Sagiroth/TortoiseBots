@@ -13,9 +13,13 @@
 #include "BossAnchorPolicy.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -41,6 +45,91 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutSiphonLeadMs = 75000; // a walk-out starts only this close to the next siphon
     constexpr int kSeekWalkoutMaxPerCycle = 1;             // walk-outs started in one seek cycle: no retry
     constexpr std::uint32_t kSeekWalkoutRetryMinMs = 25000; // a failed walk-out reopens the cycle only with more left
+    constexpr std::uint32_t kSeekWalkoutShotStallMs = 6000; // at the stand this long without a shot aborts ("no shot")
+    constexpr float kSeekWalkoutStandArriveYd = 3.0f;       // at the stand is this close to it
+    constexpr float kSeekWalkoutPlatformYd = 60.0f;         // the ranged platform: this close to the anchor's centre
+    // The siphon clock's no-sight cut (DungeonRunSeekSiphonClock, walk 62 SIPHON-WHY): shot tasks shoot at a median
+    // 11 s and p90 18 s after the start, while never-shot tasks run the full 25 s and miss the siphon.
+    constexpr std::uint32_t kSeekWalkoutNoSightCutMs = 15000;
+    // A cut only frees the cycle when a retry can still start after the puller's walk back: the retry floor plus this
+    // margin (a retry's start is read against the deadline, and the aborted puller is still walking back).
+    constexpr std::uint32_t kSeekWalkoutNoSightRetryMarginMs = 5000;
+    // The siphon clock's start and retry floor: start to dose cloud a median 43 s and p90 54 s, and a start at due 50 s
+    // doses 56 % of the time.
+    constexpr std::uint32_t kSeekSiphonClockFloorMs = 50000;
+
+    // The pulled Son meets a tank (walk 53): the walk back ends where a waiting off-tank stands, not at the circle's
+    // edge. The Son that chased the puller lands on that tank instead of on the ranged raid. Taunt and Growl are melee
+    // range, so the puller has to bring the Son within the receiver's reach: the receiver takes it once it is this
+    // close (Attack closes the last yards to the taunt's melee range), and the puller stops this close to the receiver.
+    constexpr float kSeekMeetTakeYd = 8.0f;         // the receiver takes the Son once it is this close
+    // The meet take's reach (DungeonRunSeekMeetTakeReach, walk 60 lever 1): the receiver takes the walked Son from this
+    // far (Intercept range) instead of kSeekMeetTakeYd, its Attack closing the gap; 19 of 24 walk-60 peels came with the
+    // Son 8-25 yd from the waiting receiver.
+    constexpr float kSeekMeetTakeReachYd = 25.0f;
+    constexpr std::uint32_t kSeekMeetMaxMs = 20000; // the meet is over 20 s after the shot (walk 52: start to back
+                                                    // median 18 s, p90 23 s, and the shot lands mid-task)
+
+    // A seek_pull row's rules (walk 51): every Son is walked once per cycle, up to `maxPerCycle` walk-outs start a
+    // cycle, each with `firstStartMinMs` left at the least, a failed one reopens the cycle, a shot that stalls at the
+    // stand aborts, the pick compares with the live top tank and the stand search fans out and reaches a hunter's
+    // range. The defaults are the old one-walk-out-per-cycle rules.
+    struct WalkoutCycleRules
+    {
+        int maxPerCycle = kSeekWalkoutMaxPerCycle;
+        std::uint32_t retryMinMs = kSeekWalkoutRetryMinMs;
+        std::uint32_t firstStartMinMs = 0; // 0: no deadline (the old rule)
+        std::uint32_t noSightCutMs = 0;    // 0: no cut (the old rules)
+        std::uint32_t startLeadMs = kSeekWalkoutSiphonLeadMs; // the earliest start: this much to the due time
+        std::uint32_t firstFightStartMs = 0; // 0: no gate (the old rule)
+        bool perCycleWalked = false;
+        bool reopenOnAbort = false;
+        bool shotStall = false;
+        bool pickTopTankThreat = false;
+        bool standFan = false;
+        bool hunterReachScan = false;
+        bool platformPick = false;
+        bool pickCastLater = false;
+    };
+
+    // The rules a seek_pull row arms: `priority` walk-outs a cycle, `windowSec` the last start and the retry floor,
+    // `seekLeadSec` the seek_aura row's dose window (the earliest start, clamped to the walk-out's own bounds).
+    inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec, float seekLeadSec = 0.0f)
+    {
+        WalkoutCycleRules rules;
+        rules.maxPerCycle = std::max(1, std::min(5, priority));
+        std::uint32_t const windowMs = static_cast<std::uint32_t>(windowSec * 1000.0f);
+        rules.retryMinMs = windowMs;
+        rules.firstStartMinMs = windowMs;
+        rules.firstFightStartMs = 19000; // the first Cause Insanity lands at +17-18 s
+        rules.perCycleWalked = true;
+        rules.reopenOnAbort = true;
+        rules.shotStall = true;
+        rules.pickTopTankThreat = true;
+        rules.standFan = true;
+        rules.hunterReachScan = true;
+        rules.platformPick = true;
+        rules.pickCastLater = true;
+        if (seekLeadSec > 0.0f)
+        {
+            std::uint32_t const leadMs = static_cast<std::uint32_t>(seekLeadSec * 1000.0f);
+            rules.startLeadMs = std::clamp(leadMs, kSeekWalkoutSiphonLeadMs, 85000u);
+        }
+        return rules;
+    }
+
+    // DungeonRunSeekSiphonClock: lower a seek_pull row's start and retry floors to kSeekSiphonClockFloorMs (never raise
+    // them; 0, the old rules, stays 0) and arm the no-sight cut.
+    inline WalkoutCycleRules WalkoutSiphonClockRules(WalkoutCycleRules rules)
+    {
+        if (rules.firstStartMinMs > kSeekSiphonClockFloorMs)
+            rules.firstStartMinMs = kSeekSiphonClockFloorMs;
+        if (rules.retryMinMs > kSeekSiphonClockFloorMs && rules.perCycleWalked)
+            rules.retryMinMs = kSeekSiphonClockFloorMs;
+        if (rules.perCycleWalked)
+            rules.noSightCutMs = kSeekWalkoutNoSightCutMs;
+        return rules;
+    }
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
     // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
@@ -57,6 +146,290 @@ namespace ai
             case 7: return "lightning bolt";
             default: return "";
         }
+    }
+
+    // The walk-out focus (DungeonRunSeekWalkoutFocus, walk 55: 15 cycle-1 walk-outs never shot, the puller in range
+    // and sight but in "follow", "hunter step out" or another action, and not facing the Son in 10 of 13 no-shot
+    // aborts). Pure rules the glue (BossTacticsSeekTankAction's walk-out branch and BossTacticsWalkoutFocusMultiplier)
+    // reads.
+    //
+    // The pull shot: a hunter opens with the instant Arcane Shot when it can cast it now, else Auto Shot (the
+    // auto-repeat waits on the ranged swing timer and needs the Son in front). Never a DoT: Serpent Sting stays vetoed.
+    // Every other class keeps WalkoutShotSpell's shot (a warrior or paladin still has none and is never picked).
+    inline const char* WalkoutPullShotSpell(std::uint8_t classId, bool arcaneReady)
+    {
+        if (classId == 3)
+            return arcaneReady ? "arcane shot" : "auto shot";
+        return WalkoutShotSpell(classId);
+    }
+
+    // Facing first: with the focus on, a puller in shot position that does not face the Son stops, turns this tick and
+    // casts on the next one (a cast in the same tick as SetFacingTo went out before the turn landed).
+    inline bool WalkoutFaceFirst(bool focusOn, bool rulesOn, bool inFront)
+    {
+        return focusOn && rulesOn && !inFront;
+    }
+
+    // Face and cast in one tick (DungeonRunSeekWalkoutFaceCast, walk 56: 8 of 11 no-shot aborts stood stopped in range
+    // and sight but facing Hakkar). A stopped bot's forced turn is an instant orientation set (ServerFacade::SetFacingTo
+    // with force: SetOrientation plus a heartbeat), so the cast can follow in the same tick; the split turn of
+    // WalkoutFaceFirst lost the race to UpdateFaceTarget, which turns the bot back to its current target first.
+    struct WalkoutFaceStep
+    {
+        bool stop = false;            // stop the bot before it turns
+        bool face = false;            // turn to the Son this tick
+        bool force = false;           // the turn is SetFacingTo's instant `force` turn
+        bool returnAfterFace = false; // return after the turn, the cast left to the next tick
+    };
+
+    // With FaceCast on: always stopped, turned (forced) only when not facing, and the cast follows in the same tick.
+    // Off: today's t1106k steps (WalkoutFaceFirst: stop, turn, return; the rules alone: turn and cast).
+    inline WalkoutFaceStep WalkoutFaceThenCast(bool faceCastOn, bool focusOn, bool rulesOn, bool inFront)
+    {
+        WalkoutFaceStep step;
+        if (faceCastOn)
+        {
+            step.stop = true;
+            step.face = !inFront;
+            step.force = true;
+            step.returnAfterFace = false;
+            return step;
+        }
+        bool const faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);
+        step.stop = faceFirst;
+        step.face = rulesOn && !inFront;
+        step.force = false;
+        step.returnAfterFace = faceFirst;
+        return step;
+    }
+
+    // Whether PlayerbotAI::UpdateFaceTarget leaves the bot's facing alone this update (DungeonRunSeekWalkoutFaceCast):
+    // the live, unshot walk-out puller faces its Son, not its current target (Hakkar). Every other bot, and the puller
+    // once its shot landed, is turned as before.
+    inline bool WalkoutFaceTargetYields(bool flagOn, bool livePuller)
+    {
+        return flagOn && livePuller;
+    }
+
+    // Whether the walk-out's own record still names this bot as a live puller: recorded as the task's puller, alive,
+    // not charmed, and the task inside its 25 s (the same `<` as the anchor's exemption, WalkoutExempts). A dead or
+    // charmed puller (the abort clears the record only on the next reader's update) and a stale record never hold
+    // anything.
+    inline bool WalkoutFocusPullerLive(bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs)
+    {
+        return recordedPuller && alive && !charmed && sinceStartMs < kSeekWalkoutTimeoutMs;
+    }
+
+    // The walk-out keeps its puller in combat (DungeonRunSeekWalkoutHoldCombat, walk 56: 5 of the 6 `timeout shot=0`
+    // pullers fell to the non-combat engine inside their own task, where the walk-out has no action and `follow`, food
+    // or drink walked them off the stand). `combat end` does not fire while this holds: the flag on, the bot the live
+    // puller (WalkoutFocusPullerLive: recorded, alive, not charmed, inside the 25 s) and the shot not landed. The walk
+    // back is not held, and the hold ends with the task however it ends (shot, timeout, abort, death, charm).
+    //
+    // `bossFighting` (review L2): the record's boss is alive, in combat and not evading (WalkoutBossFighting), so a wipe,
+    // an evade or a kill ends the hold at once instead of at the 25 s.
+    inline bool WalkoutHoldsCombat(bool flagOn, bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs,
+                                   bool shot, bool bossFighting = true)
+    {
+        return flagOn && bossFighting && WalkoutFocusPullerLive(recordedPuller, alive, charmed, sinceStartMs) && !shot;
+    }
+
+    // The hold's flag (review L1): HoldCombat needs the walk-out focus, which keeps the held puller's other combat
+    // actions (a Hakkar target pick, the rotation) from running; without it nothing is held.
+    inline bool WalkoutHoldCombatOn(bool holdCombatFlag, bool focusFlag)
+    {
+        return holdCombatFlag && focusFlag;
+    }
+
+    // The walk-out's boss still fights: found, alive, in combat and not evading (the record's sweep drops a boss that is
+    // dead or out of combat; an evading one is added here).
+    inline bool WalkoutBossFighting(bool found, bool alive, bool inCombat, bool evading)
+    {
+        return found && alive && inCombat && !evading;
+    }
+
+    // Whether a pick candidate's AI can run the walk-out at all (DungeonRunSeekWalkoutHoldCombat): the walk-out is a
+    // combat-engine action, so a bot on the non-combat engine, or one eating or drinking, is not sent. The bot's own
+    // engine state is read, never its pet's combat: a hunter whose pet fights while the hunter's AI sits on the
+    // non-combat engine is still not ready.
+    inline bool WalkoutCombatEngineReady(bool combatEngine, bool eatingOrDrinking)
+    {
+        return combatEngine && !eatingOrDrinking;
+    }
+
+    // Below this health the focus lets go (walk 56 review): a puller 30+ yd out, often past its healers' reach, drinks
+    // its potion, uses its healthstone or mends its pet as usual. The walk-out's own aborts (threat, victim, charm, the
+    // stall and the timeout) are unchanged.
+    constexpr float kWalkoutFocusFloorPct = 40.0f;
+
+    // The actions the focus lets run: the walk-out itself and the pet's dismissal.
+    inline bool WalkoutFocusAllows(const std::string& action)
+    {
+        return action == "boss tactics seek tank" || action == "boss tactics seek pet";
+    }
+
+    // Whether the focus holds `action` this tick: the flag on, this bot the live walk-out puller (WalkoutFocusPullerLive)
+    // and the shot not landed yet. Every combat-engine action but the walk-out and the pet's dismissal is held:
+    // "follow", "hunter step out", "wait for attack", "reach melee"/"reach spell", "feign death". Reaction-engine
+    // actions (flee, avoid cast, tank swap) are not multiplied by it and still run: they are the puller's survival
+    // moves, and the walk-out already aborts on threat, on the boss's victim and on a charm. Once the shot lands (or the
+    // task ends) nothing is held: the walk back is the walk-out action's own.
+    inline bool WalkoutFocusBlocks(bool flagOn, bool isPuller, bool shot, const std::string& action)
+    {
+        return flagOn && isPuller && !shot && !WalkoutFocusAllows(action);
+    }
+
+    // The multiplier's whole decision, from plain inputs the glue fills by name (BossTacticsWalkoutFocusMultiplier).
+    struct WalkoutFocusInput
+    {
+        bool flagOn = false;
+        bool recordedPuller = false; // the instance's running task names this bot as its puller
+        bool alive = false;
+        bool charmed = false;
+        std::uint32_t sinceStartMs = 0;
+        bool shot = false;
+        float hpPct = 100.0f;
+    };
+
+    // Whether the focus holds `action`: the puller live (WalkoutFocusPullerLive), unshot, at or above the health floor,
+    // and the action not the walk-out's own (WalkoutFocusBlocks).
+    inline bool WalkoutFocusHolds(const WalkoutFocusInput& in, const std::string& action)
+    {
+        bool const live = WalkoutFocusPullerLive(in.recordedPuller, in.alive, in.charmed, in.sinceStartMs);
+        return in.hpPct >= kWalkoutFocusFloorPct && WalkoutFocusBlocks(in.flagOn, live, in.shot, action);
+    }
+
+    // The pull shot in flight (walk 56 review): the instant Arcane Shot leaves no cast behind, and the Son counts as shot
+    // only once it is in combat. For this long after the pull cast the puller waits for the Son instead of casting
+    // again, and the 6 s stall does not abort the walk-out as "no shot".
+    constexpr std::uint32_t kSeekWalkoutShotFlightMs = 2000;
+
+    // Whether the pull cast at `castMs` (0: none this task) may still land at `nowMs`.
+    inline bool WalkoutPullShotInFlight(std::uint32_t castMs, std::uint32_t nowMs)
+    {
+        return castMs != 0 && nowMs - castMs < kSeekWalkoutShotFlightMs;
+    }
+
+    // At the stand: whether the puller waits this tick for a pull shot already sent (in flight, the Son not yet in
+    // combat) instead of casting again or aborting.
+    inline bool WalkoutPullShotWaits(std::uint32_t castMs, std::uint32_t nowMs, bool sonInCombat)
+    {
+        return !sonInCombat && WalkoutPullShotInFlight(castMs, nowMs);
+    }
+
+    // Whether the 6 s stall aborts the walk-out as "no shot" now: stalled, and no pull shot in flight.
+    inline bool WalkoutNoShotAbortDue(bool stalled, std::uint32_t castMs, std::uint32_t nowMs)
+    {
+        return stalled && !WalkoutPullShotInFlight(castMs, nowMs);
+    }
+
+    // The `walk-out preempted` row: one per walk-out, keyed by the task's start time. It names the first action the focus
+    // held in that walk-out (the engine asks the multiplier only for an action it is about to run, so that action would
+    // have run this tick had the walk-out not been chosen or had it returned false).
+    inline bool WalkoutPreemptRowDue(std::uint32_t loggedStartMs, std::uint32_t startMs)
+    {
+        return loggedStartMs != startMs;
+    }
+
+    // The walk-out stand rows (DungeonRunSeekWalkoutStandLog, diagnostic, walk 56 fix 4): while the puller walks out
+    // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
+    // logs `seek pull: walk-out castrefused` at once, at most kSeekWalkoutCastRefusedRowsMax a walk-out. A 25 s task
+    // writes at most 26 stand rows.
+    constexpr std::uint32_t kSeekWalkoutStandRowMs = 1000;
+    constexpr int kSeekWalkoutCastRefusedRowsMax = 10;
+
+    // The branch the puller's walk-out tick took: `out` walking (not at the stand, not in shot position), `inpos` at
+    // the stand but not in shot position (range, floor or sight missing), `wait` a pull shot in flight, `face` the turn
+    // with the cast left to the next tick, `castwait` its own cast on the Son still running, `checkfail` the shot's cast
+    // check refused (the `abort cast failed` row follows), `cast` the pull cast went out, `castrefused` CastSpell said no.
+    enum class WalkoutStandBranch : std::uint8_t
+    {
+        Out = 0,
+        InPos = 1,
+        Wait = 2,
+        Face = 3,
+        CastWait = 4,
+        CheckFail = 5,
+        Cast = 6,
+        CastRefused = 7,
+    };
+
+    inline const char* WalkoutStandBranchWord(WalkoutStandBranch b)
+    {
+        switch (b)
+        {
+            case WalkoutStandBranch::Out: return "out";
+            case WalkoutStandBranch::InPos: return "inpos";
+            case WalkoutStandBranch::Wait: return "wait";
+            case WalkoutStandBranch::Face: return "face";
+            case WalkoutStandBranch::CastWait: return "castwait";
+            case WalkoutStandBranch::CheckFail: return "checkfail";
+            case WalkoutStandBranch::Cast: return "cast";
+            case WalkoutStandBranch::CastRefused: return "castrefused";
+        }
+        return "out";
+    }
+
+    // A second since the walk-out's last stand row (the throttle; the first row of a walk-out is keyed by its start,
+    // WalkoutStandRowClaim).
+    inline bool WalkoutStandRowDue(std::uint32_t lastRowMs, std::uint32_t nowMs)
+    {
+        return nowMs - lastRowMs >= kSeekWalkoutStandRowMs;
+    }
+
+    // Whether this read writes the stand row: the walk-out's first (its start not logged yet) or a second after the last.
+    inline bool WalkoutStandRowClaim(std::uint32_t loggedStartMs, std::uint32_t startMs, std::uint32_t lastRowMs,
+                                     std::uint32_t nowMs)
+    {
+        return loggedStartMs != startMs || WalkoutStandRowDue(lastRowMs, nowMs);
+    }
+
+    // Whether a refused pull cast still writes its row: fewer than kSeekWalkoutCastRefusedRowsMax this walk-out (`rows`
+    // counts the walk-out started at `loggedStartMs`).
+    inline bool WalkoutCastRefusedRowDue(std::uint32_t loggedStartMs, std::uint32_t startMs, int rows)
+    {
+        return loggedStartMs != startMs || rows < kSeekWalkoutCastRefusedRowsMax;
+    }
+
+    // The refused cast's reason word: the core's or the cast check's own result when CastSpell noted one (`castFail`,
+    // SpellCastResult; 0 is SPELL_CAST_OK in the core, so none noted), else the CastSpell gate the state before the call
+    // points at (PlayerbotAISpells.cpp: flying, the stand-up delay, the moving turn's delay, a move with no master), else
+    // `gate` (the self-harm, dispel-hold and pet-redirect gates).
+    inline std::string WalkoutCastRefuseWord(std::uint32_t castFail, std::uint32_t castOk, bool flying, bool standing,
+                                             bool stopped, bool inFront)
+    {
+        if (castFail != castOk)
+            return "spell_fail_" + std::to_string(castFail);
+        if (flying)
+            return "flying";
+        if (!standing)
+            return "stand_delay";
+        if (!stopped && !inFront)
+            return "facing_delay";
+        if (!stopped)
+            return "moving";
+        return "gate";
+    }
+
+    // The stand row's text.
+    inline std::string WalkoutStandRowText(WalkoutStandBranch branch, bool combatEngine, bool inRange, bool los,
+                                           bool front, bool stopped, std::uint32_t castSpellId, const std::string& refuse,
+                                           std::uint32_t tickMs)
+    {
+        char buf[224];
+        snprintf(buf, sizeof(buf),
+                 "seek pull: walk-out stand branch=%s state=%c inrange=%d los=%d front=%d stopped=%d cast=%u refuse=%s "
+                 "tick_ms=%u",
+                 WalkoutStandBranchWord(branch), combatEngine ? 'c' : 'n', inRange ? 1 : 0, los ? 1 : 0, front ? 1 : 0,
+                 stopped ? 1 : 0, static_cast<unsigned>(castSpellId), refuse.empty() ? "-" : refuse.c_str(),
+                 static_cast<unsigned>(tickMs));
+        return buf;
+    }
+
+    // The castrefused row's text.
+    inline std::string WalkoutCastRefusedRowText(std::uint32_t spellId, const std::string& reason)
+    {
+        return "seek pull: walk-out castrefused spell=" + std::to_string(spellId) + " reason=" + reason;
     }
 
     // The puller's rank: a hunter (the longest shot), then a mage, warlock or shadow priest, then any other ranged
@@ -95,13 +468,150 @@ namespace ai
         bool charmed = false;
         bool insane = false;     // carries Cause Insanity
         bool canShoot = true;    // its shot can be cast at the Son now (spell or wand known, ammo, mana, not silenced)
+        bool combatEngine = true; // its AI is on the combat engine and not eating or drinking (HoldCombat only; else true)
         float yd = 0.0f;         // to the Son (or the anchor's centre when no Son is known)
     };
 
     inline bool WalkoutEligible(const WalkoutCandidate& c)
     {
         return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.highThreat &&
-            !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk && !c.excluded;
+            !c.charmed && !c.insane && c.canShoot && c.combatEngine && c.inside && c.pathOk && !c.excluded;
+    }
+
+    // Whether a bot stands on the ranged platform: within kSeekWalkoutPlatformYd of the anchor's centre and above
+    // Hakkar's evade line. The ranged raid stands 30-50 yd out, outside the tanks' anchor, and still pulls.
+    inline bool WalkoutOnPlatform(float distFromCentreYd, float z)
+    {
+        return distFromCentreYd <= kSeekWalkoutPlatformYd && z >= kSeekWalkoutMinStandZ;
+    }
+
+    // Whether a refused shot check still leaves the bot usable for the walk-out: a cast already in progress or a spell
+    // on cooldown is over by the time the puller walks to its stand, so a caster mid-cast is not refused.
+    inline bool WalkoutShotReadyLater(bool castOk, bool spellInProgress, bool notReady)
+    {
+        return castOk || spellInProgress || notReady;
+    }
+
+    // Whether the fight has run long enough for the walk-out's first start: Cause Insanity lands at +17-18 s and
+    // deletes the main tank's threat, which turned the cycle-1 picks into threat aborts.
+    inline bool WalkoutFightOldEnough(const WalkoutCycleRules& rules, std::uint32_t fightMs)
+    {
+        return rules.firstFightStartMs == 0 || fightMs >= rules.firstFightStartMs;
+    }
+
+    // Why the pick rejected a member (the no-puller row's per-candidate counts). The words stay short and fixed so a
+    // script can count them; the order is WalkoutEligible's, so a dead tank reads `dead`, a tank at threat `tank`.
+    enum class WalkoutReject : std::uint8_t
+    {
+        Away = 0, // off the bot's map or not in the world
+        NoAi = 1,
+        HunterOnly = 2, // the hunter-reach pass skipped it
+        Dead = 3,
+        NoRole = 4, // no ranged damage role
+        Tank = 5,
+        Healer = 6,
+        Victim = 7, // the boss's current victim
+        Threat = 8,
+        Cc = 9, // charmed or under Cause Insanity
+        NoShot = 10,
+        Outside = 11, // outside the anchor
+        Bench = 12,   // left out of the picks (recent failed moves)
+        NoPath = 13,  // no navmesh path to the stand
+        NoCombat = 14, // its AI is not on the combat engine, or it eats or drinks (DungeonRunSeekWalkoutHoldCombat)
+    };
+
+    inline const char* WalkoutRejectWord(WalkoutReject reject)
+    {
+        switch (reject)
+        {
+            case WalkoutReject::Away: return "away";
+            case WalkoutReject::NoAi: return "no_ai";
+            case WalkoutReject::HunterOnly: return "hunter_only";
+            case WalkoutReject::Dead: return "dead";
+            case WalkoutReject::NoRole: return "no_role";
+            case WalkoutReject::Tank: return "tank";
+            case WalkoutReject::Healer: return "healer";
+            case WalkoutReject::Victim: return "victim";
+            case WalkoutReject::Threat: return "threat";
+            case WalkoutReject::Cc: return "cc";
+            case WalkoutReject::NoShot: return "no_shot";
+            case WalkoutReject::Outside: return "outside";
+            case WalkoutReject::Bench: return "bench";
+            case WalkoutReject::NoPath: return "no_path";
+            case WalkoutReject::NoCombat: return "no_combat";
+        }
+        return "away";
+    }
+
+    // The first test WalkoutEligible fails, with `tank` and `healer` ahead of the role: `role` comes from the ranged
+    // damage check alone, so a melee tank or healer would otherwise read `no_role`. Only called for an ineligible
+    // candidate.
+    inline WalkoutReject WalkoutRejectOf(const WalkoutCandidate& c)
+    {
+        if (!c.alive)
+            return WalkoutReject::Dead;
+        if (c.tank)
+            return WalkoutReject::Tank;
+        if (c.healer)
+            return WalkoutReject::Healer;
+        if (c.role == WalkoutRole::None)
+            return WalkoutReject::NoRole;
+        if (c.bossVictim)
+            return WalkoutReject::Victim;
+        if (c.highThreat)
+            return WalkoutReject::Threat;
+        if (c.charmed || c.insane)
+            return WalkoutReject::Cc;
+        if (!c.canShoot)
+            return WalkoutReject::NoShot;
+        if (!c.combatEngine)
+            return WalkoutReject::NoCombat;
+        if (!c.inside)
+            return WalkoutReject::Outside;
+        if (!c.pathOk)
+            return WalkoutReject::NoPath;
+        return WalkoutReject::Bench; // the only test left: excluded
+    }
+
+    // The no-puller row's info2: its counts in enum order, zero counts left out; `reason=none,members=<m>` when every
+    // member passed (a pick lost to something else, e.g. no group), then the threat reference and the lowest passing
+    // candidate's threat, so a threat refusal can be read against both.
+    struct WalkoutRejectTally
+    {
+        std::array<std::uint16_t, 15> n{};
+        std::uint16_t members = 0;
+        float top = -1.0f; // the live top tank's threat (-1: not measured)
+        float low = -1.0f; // the lowest candidate's threat (-1: no candidate reached the threat test)
+
+        void Add(WalkoutReject reject)
+        {
+            ++n[static_cast<std::size_t>(reject)];
+        }
+    };
+
+    inline std::string WalkoutRejectText(const WalkoutRejectTally& t)
+    {
+        std::string out = "reason=";
+        bool any = false;
+        for (std::size_t i = 0; i < t.n.size(); ++i)
+        {
+            if (t.n[i] == 0)
+                continue;
+            if (any)
+                out += '|';
+            out += WalkoutRejectWord(static_cast<WalkoutReject>(i));
+            out += ':';
+            out += std::to_string(t.n[i]);
+            any = true;
+        }
+        if (!any)
+            out += "none";
+        out += ",members=";
+        out += std::to_string(t.members);
+        char tail[48];
+        snprintf(tail, sizeof(tail), " top=%.0f low=%.0f", t.top, t.low);
+        out += tail;
+        return out;
     }
 
     // Whether a bot's threat on the boss is too close to the main tank's to be sent: kSeekWalkoutThreatShare of it or
@@ -129,6 +639,14 @@ namespace ai
     inline bool WalkoutRunningThreatTooHigh(float botThreat, float topTankThreat)
     {
         return topTankThreat > 0.0f && botThreat >= kSeekWalkoutAbortThreatShare * topTankThreat;
+    }
+
+    // The pick's threat rule against the live top tank, the same reference the running abort reads: at
+    // kSeekWalkoutThreatShare of it or more. Cause Insanity at ~17 s zeroes the old main tank's threat, so a pick that
+    // still compared with roles.tanks[0] passed a bot the abort turned on seconds later.
+    inline bool WalkoutPickThreatTooHigh(float botThreat, float topTankThreat)
+    {
+        return topTankThreat <= 0.0f ? botThreat > 0.0f : botThreat >= kSeekWalkoutThreatShare * topTankThreat;
     }
 
     // Why the running task's puller cannot go on (the abort's logged reason), or null: dead, charmed, under Cause
@@ -198,6 +716,35 @@ namespace ai
         return out;
     }
 
+    // The stand search's rays: the same points for every offset from the bearing to the Son (`offsetsDeg`, in order),
+    // so a ray blocked by a ledge has neighbours to fall back on. Offset 0 alone is WalkoutStandCandidates point for
+    // point. Empty when the Son stands inside the circle.
+    inline std::vector<std::pair<float, float>> WalkoutStandCandidatesFan(const BossAnchorCircle& c, float sonX,
+                                                                         float sonY,
+                                                                         const std::vector<float>& offsetsDeg)
+    {
+        std::vector<std::pair<float, float>> out;
+        float const dx = sonX - c.x;
+        float const dy = sonY - c.y;
+        float const d = std::sqrt(dx * dx + dy * dy);
+        if (d <= c.radius)
+            return out;
+        float const baseX = dx / d;
+        float const baseY = dy / d;
+        constexpr float kPi = 3.14159265358979323846f;
+        for (float const offset : offsetsDeg)
+        {
+            float const rad = offset * kPi / 180.0f;
+            float const cs = std::cos(rad);
+            float const sn = std::sin(rad);
+            float const ux = baseX * cs - baseY * sn;
+            float const uy = baseX * sn + baseY * cs;
+            for (float r = c.radius; r < d; r += kSeekWalkoutStandStepYd)
+                out.emplace_back(c.x + ux * r, c.y + uy * r);
+        }
+        return out;
+    }
+
     // Whether a candidate is the stand: a floor read there at or above kSeekWalkoutMinStandZ (the pullers that walked
     // down the slope to the Son's height died there), within the shot's range of the Son, and in sight of it.
     inline bool WalkoutStandOk(bool floorFound, float floorZ, float toSonYd, float rangeYd, bool sight)
@@ -244,6 +791,231 @@ namespace ai
             std::max(0.0f, tank.radius - kSeekWalkoutBackInsetYd) + kSeekWalkoutBackSlackYd;
     }
 
+    // One raid tank as a meet receiver: alive and in the world, not charmed, not the boss's victim, not holding a Son
+    // already, and inside the tanks' circle (the walk back ends there).
+    struct MeetCandidate
+    {
+        bool alive = false;
+        bool charmed = false;
+        bool bossVictim = false;
+        bool holdsSon = false;
+        bool inside = false;
+    };
+
+    // Why this tank cannot wait for the pulled Son: the first failing test in the order below, or null when it can.
+    inline const char* MeetRefusalWhy(const MeetCandidate& c)
+    {
+        if (!c.alive)
+            return "dead";
+        if (c.charmed)
+            return "charmed";
+        if (c.bossVictim)
+            return "victim";
+        if (c.holdsSon)
+            return "busy";
+        if (!c.inside)
+            return "outside";
+        return nullptr;
+    }
+
+    // The tank that waits for the pulled Son: the raid's third tank (index 2), else the second off-tank (index 1), and
+    // never the main tank at index 0, which holds the boss. -1: no tank can wait.
+    inline int PickMeetReceiver(const std::vector<MeetCandidate>& tanks)
+    {
+        if (tanks.size() > 2 && MeetRefusalWhy(tanks[2]) == nullptr)
+            return 2;
+        if (tanks.size() > 1 && MeetRefusalWhy(tanks[1]) == nullptr)
+            return 1;
+        return -1;
+    }
+
+    // The per-code refusal counts over indices 1..n-1 in MeetRefusalWhy's order, e.g. `dead:1|busy:1`; `none` when no
+    // candidate failed.
+    inline std::string MeetRefusalCounts(const std::vector<MeetCandidate>& tanks)
+    {
+        static const char* const kCodes[] = {"dead", "charmed", "victim", "busy", "outside"};
+        int counts[5] = {0, 0, 0, 0, 0};
+        for (std::size_t i = 1; i < tanks.size(); ++i)
+        {
+            const char* const why = MeetRefusalWhy(tanks[i]);
+            if (!why)
+                continue;
+            for (int code = 0; code < 5; ++code)
+            {
+                if (std::strcmp(why, kCodes[code]) == 0)
+                {
+                    ++counts[code];
+                    break;
+                }
+            }
+        }
+        std::string out;
+        for (int code = 0; code < 5; ++code)
+        {
+            if (counts[code] == 0)
+                continue;
+            if (!out.empty())
+                out += "|";
+            out += kCodes[code];
+            out += ":";
+            out += std::to_string(counts[code]);
+        }
+        return out.empty() ? std::string("none") : out;
+    }
+
+    // Where the walk back ends: the tanks' circle edge without a meet, the waiting receiver's live position (clamped
+    // into that circle) with one.
+    inline void WalkoutMeetBackPoint(bool hasMeet, float rx, float ry, const BossAnchorCircle& tank, float botX,
+                                     float botY, float& x, float& y)
+    {
+        if (hasMeet)
+            WalkoutBackPoint(tank, rx, ry, x, y);
+        else
+            WalkoutBackPoint(tank, botX, botY, x, y);
+    }
+
+    // Whether the puller has arrived: at the circle's edge without a meet; with one, within kSeekMeetTakeYd of the
+    // clamped receiver point (the receiver takes the Son from there) OR at the old circle-edge point, whichever comes
+    // first. Walk 54: a 2 yd stop at a receiver that keeps moving timed 17 walk-outs out with the shot landed (4 in
+    // walk 53), the puller back inside the circle 7-21 yd from the receiver.
+    inline bool WalkoutMeetArrived(bool hasMeet, float px, float py, const BossAnchorCircle& tank, float botX,
+                                   float botY)
+    {
+        if (!hasMeet)
+            return WalkoutBackArrived(tank, botX, botY);
+        float const dx = botX - px;
+        float const dy = botY - py;
+        return std::sqrt(dx * dx + dy * dy) <= kSeekMeetTakeYd || WalkoutBackArrived(tank, botX, botY);
+    }
+
+    // The take edge (DungeonRunSeekTakeEdge). The bots a Son hits stand clamped on the raid circle's edge, so the Son
+    // stands at 31-45 yd and the old take (refuse any Son outside the raid circle) refused 56 % of its rows.
+    // The victim may stand this far past the raid circle and still count as inside it.
+    constexpr float kSeekTakeEdgeSlackYd = 2.0f;
+
+    // The exemption is bounded (Codex round 1): Attack() walks to melee, so a Son far past the circle, or one that
+    // is not really on its inside victim, must not be chased (it leads the tank off the platform, under Hakkar's evade
+    // line). The Son must stand within kSeekTakeEdgeMaxPastYd of the raid circle (walk 54: p75 was 45 yd from the
+    // spawn with the circle at 30; 38 covers most real cases) AND within kSeekTakeEdgeOnVictimYd of that victim.
+    constexpr float kSeekTakeEdgeMaxPastYd = 8.0f;
+    constexpr float kSeekTakeEdgeOnVictimYd = 10.0f;
+
+    // What the take edge decides for a Son: `Allowed` (take it, as today for a Son inside the circle), `Refused` (today's
+    // `chase_refused`) or `Far` (the victim is inside and the floor is the platform's, but the Son is too far from the
+    // circle or from its victim: logged `edge_far`, and refused like Refused).
+    enum class SeekTakeEdge
+    {
+        Allowed,
+        Refused,
+        Far,
+    };
+
+    // The pure verdict. A Son inside the raid circle is never refused. Outside, it is allowed only when ALL hold: the
+    // Son's victim stands inside the raid circle (plus kSeekTakeEdgeSlackYd), the Son's floor is the platform's (z at
+    // or above kSeekWalkoutMinStandZ, above Hakkar's 45.8 evade line), the Son is within kSeekTakeEdgeMaxPastYd of the
+    // circle (`sonNear`) and within kSeekTakeEdgeOnVictimYd of its victim (`sonOnVictim`). The last two failing alone
+    // is `Far`.
+    inline SeekTakeEdge SeekTakeEdgeVerdict(bool sonInside, bool victimInside, bool sonZOk, bool sonNear,
+                                            bool sonOnVictim)
+    {
+        if (sonInside)
+            return SeekTakeEdge::Allowed;
+        if (!victimInside || !sonZOk)
+            return SeekTakeEdge::Refused;
+        if (!sonNear || !sonOnVictim)
+            return SeekTakeEdge::Far;
+        return SeekTakeEdge::Allowed;
+    }
+
+    // The same with the geometry: `raid` is the raid circle (everyone's, not the tanks'), the Son at (sx, sy, sz), its
+    // victim at (vx, vy) when `hasVictim`. All distances are 2D from the circle's centre, as BossAnchorRefusesChase
+    // measures. The VICTIM's position is measured against the circle plus the slack; the Son's own against the circle
+    // itself, and against radius + kSeekTakeEdgeMaxPastYd for the cap.
+    inline SeekTakeEdge SeekTakeEdgeCheck(const BossAnchorCircle& raid, float sx, float sy, float sz, bool hasVictim,
+                                          float vx, float vy)
+    {
+        BossAnchorCircle wide = raid;
+        wide.radius += kSeekTakeEdgeSlackYd;
+        float const sonFromCentre = BossAnchorDistance2d(raid, sx, sy);
+        float const dvx = sx - vx;
+        float const dvy = sy - vy;
+        return SeekTakeEdgeVerdict(InsideAnchor(raid, sx, sy), hasVictim && InsideAnchor(wide, vx, vy),
+                                   sz >= kSeekWalkoutMinStandZ,
+                                   sonFromCentre <= raid.radius + kSeekTakeEdgeMaxPastYd,
+                                   hasVictim && std::sqrt(dvx * dvx + dvy * dvy) <= kSeekTakeEdgeOnVictimYd);
+    }
+
+    inline bool SeekTakeEdgeRefuses(const BossAnchorCircle& raid, float sx, float sy, float sz, bool hasVictim,
+                                    float vx, float vy)
+    {
+        return SeekTakeEdgeCheck(raid, sx, sy, sz, hasVictim, vx, vy) != SeekTakeEdge::Allowed;
+    }
+
+    // Whether the receiver takes the pulled Son now: it is on the receiver, or within the take reach (Attack closes
+    // the last yards to the taunt's melee range). `reachOn` (DungeonRunSeekMeetTakeReach) widens the reach from
+    // kSeekMeetTakeYd to kSeekMeetTakeReachYd; off, the 8 yd rule is unchanged.
+    inline float SeekMeetTakeReachYd(bool reachOn)
+    {
+        return reachOn ? kSeekMeetTakeReachYd : kSeekMeetTakeYd;
+    }
+
+    inline bool SeekMeetTakeDue(float sonToReceiverYd, bool sonOnReceiver, bool reachOn = false)
+    {
+        return sonOnReceiver || sonToReceiverYd <= SeekMeetTakeReachYd(reachOn);
+    }
+
+    // The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, review round 2): the live boss anchor
+    // keeps every tank's chase within its circle (ChaseTo, ClampMoveToBossAnchor), so a walked Son 25 yd out on the
+    // outward line could never be reached. The receiver is exempt from the anchor, as the walk-out puller is, only while
+    // ALL of: the key is on; the meet is open (and its Son not yet on a tank: the taken close ends it); this bot is the
+    // meet's receiver; the meet's Son is alive; the Son is at most kSeekMeetTakeBeyondCircleYd past the raid circle
+    // (`sonBeyondCircleYd`: its distance from the anchor centre less the raid radius, negative inside); the receiver is
+    // not the anchored boss's victim; and the take is due by the reach (SeekMeetTakeDue with the key). Any of them
+    // failing ends it at once, and the tank's own-source drag then brings it back inside with the Son.
+    constexpr float kSeekMeetTakeBeyondCircleYd = 12.0f;
+    inline bool SeekMeetReceiverExempt(bool reachOn, bool meetOpen, bool isReceiver, bool sonAlive,
+                                       float sonBeyondCircleYd, bool receiverIsBossVictim, bool takeDue)
+    {
+        return reachOn && meetOpen && isReceiver && sonAlive && sonBeyondCircleYd <= kSeekMeetTakeBeyondCircleYd &&
+            !receiverIsBossVictim && takeDue;
+    }
+
+    // Whether the receiver keeps waiting for the Son: only while the Son's victim is the walk-out puller, the returner or
+    // nobody (0). A Son on anyone else (a DPS or a healer peeled it) is the take branches' business, and the meet closes
+    // as `peeled`.
+    inline bool MeetReceiverShouldWait(std::uint64_t sonVictim, std::uint64_t pullerGuid, std::uint64_t returnerGuid)
+    {
+        if (sonVictim == 0)
+            return true;
+        return (pullerGuid != 0 && sonVictim == pullerGuid) || (returnerGuid != 0 && sonVictim == returnerGuid);
+    }
+
+    // Whether a Son's victim is the open meet's walker (the puller that brought it, or the returner): such a Son is on
+    // its way to the receiver, not camped on a non-tank, so the non-tank clocks leave it alone.
+    inline bool SeekMeetWalkerHasSon(std::uint64_t victim, std::uint64_t pullerGuid, std::uint64_t returnerGuid)
+    {
+        return victim != 0 && ((pullerGuid != 0 && victim == pullerGuid) || (returnerGuid != 0 && victim == returnerGuid));
+    }
+
+    // Why the receiver can no longer wait: charmed (Cause Insanity or any charm), Hakkar's victim, or holding another
+    // Son. Null when it still can. The meet closes with this code and the puller falls back to the circle-edge point.
+    inline const char* MeetReceiverLostWhy(bool charmed, bool bossVictim, bool holdsOtherSon)
+    {
+        if (charmed)
+            return "receiver_charmed";
+        if (bossVictim)
+            return "receiver_victim";
+        if (holdsOtherSon)
+            return "receiver_busy";
+        return nullptr;
+    }
+
+    // Whether the meet still runs: a receiver is named and the shot landed less than kSeekMeetMaxMs ago.
+    inline bool SeekMeetOpen(std::uint64_t receiver, std::uint32_t meetMs, std::uint32_t nowMs)
+    {
+        return receiver != 0 && nowMs - meetMs < kSeekMeetMaxMs;
+    }
+
     // The fight's one walk-out task (per map instance): its puller and Son, the start, whether the shot landed (the Son
     // joined the fight), the seek cycle it spent and every Son already walked to.
     struct SeekWalkoutState
@@ -255,10 +1027,21 @@ namespace ai
         bool cycleSpent = false;
         std::uint32_t lastCycle = 0;
         std::vector<std::uint64_t> walkedSons;
+        // The cycle each walked Son was walked in, in walkedSons' order: a Son walked in an earlier cycle is free
+        // again (WalkoutForgetEarlierCycles), so the fight keeps walking a Son out every cycle.
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> walkedAt;
         // The stand the task walks to (the platform search), and its refused moves in a row.
         float standX = 0.0f, standY = 0.0f, standZ = 0.0f;
         std::uint32_t standMs = 0;       // the stand's last re-plan
         std::uint32_t noStandSinceMs = 0; // the re-plans have found no stand since then (0: they found one)
+        std::uint32_t atStandSinceMs = 0; // the puller stood at its stand since then, unshot (0: not yet)
+        std::uint32_t pullCastMs = 0;     // the walk-out focus's pull cast went out then (0: not this task)
+        // The in-shot stall clock (DungeonRunSeekWalkoutFaceCast): the time the puller has stood in shot position this
+        // task, and the previous read's time when that read was in shot position (0: it was not).
+        std::uint32_t inShotMs = 0;
+        std::uint32_t lastInShotMs = 0;
+        std::uint32_t firstInShotMs = 0; // the task's first in-shot read (the backstop's start; 0: none yet)
+        int freeReplans = 0; // refusals at the stand that re-planned instead of counting (DungeonRunSeekWalkoutStandSight)
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -278,16 +1061,286 @@ namespace ai
         // The walk back after a timeout or an abort: that puller, exempt until it is inside or kSeekWalkoutReturnMs.
         std::uint64_t returner = 0;
         std::uint32_t returnStartMs = 0;
+        // The pulled Son's meet with the tank that waits at the walk's end: the receiver, the Son, when the shot landed
+        // and the puller that brought it. WalkoutFinish and WalkoutReturnDone leave them: the meet outlives `back`.
+        std::uint64_t meetReceiver = 0;
+        std::uint64_t meetSon = 0;
+        std::uint32_t meetMs = 0;
+        std::uint64_t meetPuller = 0;
+        // Every WalkoutStart bumps `startGen` (ABA): a replacement task with the same puller and start ms is still told
+        // apart from the one a stale reader saw (WalkoutSnapshotCurrent, WalkoutTaskIs, the meet pre-place).
+        std::uint32_t startGen = 0;
+        // The meet's pre-place (DungeonRunSeekMeetPrePlace, walk 56 F2): the receiver picked when the task started,
+        // the point on the tanks' circle edge it waits at, and the task (puller, start) it belongs to. It hands over to
+        // the meet at the shot (`prePlaceMeetMs` is then that meet's shot time) and ends when that meet closes, when the
+        // task ends without a meet for it, or when a new task starts (WalkoutPrePlaceLive).
+        std::uint32_t prePlaceGen = 0;
+        std::uint64_t prePlaceReceiver = 0;
+        std::uint64_t prePlacePuller = 0;
+        std::uint32_t prePlaceStartMs = 0;
+        bool prePlaceMeet = false;
+        std::uint32_t prePlaceMeetMs = 0;
+        float prePlaceX = 0.0f, prePlaceY = 0.0f;
+        // The pre-place's progress (walk 57 F3 diagnostics): its walk began (and when), and its arrival row went out.
+        bool prePlaceWalking = false;
+        std::uint32_t prePlaceWalkMs = 0;
+        bool prePlaceArrived = false;
+        // The pre-place's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5): its one `event=preplace_hold` row
+        // went out.
+        bool prePlaceHoldLogged = false;
+        // The walk-out shot's wait for the pre-placed receiver (DungeonRunSeekShotWaitsReceiver, walk 58 F2): when this
+        // task's puller first stood in shot position with a live pre-place (0: no wait this task), and whether the wait
+        // is over (its one `event=shot_wait` row claimed; the task never waits again).
+        std::uint32_t shotWaitSinceMs = 0;
+        bool shotWaitDone = false;
+        // The meets that closed as `peeled` or `receiver_victim` (WalkoutNoteMeetLost): the Son and the close time,
+        // pruned to the last few seconds. The nearest take's reach (DungeonRunSeekNearestTakeReach) reads it.
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+        // The cap-checked take latch (DungeonRunSeekNearestTakeReach, review L3, round 2): the tank whose reach or
+        // healer-clock take of `capTakeSon` passed the cap's collapse check AND really started (the taunt cast, or the
+        // attack or chase command went out), and when. That take keeps going without a re-check for
+        // kSeekCapTakeLatchMs; a refused or failed take clears it, and so does that Son dying or reaching any tank.
+        std::uint64_t capTaker = 0;
+        std::uint64_t capTakeSon = 0;
+        std::uint32_t capTakeMs = 0;
+        // The meet's taken Son (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2): the Son the meet's taken close saw on
+        // a tank, that tank, and when. The damage dealers' threat cap on it reads them (SeekTakenSonDpsHeld). Cleared
+        // when that Son is dead or gone, kSeekTakenSonHoldMs after the take, or when a new walk-out task starts.
+        std::uint64_t takenSon = 0;
+        std::uint64_t takenBy = 0;
+        std::uint32_t takenMs = 0;
+        // The meet whose `event=receiver_exempt` row went out (DungeonRunSeekMeetTakeReach): its Son and shot time.
+        std::uint64_t exemptLogSon = 0;
+        std::uint32_t exemptLogMeetMs = 0;
     };
+
+    // The exemption is target-aware (review round 2, Codex HIGH): only a chase of the open meet's CURRENT Son is let past
+    // the anchor, and only while the receiver's bounds hold (SeekMeetReceiverExempt); a chase of the boss or any other
+    // unit by the same receiver stays anchored.
+    inline bool SeekMeetSonChaseExempt(bool targetIsMeetSon, bool receiverBoundsHold)
+    {
+        return targetIsMeetSon && receiverBoundsHold;
+    }
+
+    // Whether the live anchor applies to this chase: a live anchor, unless the chase is the meet Son's exempt one.
+    inline bool SeekAnchorAppliesToChase(bool anchorLive, bool targetIsMeetSon, bool receiverBoundsHold)
+    {
+        return anchorLive && !SeekMeetSonChaseExempt(targetIsMeetSon, receiverBoundsHold);
+    }
+
+    // Whether the meet take is allowed now (DungeonRunSeekMeetTakeReach): due (SeekMeetTakeDue with the key's reach) and,
+    // under a boss anchor, inside the receiver's bounded exemption (SeekMeetReceiverExempt). With no anchor row nothing
+    // refuses the chase, so the reach alone decides (review round 2: the 8 yd take is never lost). Key off: the 8 yd
+    // rule, as before (`anchored` and `exempt` unread).
+    inline bool SeekMeetTakeAllowed(bool reachOn, bool anchored, bool takeDue, bool exempt)
+    {
+        return takeDue && (!reachOn || !anchored || exempt);
+    }
+
+    // Whether the receiver stops once when its exemption ends (review round 2): it was exempt, is no longer, stands
+    // outside the tanks' circle and is not on its meet Son, so a chase sent while exempt does not carry on.
+    inline bool SeekMeetExemptEndStop(bool wasExempt, bool exemptNow, bool outsideTankCircle, bool onMeetSon)
+    {
+        return wasExempt && !exemptNow && outsideTankCircle && !onMeetSon;
+    }
+
+    // Claims the one `event=receiver_exempt` row of the meet (son, meetMs): true the first time only.
+    inline bool WalkoutReceiverExemptNote(SeekWalkoutState& s, std::uint64_t son, std::uint32_t meetMs)
+    {
+        if (son == 0 || (s.exemptLogSon == son && s.exemptLogMeetMs == meetMs))
+            return false;
+        s.exemptLogSon = son;
+        s.exemptLogMeetMs = meetMs;
+        return true;
+    }
+
+    // How long the taken Son's threat cap lasts after the take (the bound of SeekTakenSonDpsHeld, and the taken
+    // state's own expiry).
+    constexpr std::uint32_t kSeekTakenSonHoldMs = 15000;
+
+    inline void WalkoutTakenClear(SeekWalkoutState& s)
+    {
+        s.takenSon = 0;
+        s.takenBy = 0;
+        s.takenMs = 0;
+    }
+
+    // The meet's taken close (g_walkoutMutex held, before the meet is cleared): records the Son, its taker and now.
+    inline void WalkoutTakenNote(SeekWalkoutState& s, std::uint64_t son, std::uint64_t by, std::uint32_t nowMs)
+    {
+        if (son == 0 || by == 0)
+            return;
+        s.takenSon = son;
+        s.takenBy = by;
+        s.takenMs = nowMs;
+    }
+
+    // The taken state's signed age (a reader a tick behind the writer reads a small negative age, never a wrapped one).
+    inline std::int64_t WalkoutTakenAgeMs(std::uint32_t nowMs, std::uint32_t takenMs)
+    {
+        return static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - takenMs));
+    }
+
+    // Whether the taken state is over: no Son recorded, the Son dead or gone, or kSeekTakenSonHoldMs since the take.
+    inline bool WalkoutTakenEnds(std::uint64_t takenSon, bool sonAlive, std::int64_t ageMs)
+    {
+        return takenSon == 0 || !sonAlive || ageMs >= static_cast<std::int64_t>(kSeekTakenSonHoldMs);
+    }
+
+    // How long a started cap-checked take is honoured without a re-check (round 2: it never expired).
+    constexpr std::uint32_t kSeekCapTakeLatchMs = 10000;
+
+    inline void WalkoutCapTakeClear(SeekWalkoutState& s)
+    {
+        s.capTaker = 0;
+        s.capTakeSon = 0;
+        s.capTakeMs = 0;
+    }
+
+    // Whether the latched take (taker, Son, stamp) is this taker's take of `son` and younger than kSeekCapTakeLatchMs.
+    // The age is signed, so a reader a tick behind the writer still honours it.
+    inline bool WalkoutCapTakeLatched(std::uint64_t latchedTaker, std::uint64_t latchedSon, std::uint32_t latchedMs,
+                                      std::uint64_t taker, std::uint64_t son, std::uint32_t nowMs)
+    {
+        if (taker == 0 || son == 0 || latchedTaker != taker || latchedSon != son)
+            return false;
+        const std::int64_t age = static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - latchedMs));
+        return age < static_cast<std::int64_t>(kSeekCapTakeLatchMs);
+    }
+
+    // The take's execution result for a cap-guarded take (Codex round 2: latch only once the take really started):
+    // started, it latches (taker, Son, now); refused or failed, a latch of that same take is cleared (another take's
+    // latch is left alone).
+    inline void WalkoutCapTakeNoteExec(SeekWalkoutState& s, std::uint64_t taker, std::uint64_t son, bool started,
+                                       std::uint32_t nowMs)
+    {
+        if (taker == 0 || son == 0)
+            return;
+        if (started)
+        {
+            s.capTaker = taker;
+            s.capTakeSon = son;
+            s.capTakeMs = nowMs;
+            return;
+        }
+        if (s.capTaker == taker && s.capTakeSon == son)
+            WalkoutCapTakeClear(s);
+    }
+
+    // Whether the latched Son's state ends the latch: dead (or gone), or on any tank (the take finished, or another tank
+    // has it), so a later peel of that Son checks the cap again.
+    inline bool WalkoutCapTakeEnds(bool sonAlive, bool sonOnTank)
+    {
+        return !sonAlive || sonOnTank;
+    }
+
+    // A lost meet's age at `nowMs`, signed (review L1): readers' clocks may be a tick older than the writer's, so a record
+    // stamped after `nowMs` reads as a small negative age, never as a wrapped 49-day one.
+    inline std::int64_t WalkoutLostMeetAgeMs(std::uint32_t nowMs, std::uint32_t stampMs)
+    {
+        return static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - stampMs));
+    }
+
+    // Whether a meet's close word counts as lost for the nearest take's reach: the Son was peeled onto someone else, or
+    // the receiver became the boss's victim. Other closes (son_dead, receiver_dead, receiver_charmed, receiver_busy,
+    // timeout, a take) do not.
+    inline bool WalkoutMeetLostCounts(const char* reason)
+    {
+        return reason && (std::strcmp(reason, "peeled") == 0 || std::strcmp(reason, "receiver_victim") == 0);
+    }
+
+    // Records a lost meet's Son (its close word counted, WalkoutMeetLostCounts), dropping every record `keepMs` or older
+    // and an older record of the same Son, so the list stays short.
+    inline void WalkoutNoteMeetLost(std::vector<std::pair<std::uint64_t, std::uint32_t>>& lost, const char* reason,
+                                    std::uint64_t son, std::uint32_t nowMs, std::uint32_t keepMs)
+    {
+        if (son == 0 || !WalkoutMeetLostCounts(reason))
+            return;
+        lost.erase(std::remove_if(lost.begin(), lost.end(),
+                                  [&](const std::pair<std::uint64_t, std::uint32_t>& e)
+                                  {
+                                      return e.first == son ||
+                                          WalkoutLostMeetAgeMs(nowMs, e.second) >= static_cast<std::int64_t>(keepMs);
+                                  }),
+                   lost.end());
+        lost.emplace_back(son, nowMs);
+    }
+
+    // Whether `son`'s meet was lost (WalkoutNoteMeetLost) less than `windowMs` ago.
+    inline bool WalkoutMeetLostWithin(const std::vector<std::pair<std::uint64_t, std::uint32_t>>& lost,
+                                      std::uint64_t son, std::uint32_t nowMs, std::uint32_t windowMs)
+    {
+        for (const auto& e : lost)
+        {
+            if (e.first == son && WalkoutLostMeetAgeMs(nowMs, e.second) < static_cast<std::int64_t>(windowMs))
+                return true;
+        }
+        return false;
+    }
+
+    inline void WalkoutMeetClear(SeekWalkoutState& s)
+    {
+        s.meetReceiver = 0;
+        s.meetSon = 0;
+        s.meetMs = 0;
+        s.meetPuller = 0;
+    }
+
+    // The shared meet's compare-and-clear: every reading bot holds a local copy of the meet and may find it over, but
+    // only the caller whose copy still matches the shared one (same receiver, same Son, same shot time) clears it, and
+    // only that caller logs the terminal row. A stale copy, or a meet already cleared or replaced, returns false.
+    inline bool WalkoutMeetCloseIf(SeekWalkoutState& s, std::uint64_t receiver, std::uint64_t son,
+                                   std::uint32_t meetMs)
+    {
+        if (receiver == 0 || s.meetReceiver != receiver || s.meetSon != son || s.meetMs != meetMs)
+            return false;
+        WalkoutMeetClear(s);
+        return true;
+    }
 
     inline bool WalkoutActive(const SeekWalkoutState& s)
     {
         return s.puller != 0;
     }
 
+    // The running task's record for this bot in its own instance: the instance's record, a task running, this bot its
+    // puller; nullptr otherwise (another instance's record never matches). `Records` maps an instance id to a record
+    // with a `state` (SeekWalkoutState).
+    template <typename Records>
+    auto WalkoutPullerRecordIn(Records& records, std::uint32_t instanceId, std::uint64_t bot)
+        -> decltype(&records.begin()->second)
+    {
+        auto const it = records.find(instanceId);
+        if (it == records.end() || !WalkoutActive(it->second.state) || it->second.state.puller != bot)
+            return nullptr;
+        return &it->second;
+    }
+
     inline bool WalkoutReturning(const SeekWalkoutState& s, std::uint32_t nowMs)
     {
         return s.returner != 0 && nowMs - s.returnStartMs < kSeekWalkoutReturnMs;
+    }
+
+    // Whether the live record still runs the task a reader's snapshot saw: the same puller, start ms and start generation.
+    // Every compare-and-mutate of a reader's snapshot (the shot, the end, the no-shot and no-stand aborts) reads it, so an
+    // old snapshot never shoots, finishes or aborts a replacement with the same puller and the same start ms.
+    inline bool WalkoutSnapshotCurrent(const SeekWalkoutState& live, const SeekWalkoutState& snap)
+    {
+        return live.puller == snap.puller && live.startMs == snap.startMs && live.startGen == snap.startGen;
+    }
+
+    // Whether the live record's walk back is the one a reader's snapshot saw: the same returner of the same task's
+    // generation (a new task's walk back, even by the same bot, is never closed by an old snapshot).
+    inline bool WalkoutReturnCurrent(const SeekWalkoutState& live, const SeekWalkoutState& snap)
+    {
+        return live.returner == snap.returner && live.startGen == snap.startGen;
+    }
+
+    // Whether the live record runs `puller`'s task of generation `gen` (the puller's own action writes: its moves, its
+    // stand, its pull cast, its cast-fail abort; `gen` is the task's SeekTankTask::walkoutGen).
+    inline bool WalkoutTaskIs(const SeekWalkoutState& live, std::uint64_t puller, std::uint32_t gen)
+    {
+        return WalkoutActive(live) && live.puller == puller && live.startGen == gen;
     }
 
     // A task or its walk back holds the fight's one slot.
@@ -296,22 +1349,363 @@ namespace ai
         return WalkoutActive(s) || s.returner != 0;
     }
 
-    // The seek cycle still takes a walk-out: not spent by one, and fewer than kSeekWalkoutMaxPerCycle started in it
-    // (with one per cycle, no second start).
-    inline bool WalkoutCycleOpen(const SeekWalkoutState& s, std::uint32_t cycleNo)
+    // The meet's pre-place (DungeonRunSeekMeetPrePlace, walk 56 F2). Walk 56: the receiver stood a median 47.5 yd from
+    // the puller at the shot, so the Son spent 5-10 s on the hunter among the healers before a tank reached it. With the
+    // key on, the receiver walks to the tanks' circle edge on the puller's way back when the walk-out starts, and waits
+    // there for the meet. The meet, its receiver pick at the shot and the back point are unchanged.
+
+    // The pre-place point sits this far inside the tank circle's edge (review round 1): a point on the radius itself
+    // left a tank a few tenths past it after any unclamped step, and the shot's pick then refused it as `outside`.
+    constexpr float kSeekMeetPrePlaceInsetYd = 2.0f;
+    // The pre-placed tank walks to its point while farther than this; within it the task holds it there.
+    constexpr float kSeekMeetPrePlaceArriveYd = 4.0f;
+    // The tank's own walk to the point is let finish until this close (review round 2): the hold no longer stops it at
+    // the 4 yd ring, 4 yd short of the point.
+    constexpr float kSeekMeetPrePlaceSettleYd = 1.0f;
+
+    // The pre-place point: kSeekMeetPrePlaceInsetYd inside the tank circle's edge (23 yd for Hakkar's 25) on the ray from
+    // the circle's centre toward the stand. A stand inside the circle gives the same point on its ray. False (no point)
+    // for a stand on the centre itself, which has no ray, or a circle too small for the inset.
+    inline bool WalkoutMeetPrePlacePoint(const BossAnchorCircle& tank, float standX, float standY, float& x, float& y)
+    {
+        float const dx = standX - tank.x;
+        float const dy = standY - tank.y;
+        float const d = std::sqrt(dx * dx + dy * dy);
+        float const reach = tank.radius - kSeekMeetPrePlaceInsetYd;
+        if (d < 0.01f || reach <= 0.0f)
+            return false;
+        x = tank.x + dx / d * reach;
+        y = tank.y + dy / d * reach;
+        return true;
+    }
+
+    // The pre-placed tank's step this tick (review round 1, the gather's `atSpot` pattern): farther than
+    // kSeekMeetPrePlaceArriveYd it walks to the point. Within it, the tank's own walk to the point (`ownWalk`: the move
+    // under way is the one this action sent there) goes on until kSeekMeetPrePlaceSettleYd (round 2). Otherwise the task
+    // stays valid and holds it there: a tank that is moving (any other move) is stopped and the tick is taken; a
+    // standing one leaves the tick to its rotation (the action returns false), so its rotation keeps the tick but it
+    // never walks off the point.
+    enum class MeetPrePlaceStep : std::uint8_t
+    {
+        Walk = 0,
+        HoldStop = 1,
+        HoldFree = 2,
+    };
+
+    inline MeetPrePlaceStep MeetPrePlaceStepFor(float toPointYd, bool moving, bool ownWalk)
+    {
+        if (toPointYd > kSeekMeetPrePlaceArriveYd)
+            return MeetPrePlaceStep::Walk;
+        if (moving && ownWalk && toPointYd > kSeekMeetPrePlaceSettleYd)
+            return MeetPrePlaceStep::Walk;
+        return moving ? MeetPrePlaceStep::HoldStop : MeetPrePlaceStep::HoldFree;
+    }
+
+    // The late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3): walk 57's pre-place started a median 11 s before the
+    // shot, the third tank's threat on Hakkar fell 24 %, and it still stood a median 42.8 yd from the puller at the
+    // shot (31 yd from its point at the start). With the key the pre-placed tank stays on Hakkar until the puller's
+    // walk left to its stand is no longer than the tank's own walk to its point plus kSeekMeetPrePlaceLeadSlackYd (both
+    // run at the same speed, so the tank arrives about when the puller shoots), never later than the puller within
+    // kSeekMeetPrePlaceLeadYd of its stand (the floor), or once the puller is in position (at its stand, in shot
+    // position, shot, or the meet already handed over).
+    constexpr float kSeekMeetPrePlaceLeadYd = 10.0f;
+    constexpr float kSeekMeetPrePlaceLeadSlackYd = 4.0f;
+
+    // Whether the pre-placed tank's walk to its point is due now. Key off: always (today: at the walk-out start). An
+    // unknown stand is passed as a far puller (not due until in position).
+    inline bool MeetPrePlaceWalkDue(bool flagLate, float pullerToStandYd, float receiverToPointYd, bool pullerInPos)
+    {
+        if (!flagLate)
+            return true;
+        const float leadYd = std::max(kSeekMeetPrePlaceLeadYd, receiverToPointYd + kSeekMeetPrePlaceLeadSlackYd);
+        return pullerInPos || pullerToStandYd <= leadYd;
+    }
+
+    // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5). Walk 59: the receiver's own
+    // Protection rotation (charge / reach melee at 37, Intercept at 42, the melee casts' reach melee) outranked its
+    // pre-place walk (seek tank at 26) and kept chasing Hakkar back into melee; with Hakkar within 30 yd of his spawn
+    // 2 of 18 receivers arrived. True: the key is on, this bot is the live pre-place's receiver whose walk began, and
+    // the target is the anchored boss, so its reach actions and gap closer get nothing on it. A Son is still chased.
+    inline bool MeetPrePlaceHoldsChase(bool flagOn, bool prePlaceWalking, bool targetIsBoss)
+    {
+        return flagOn && prePlaceWalking && targetIsBoss;
+    }
+
+    // Whether the walk-out's puller is in position for MeetPrePlaceWalkDue: the pre-place's meet already handed over,
+    // the shot landed, the puller stood at its stand, it reached shot position once this task, or its shot waits for
+    // the receiver (DungeonRunSeekShotWaitsReceiver: the waiting puller always makes the late walk due, so the two never
+    // wait for each other).
+    inline bool WalkoutPullerInPos(const SeekWalkoutState& s)
+    {
+        return s.prePlaceMeet || s.shot || s.atStandSinceMs != 0 || s.firstInShotMs != 0 || s.shotWaitSinceMs != 0;
+    }
+
+    // The walk-out shot waits for the pre-placed receiver (DungeonRunSeekShotWaitsReceiver, walk 58 F2). Walk 58 (late
+    // walk on): at the shot the receiver stood a median 19.1 yd from its pre-place point, within 4 yd in 3 of 26, so the
+    // Son ran 43 yd past it. With the key and a live pre-place the puller, in shot position, holds its shot until the
+    // receiver is within kSeekShotReceiverArriveYd of its point (its own line: the pre-place's hold ring,
+    // kSeekMeetPrePlaceArriveYd, is 4 yd). It shoots anyway after kSeekShotReceiverWaitMs of waiting, once the next
+    // Blood Siphon is kSeekShotReceiverDueFloorMs or less away (the dose must not be lost), or once the task is
+    // kSeekShotReceiverTaskLateMs old (review M1: the wait never eats the last 6 s before the task's 25 s timeout).
+    constexpr float kSeekShotReceiverArriveYd = 5.0f;
+    constexpr std::uint32_t kSeekShotReceiverWaitMs = 6000;
+    constexpr int kSeekShotReceiverDueFloorMs = 15000;
+    constexpr std::uint32_t kSeekShotReceiverTaskLateMs = kSeekWalkoutTimeoutMs - kSeekShotReceiverWaitMs;
+
+    // Whether the walk-out shot may go now. Key off, or no live pre-place this cycle: always (today). `siphonInMs` is the
+    // signed milliseconds to the next siphon (0 or less: due or past; INT_MAX: unknown, never the siphon clause),
+    // compared in ms (review: whole seconds released the shot up to 999 ms early). `taskAgeMs`: since the task started.
+    inline bool WalkoutShotReady(bool flagOn, bool prePlaceLive, float receiverToPointYd, std::uint32_t waitedMs,
+                                 int siphonInMs, std::uint32_t taskAgeMs)
+    {
+        if (!flagOn || !prePlaceLive)
+            return true;
+        if (receiverToPointYd <= kSeekShotReceiverArriveYd)
+            return true;
+        if (waitedMs >= kSeekShotReceiverWaitMs)
+            return true;
+        if (taskAgeMs >= kSeekShotReceiverTaskLateMs)
+            return true;
+        return siphonInMs <= kSeekShotReceiverDueFloorMs;
+    }
+
+    // The `reason=` of the shot_wait row once the wait is over: `ended` (the pre-place ended while the puller waited),
+    // `arrived`, `siphon`, `late` (the task's age clause) or `timeout`, in that order.
+    inline const char* WalkoutShotWaitReason(bool prePlaceLive, float receiverToPointYd, std::uint32_t waitedMs,
+                                             int siphonInMs, std::uint32_t taskAgeMs)
+    {
+        if (!prePlaceLive)
+            return "ended";
+        if (receiverToPointYd <= kSeekShotReceiverArriveYd)
+            return "arrived";
+        if (siphonInMs <= kSeekShotReceiverDueFloorMs)
+            return "siphon";
+        if (waitedMs < kSeekShotReceiverWaitMs && taskAgeMs >= kSeekShotReceiverTaskLateMs)
+            return "late";
+        return "timeout";
+    }
+
+    // The puller's in-shot read under the key: latches the wait's start once for this task (`puller`, `gen`) and says
+    // how long it has waited. False: not this task, or the wait is already over (the shot goes, as today).
+    inline bool WalkoutShotWaitNote(SeekWalkoutState& s, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs,
+                                    std::uint32_t& waitedMs)
+    {
+        waitedMs = 0;
+        if (!WalkoutActive(s) || s.shot || s.puller != puller || s.startGen != gen || s.shotWaitDone)
+            return false;
+        if (s.shotWaitSinceMs == 0)
+            s.shotWaitSinceMs = nowMs == 0 ? 1 : nowMs;
+        waitedMs = nowMs - s.shotWaitSinceMs;
+        return true;
+    }
+
+    // The wait is over (the shot goes this tick): true once per task (the one shot_wait row). The no-shot stall clocks
+    // restart here, so the 6 s no-shot abort measures the shot's own time after the wait, never the wait itself.
+    inline bool WalkoutShotWaitEnd(SeekWalkoutState& s, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s) || s.puller != puller || s.startGen != gen || s.shotWaitSinceMs == 0 || s.shotWaitDone)
+            return false;
+        s.shotWaitDone = true;
+        std::uint32_t const stamp = nowMs == 0 ? 1 : nowMs;
+        if (s.atStandSinceMs != 0)
+            s.atStandSinceMs = stamp;
+        if (s.firstInShotMs != 0)
+            s.firstInShotMs = stamp;
+        s.inShotMs = 0;
+        return true;
+    }
+
+    // Whether a running shot wait holds the no-shot stall abort off (the wait would otherwise be aborted as "no shot" at
+    // the same 6 s). The hold lasts until the wait's own end (WalkoutShotWaitEnd, on the puller's tick), so a slow tick
+    // cannot let the abort fire mid-wait (review L1). The age is signed (a stamp ahead of `nowMs` still holds); the task's
+    // own 25 s timeout bounds a puller that stopped ticking.
+    inline bool WalkoutStallHeldByShotWait(const SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        if (s.shotWaitSinceMs == 0 || s.shotWaitDone)
+            return false;
+        const std::int32_t age = static_cast<std::int32_t>(nowMs - s.shotWaitSinceMs);
+        return age < static_cast<std::int32_t>(kSeekWalkoutTimeoutMs);
+    }
+
+    // The pre-placed tank came within kSeekMeetPrePlaceArriveYd of its point: true once per pre-place (the one
+    // `event=preplace_arrive` row), with the time since its walk began (0 when no walk was latched).
+    inline bool WalkoutPrePlaceNoteArrive(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen,
+                                          std::uint32_t nowMs, std::uint32_t& afterMs)
+    {
+        afterMs = 0;
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || s.prePlaceArrived)
+            return false;
+        s.prePlaceArrived = true;
+        afterMs = s.prePlaceWalking ? nowMs - s.prePlaceWalkMs : 0;
+        return true;
+    }
+
+    // The chase hold first applied to the pre-placed receiver: true once per pre-place (the one `event=preplace_hold`
+    // row). False for another bot, another generation or a row already out.
+    inline bool WalkoutPrePlaceNoteHold(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || s.prePlaceHoldLogged)
+            return false;
+        s.prePlaceHoldLogged = true;
+        return true;
+    }
+
+    // Whether the hold's step takes the tick (the action returns true): the walk and the stop do; a standing tank's hold
+    // does not, so the rotation runs.
+    inline bool MeetPrePlaceStepConsumesTick(MeetPrePlaceStep step)
+    {
+        return step != MeetPrePlaceStep::HoldFree;
+    }
+
+    // Whether this tank may be pre-placed: alive, not charmed, not Hakkar's victim, holding no Son and inside the tanks'
+    // circle (today's receiver rules, MeetRefusalWhy, written out on their own so the pre-place keeps its own test).
+    inline bool MeetPrePlaceAllowed(const MeetCandidate& c)
+    {
+        return c.alive && !c.charmed && !c.bossVictim && !c.holdsSon && c.inside;
+    }
+
+    // The pre-placed receiver: the raid's third tank (index 2) only, the one the meet's pick at the shot tries first.
+    // -1: no pre-place, and today's behaviour applies (the at-shot pick may still name the second off-tank).
+    inline int PickMeetPrePlaceReceiver(const std::vector<MeetCandidate>& tanks)
+    {
+        return tanks.size() > 2 && MeetPrePlaceAllowed(tanks[2]) ? 2 : -1;
+    }
+
+    // While it runs, the pre-placed receiver stays one only while alive, not charmed and not Hakkar's victim; otherwise
+    // the pre-place ends and the pick at the shot is today's.
+    inline bool MeetPrePlaceKeeps(bool alive, bool charmed, bool bossVictim)
+    {
+        return alive && !charmed && !bossVictim;
+    }
+
+    inline void WalkoutPrePlaceClear(SeekWalkoutState& s)
+    {
+        s.prePlaceGen = 0;
+        s.prePlaceReceiver = 0;
+        s.prePlacePuller = 0;
+        s.prePlaceStartMs = 0;
+        s.prePlaceMeet = false;
+        s.prePlaceMeetMs = 0;
+        s.prePlaceX = 0.0f;
+        s.prePlaceY = 0.0f;
+        s.prePlaceWalking = false;
+        s.prePlaceWalkMs = 0;
+        s.prePlaceArrived = false;
+        s.prePlaceHoldLogged = false;
+    }
+
+    // The task just started (WalkoutStart): pre-place `receiver` at (x, y) for it. Only an unshot running task takes one.
+    inline void WalkoutPrePlaceSet(SeekWalkoutState& s, std::uint64_t receiver, float x, float y)
+    {
+        WalkoutPrePlaceClear(s);
+        if (receiver == 0 || !WalkoutActive(s) || s.shot)
+            return;
+        s.prePlaceReceiver = receiver;
+        s.prePlaceGen = s.startGen;
+        s.prePlacePuller = s.puller;
+        s.prePlaceStartMs = s.startMs;
+        s.prePlaceX = x;
+        s.prePlaceY = y;
+    }
+
+    // The live check's compare-and-clear (EndLostWalkoutPrePlace): only the pre-place the reader saw (the same tank,
+    // puller, task start and start generation) is cleared. A stale reader whose record a new task has replaced clears
+    // nothing (false), even when the replacement has the same tank, puller and start ms.
+    inline bool WalkoutPrePlaceClearIf(SeekWalkoutState& s, std::uint64_t receiver, std::uint64_t puller,
+                                       std::uint32_t startMs, std::uint32_t gen)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlacePuller != puller ||
+            s.prePlaceStartMs != startMs || s.prePlaceGen != gen)
+            return false;
+        WalkoutPrePlaceClear(s);
+        return true;
+    }
+
+    // The shot landed and the meet's pick ran: a meet with the pre-placed receiver carries the pre-place on until it
+    // closes; any other outcome (no meet, another receiver) ends it.
+    inline void WalkoutPrePlaceNoteMeet(SeekWalkoutState& s)
+    {
+        if (s.prePlaceReceiver == 0)
+            return;
+        if (s.meetReceiver != 0 && s.meetReceiver == s.prePlaceReceiver && s.prePlacePuller == s.puller &&
+            s.prePlaceStartMs == s.startMs && s.prePlaceGen == s.startGen)
+        {
+            s.prePlaceMeet = true;
+            s.prePlaceMeetMs = s.meetMs;
+            return;
+        }
+        WalkoutPrePlaceClear(s);
+    }
+
+    // Whether the pre-place still runs: before the shot, its own task is the running one (a task end or a new task ends
+    // it); after the shot, its meet is still the recorded one (WalkoutMeetClear on any close ends it).
+    inline bool WalkoutPrePlaceLive(const SeekWalkoutState& s)
+    {
+        if (s.prePlaceReceiver == 0)
+            return false;
+        if (s.prePlaceMeet)
+            return s.meetReceiver == s.prePlaceReceiver && s.meetMs == s.prePlaceMeetMs;
+        return WalkoutActive(s) && !s.shot && s.puller == s.prePlacePuller && s.startMs == s.prePlaceStartMs &&
+            s.startGen == s.prePlaceGen;
+    }
+
+    // The pre-place task's commit (review: one snapshot, Codex HIGH / Opus L6): the reader's one locked snapshot named
+    // pre-place generation `gen` for `receiver`; before its movement task is published the same generation must still
+    // be the live pre-place (a replacement in between, even for the same tank, returns false and the tick publishes no
+    // move toward the stale point). `latchWalk` also latches the walk's start (the arrival row's `after_ms` start).
+    inline bool WalkoutPrePlaceConfirm(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen, bool latchWalk,
+                                       std::uint32_t nowMs)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || !WalkoutPrePlaceLive(s))
+            return false;
+        if (latchWalk && !s.prePlaceWalking)
+        {
+            s.prePlaceWalking = true;
+            s.prePlaceWalkMs = nowMs;
+        }
+        return true;
+    }
+
+    // One record's marks for the two global counts: busy (a task or a walk back runs: the anchor's exemption reads it)
+    // and running (a task runs: the walk-out focus reads it, a walk back holds nothing).
+    struct WalkoutBusyMarks
+    {
+        bool busy = false;
+        bool running = false;
+    };
+
+    inline WalkoutBusyMarks WalkoutMarksOf(const SeekWalkoutState& s)
+    {
+        WalkoutBusyMarks m;
+        m.busy = WalkoutBusy(s);
+        m.running = WalkoutActive(s);
+        return m;
+    }
+
+    // A count's step for one record's change: +1 when the mark appears, -1 when it goes, 0 otherwise.
+    inline int WalkoutCountStep(bool before, bool now)
+    {
+        return before == now ? 0 : (now ? 1 : -1);
+    }
+
+    // The seek cycle still takes a walk-out: not spent by one, and fewer than the rules' walk-outs started in it (with
+    // the defaults, one per cycle, no second start).
+    inline bool WalkoutCycleOpen(const SeekWalkoutState& s, std::uint32_t cycleNo,
+                                 const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (s.cycleSpent && s.lastCycle == cycleNo)
             return false;
-        return s.countedCycle != cycleNo || s.cycleStarts < kSeekWalkoutMaxPerCycle;
+        return s.countedCycle != cycleNo || s.cycleStarts < rules.maxPerCycle;
     }
 
     // A new task: none running, the cycle open (WalkoutCycleOpen), and never twice for one living Son (a walked Son
     // that died is forgotten, WalkoutForgetGoneSons, so its respawn may be walked to again).
-    inline bool WalkoutMayStart(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son)
+    inline bool WalkoutMayStart(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
+                                const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (WalkoutBusy(s) || son == 0)
             return false;
-        if (!WalkoutCycleOpen(s, cycleNo))
+        if (!WalkoutCycleOpen(s, cycleNo, rules))
             return false;
         return std::find(s.walkedSons.begin(), s.walkedSons.end(), son) == s.walkedSons.end();
     }
@@ -336,9 +1730,21 @@ namespace ai
         s.moveFails = 0;
         s.standMs = nowMs;
         s.noStandSinceMs = 0;
+        s.atStandSinceMs = 0;
+        s.pullCastMs = 0;
+        s.inShotMs = 0;
+        s.lastInShotMs = 0;
+        s.firstInShotMs = 0;
+        s.shotWaitSinceMs = 0;
+        s.shotWaitDone = false;
+        s.freeReplans = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
+        s.walkedAt.emplace_back(son, cycleNo);
+        // A new walk-out task ends the last meet's taken state (DungeonRunSeekTakenSonThreatCap).
+        WalkoutTakenClear(s);
+        ++s.startGen;
     }
 
     // One move of the task: a refused one counts, a good one resets the count. True: kSeekWalkoutMoveFails in a row,
@@ -348,6 +1754,52 @@ namespace ai
         s.lastMoveOk = moved;
         s.moveFails = moved ? 0 : s.moveFails + 1;
         return s.moveFails >= kSeekWalkoutMoveFails;
+    }
+
+    // The stand's sight (DungeonRunSeekWalkoutStandSight, walk 56: 12 of 13 `abort move failed` rows stood on their
+    // stand, len <= 0.6, refused): the stand search aimed from floor + 2 at the Son's z + 2, the bot's own test
+    // (IsWithinLOSInMap -> Unit::GetLosCheckPosition, IsWithinLOSAtPosition) aims from its z + its collision height at
+    // the Son's z + the Son's collision height, so the ledge's lip could block the bot's line at a stand the search had
+    // passed. With the flag on the search aims the core's way, with both units' own heights.
+    inline float WalkoutStandSightZ(bool flagOn, float sonZ, float sonCollisionHeight)
+    {
+        return sonZ + (flagOn ? sonCollisionHeight : 2.0f);
+    }
+
+    // The stand search's eye: the floor plus the bot's collision height with the flag on, plus 2 off.
+    inline float WalkoutStandEyeZ(bool flagOn, float floorZ, float collisionHeight)
+    {
+        return floorZ + (flagOn ? collisionHeight : 2.0f);
+    }
+
+    // A task re-plans this many times for free on refusals at its stand; after that they count again (review R2-L2), so
+    // a stand the re-plan keeps finding still ends in the `move failed` abort and frees the Son.
+    constexpr int kSeekWalkoutFreeReplansMax = 3;
+
+    // Whether a refused outbound move counts toward kSeekWalkoutMoveFails: with the flag on a refusal within
+    // kSeekWalkoutStandArriveYd of the stand is the bot standing on a stand it cannot shoot from, not a path failure; it
+    // re-plans the stand instead (WalkoutNoteOutboundMove), up to kSeekWalkoutFreeReplansMax a task (`freeUsed`). A move
+    // that went out never counts.
+    inline bool WalkoutMoveRefusalCounts(bool flagOn, bool moved, float standYd, int freeUsed = 0)
+    {
+        if (moved)
+            return false;
+        return !(flagOn && standYd <= kSeekWalkoutStandArriveYd && freeUsed < kSeekWalkoutFreeReplansMax);
+    }
+
+    // One outbound move of the task with the stand-sight rule: a refusal that does not count (WalkoutMoveRefusalCounts)
+    // leaves the fail count alone and makes the stand due a re-plan at once (the 5 s no-stand clock still bounds it);
+    // anything else is WalkoutNoteMove. True: the task aborts ("move failed").
+    inline bool WalkoutNoteOutboundMove(SeekWalkoutState& s, bool moved, bool counts, std::uint32_t nowMs)
+    {
+        if (!moved && !counts)
+        {
+            s.lastMoveOk = false;
+            s.standMs = nowMs - kSeekWalkoutReplanMs;
+            ++s.freeReplans;
+            return false;
+        }
+        return WalkoutNoteMove(s, moved);
     }
 
     // The puller whose moves failed sits out kSeekWalkoutExcludeMs, so the next pick takes another bot.
@@ -372,26 +1824,30 @@ namespace ai
         return false;
     }
 
-    // A retry (a second walk-out in the cycle) starts only while the siphon is still more than kSeekWalkoutRetryMinMs
+    // A retry (a second walk-out in the cycle) starts only while the siphon is still more than the rules' retry floor
     // away, read when it starts against the deadline stored by the cycle's first walk-out: the failed puller's walk
     // back (up to kSeekWalkoutReturnMs) runs between the end that reopened the cycle and this start.
-    inline bool WalkoutRetryStartInTime(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint32_t nowMs)
+    inline bool WalkoutRetryStartInTime(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint32_t nowMs,
+                                        const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (s.countedCycle != cycleNo || s.cycleStarts < 1)
             return true;
-        return static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(kSeekWalkoutRetryMinMs);
+        return static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(rules.retryMinMs);
     }
 
     // A new task for this puller: WalkoutMayStart, the bot not sitting out its exclusion (a scan cached before the
     // exclusion may still name it), a retry still in time (WalkoutRetryStartInTime), and the next Blood Siphon due in
-    // kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once
-    // due): the dose window's whole length, so the Son is back and burned before the siphon (the 12 s non-tank burn,
-    // SeekAuraPolicy.h kSeekNonTankBurnMs, keeps it off the healers meanwhile).
+    // rules.startLeadMs or less (`dueInMs`, 0 once due): the dose window's whole length, so the Son is back
+    // and burned before the siphon (the 12 s non-tank burn, SeekAuraPolicy.h kSeekNonTankBurnMs, keeps it off the
+    // healers meanwhile). A seek_pull row's `firstStartMinMs` also refuses any start with less time left.
     inline bool WalkoutMayStartFor(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
-                                   std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs)
+                                   std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs,
+                                   const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
-        return dueInMs <= kSeekWalkoutSiphonLeadMs && WalkoutMayStart(s, cycleNo, son) &&
-            !WalkoutExcluded(s, bot, nowMs) && WalkoutRetryStartInTime(s, cycleNo, nowMs);
+        return dueInMs <= rules.startLeadMs &&
+            (rules.firstStartMinMs == 0 || dueInMs >= rules.firstStartMinMs) &&
+            WalkoutMayStart(s, cycleNo, son, rules) &&
+            !WalkoutExcluded(s, bot, nowMs) && WalkoutRetryStartInTime(s, cycleNo, nowMs, rules);
     }
 
     // The Son the walk-out goes for: nearest first (`yd`), the first that has a stand (`hasStand(i)`, asked lazily in
@@ -415,17 +1871,26 @@ namespace ai
         return nowMs - s.standMs >= kSeekWalkoutReplanMs;
     }
 
-    // One re-plan: a found stand replaces the old one and restarts the no-stand clock; none keeps the old stand and
-    // runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
-    inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs)
+    // One re-plan: a found stand replaces the old one and restarts the no-stand clock (a stand that moved more than
+    // kSeekWalkoutStandArriveYd also restarts the shot-stall clock, unless `keepClock`: the puller is already in shot
+    // position and a patrolling Son keeps moving the stand); none keeps the old stand and runs the clock. True:
+    // kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
+    inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs,
+                                 bool keepClock = false)
     {
         s.standMs = nowMs;
         if (found)
         {
+            float const dx = x - s.standX;
+            float const dy = y - s.standY;
+            bool const moved = dx * dx + dy * dy >
+                kSeekWalkoutStandArriveYd * kSeekWalkoutStandArriveYd;
             s.standX = x;
             s.standY = y;
             s.standZ = z;
             s.noStandSinceMs = 0;
+            if (moved && !keepClock)
+                s.atStandSinceMs = 0;
             return false;
         }
         if (s.noStandSinceMs == 0)
@@ -436,9 +1901,88 @@ namespace ai
     inline void WalkoutNoteShot(SeekWalkoutState& s)
     {
         if (WalkoutActive(s))
+        {
             s.shot = true;
+            s.atStandSinceMs = 0;
+            s.inShotMs = 0;
+            s.lastInShotMs = 0;
+            s.firstInShotMs = 0;
+        }
     }
 
+    // The puller reached its stand without a shot: the stall clock starts once and keeps its first tick.
+    inline void WalkoutNoteAtStand(SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        if (WalkoutActive(s) && s.atStandSinceMs == 0)
+            s.atStandSinceMs = nowMs;
+    }
+
+    // A shot that will not come: the puller has stood at its stand kSeekWalkoutShotStallMs without landing it (a
+    // blocked LoS, a cast the generic AI keeps interrupting). The task aborts unspent ("no shot"), so the Son is free
+    // and the next bot retries.
+    inline bool WalkoutShotStalled(const SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        return WalkoutActive(s) && !s.shot && s.atStandSinceMs != 0 &&
+            nowMs - s.atStandSinceMs >= kSeekWalkoutShotStallMs;
+    }
+
+    // The in-shot stall clock (DungeonRunSeekWalkoutFaceCast, walk 56: the Sons patrol under the ledge, out of sight or
+    // range for seconds, and the wall-time clock aborted pullers that had stood in shot position only part of the 6 s).
+    // In shot position: the Son in shot range and sight, the puller on the stand's floor (z >= kSeekWalkoutMinStandZ)
+    // and not moving.
+    inline bool WalkoutInShotPosition(bool inRange, bool los, bool onStandFloor, bool moving)
+    {
+        return inRange && los && onStandFloor && !moving;
+    }
+
+    // One gap between two in-shot reads counts in full up to this (the GCD's 1.5 s fail-with-delay plus the react
+    // delay); the cap only guards against a clock jump (review M1: a 250 ms cap turned slow ticks into 25 s timeouts).
+    constexpr std::uint32_t kSeekWalkoutInShotStepMs = 2000;
+    // The wall-time backstop: this long after the puller first stood in shot position this task the no-shot abort is
+    // due whatever the count (a walk-out tick that stops running counts nothing).
+    constexpr std::uint32_t kSeekWalkoutInShotBackstopMs = 12000;
+
+    // One read of the puller's position: in shot position, the gap since the previous read counts when that read was in
+    // shot position too (at most kSeekWalkoutInShotStepMs), and the first in-shot read of the task starts the backstop;
+    // out of it, nothing counts and the next in-shot read starts a new stretch. Only a running, unshot task counts.
+    inline void WalkoutNoteInShot(SeekWalkoutState& s, bool inShot, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s) || s.shot)
+            return;
+        std::uint32_t const stamp = nowMs == 0 ? 1 : nowMs;
+        if (inShot && s.lastInShotMs != 0)
+            s.inShotMs += std::min<std::uint32_t>(nowMs - s.lastInShotMs, kSeekWalkoutInShotStepMs);
+        if (inShot && s.firstInShotMs == 0)
+            s.firstInShotMs = stamp;
+        s.lastInShotMs = inShot ? stamp : 0;
+    }
+
+    // Whether the 6 s no-shot stall is due: with the in-shot clock, kSeekWalkoutShotStallMs of time in shot position, or
+    // kSeekWalkoutInShotBackstopMs since the task's first in-shot read; without it, WalkoutShotStalled's wall time since
+    // the arrival at the stand.
+    inline bool WalkoutStallDue(const SeekWalkoutState& s, std::uint32_t nowMs, bool inShotClock)
+    {
+        if (!inShotClock)
+            return WalkoutShotStalled(s, nowMs);
+        if (!WalkoutActive(s) || s.shot)
+            return false;
+        return s.inShotMs >= kSeekWalkoutShotStallMs ||
+            (s.firstInShotMs != 0 && nowMs - s.firstInShotMs >= kSeekWalkoutInShotBackstopMs);
+    }
+
+    // The no-sight cut (DungeonRunSeekSiphonClock): an unshot task that never stood in shot position and sent no pull
+    // cast is cut `rules.noSightCutMs` after its start, so the cycle reopens with time for a retry. Only with the
+    // in-shot clock on (DungeonRunSeekWalkoutFaceCast): without it firstInShotMs is never written. The cut is worth
+    // nothing when the retry floor already refuses any later start, so it waits for the siphon to stay more than
+    // rules.retryMinMs plus the walk-back margin away; otherwise the task runs to its 25 s timeout as before.
+    inline bool WalkoutNoSightCutDue(const SeekWalkoutState& s, std::uint32_t nowMs, const WalkoutCycleRules& rules,
+                                     bool inShotClockOn)
+    {
+        return inShotClockOn && rules.noSightCutMs != 0 && WalkoutActive(s) && !s.shot && s.pullCastMs == 0 &&
+            s.firstInShotMs == 0 && nowMs - s.startMs >= rules.noSightCutMs &&
+            static_cast<std::int32_t>(s.siphonDueMs - nowMs) >
+                static_cast<std::int32_t>(rules.retryMinMs + kSeekWalkoutNoSightRetryMarginMs);
+    }
 
     enum class WalkoutEnd : std::uint8_t
     {
@@ -464,21 +2008,24 @@ namespace ai
 
     // A failed walk-out (a timeout, no stand, a refused cast or move) leaves the cycle open only while the siphon is
     // more than kSeekWalkoutRetryMinMs away (a later Son is not back and burned before it) and fewer than
-    // kSeekWalkoutMaxPerCycle started in the cycle: with one per cycle, never.
-    inline bool WalkoutRetryAllowed(const SeekWalkoutState& s, std::uint32_t nowMs)
+    // kSeekWalkoutMaxPerCycle (the rules') started in the cycle: with one per cycle, never.
+    inline bool WalkoutRetryAllowed(const SeekWalkoutState& s, std::uint32_t nowMs,
+                                    const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
-        return s.cycleStarts < kSeekWalkoutMaxPerCycle &&
-            static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(kSeekWalkoutRetryMinMs);
+        return s.cycleStarts < rules.maxPerCycle &&
+            static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(rules.retryMinMs);
     }
 
     // The task ends: a Back end is inside already; a timeout or an abort leaves the puller outside, so its walk back
     // starts (exempt for kSeekWalkoutReturnMs at most). A timeout undoes the task's cycle mark when a retry is allowed
-    // (its Son stays walked, so the retry goes to another one); with one walk-out per cycle that is never. True: the
-    // cycle was reopened.
-    inline bool WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs)
+    // (its Son stays walked, so the retry goes to another one); a seek_pull row reopens on an abort too, but never
+    // after the shot landed (that walk-out did happen). With the defaults that is never. True: the cycle was reopened.
+    inline bool WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs,
+                              const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         bool reopened = false;
-        if (end == WalkoutEnd::Timeout && WalkoutActive(s) && WalkoutRetryAllowed(s, nowMs))
+        if ((end == WalkoutEnd::Timeout || (rules.reopenOnAbort && end == WalkoutEnd::Abort)) &&
+            WalkoutActive(s) && !s.shot && WalkoutRetryAllowed(s, nowMs, rules))
         {
             s.cycleSpent = s.prevCycleSpent;
             s.lastCycle = s.prevLastCycle;
@@ -493,33 +2040,101 @@ namespace ai
         s.son = 0;
         s.startMs = 0;
         s.shot = false;
+        s.atStandSinceMs = 0;
+        s.pullCastMs = 0;
         return reopened;
     }
 
-    // No pull happened (the cast or the moves failed, or no stand): abort with the Son free again, and the cycle too
-    // when a retry is allowed (WalkoutRetryAllowed).
-    inline void WalkoutAbortUnspent(SeekWalkoutState& s, std::uint32_t nowMs)
+    // Whether an abort's reason frees its Son for the cycle's retry: the puller's own ends (dead, charmed, insanity,
+    // victim, threat, gone, a failed cast or move, a stalled shot) leave the Son where it stands, so the retry may take
+    // another Son or the same one from another bot. A Son-side end ("no stand", "son gone") and a timeout keep it
+    // walked this cycle.
+    inline bool WalkoutEndFreesSon(const char* reason)
+    {
+        if (!reason)
+            return false;
+        for (const char* free : {"threat", "victim", "dead", "charmed", "insanity", "gone", "cast failed",
+                                 "move failed", "no shot", "no sight"})
+            if (std::strcmp(reason, free) == 0)
+                return true;
+        return false;
+    }
+
+    // One walked Son leaves the list, and its cycle record with it.
+    inline void WalkoutEraseWalked(SeekWalkoutState& s, std::uint64_t son)
+    {
+        std::vector<std::uint64_t>::iterator const it = std::find(s.walkedSons.begin(), s.walkedSons.end(), son);
+        if (it != s.walkedSons.end())
+            s.walkedSons.erase(it);
+        for (auto at = s.walkedAt.begin(); at != s.walkedAt.end(); ++at)
+        {
+            if (at->first == son)
+            {
+                s.walkedAt.erase(at);
+                break;
+            }
+        }
+    }
+
+    // A seek_pull fight walks each cycle its own Sons: every Son walked in a cycle other than `cycleNo` is free again,
+    // except the running task's own (it is still being walked to). Without it, two failed walk-outs leave both Sons
+    // in the list for the rest of the fight (walk 51: 30 cycles with no walk-out at all).
+    inline void WalkoutForgetEarlierCycles(SeekWalkoutState& s, std::uint32_t cycleNo)
+    {
+        std::vector<std::uint64_t> keptSons;
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> keptAt;
+        keptSons.reserve(s.walkedSons.size());
+        keptAt.reserve(s.walkedAt.size());
+        for (std::uint64_t const son : s.walkedSons)
+        {
+            std::uint32_t cycle = 0;
+            bool found = false;
+            for (const std::pair<std::uint64_t, std::uint32_t>& at : s.walkedAt)
+            {
+                if (at.first == son)
+                {
+                    cycle = at.second;
+                    found = true;
+                    break;
+                }
+            }
+            if (son == s.son || !found || cycle == cycleNo)
+            {
+                keptSons.push_back(son);
+                if (found)
+                    keptAt.emplace_back(son, cycle);
+            }
+        }
+        s.walkedSons.swap(keptSons);
+        s.walkedAt.swap(keptAt);
+    }
+
+    // No pull happened (the cast or the moves failed, a stalled shot, or no stand): abort with the Son free again
+    // (`freeSon`; a seek_pull row's "no stand" keeps it walked this cycle), and the cycle too when a retry is allowed
+    // (WalkoutRetryAllowed).
+    inline void WalkoutAbortUnspent(SeekWalkoutState& s, std::uint32_t nowMs,
+                                    const WalkoutCycleRules& rules = WalkoutCycleRules(), bool freeSon = true)
     {
         if (!WalkoutActive(s))
             return;
-        std::vector<std::uint64_t>::iterator const it = std::find(s.walkedSons.begin(), s.walkedSons.end(), s.son);
-        if (it != s.walkedSons.end())
-            s.walkedSons.erase(it);
-        if (WalkoutRetryAllowed(s, nowMs))
+        if (freeSon)
+            WalkoutEraseWalked(s, s.son);
+        if (WalkoutRetryAllowed(s, nowMs, rules))
         {
             s.cycleSpent = s.prevCycleSpent;
             s.lastCycle = s.prevLastCycle;
         }
-        WalkoutFinish(s, WalkoutEnd::Abort, nowMs);
+        WalkoutFinish(s, WalkoutEnd::Abort, nowMs, rules);
     }
 
     // The shot could not be cast at the stand: abort unspent, and the puller sits out the picks like a move fail, so the
     // retry goes to another bot (the cached scan would hand it the same puller, Son and stand, to fail again).
-    inline void WalkoutCastFailed(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
+    inline void WalkoutCastFailed(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs,
+                                  const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (!WalkoutActive(s))
             return;
-        WalkoutAbortUnspent(s, nowMs);
+        WalkoutAbortUnspent(s, nowMs, rules);
         WalkoutExclude(s, bot, nowMs);
     }
 
@@ -528,8 +2143,12 @@ namespace ai
     template <typename IsGone>
     inline void WalkoutForgetGoneSons(SeekWalkoutState& s, IsGone isGone)
     {
-        s.walkedSons.erase(std::remove_if(s.walkedSons.begin(), s.walkedSons.end(),
-            [&](std::uint64_t son) { return son != s.son && isGone(son); }), s.walkedSons.end());
+        for (std::size_t i = s.walkedSons.size(); i-- > 0;)
+        {
+            std::uint64_t const son = s.walkedSons[i];
+            if (son != s.son && isGone(son))
+                WalkoutEraseWalked(s, son);
+        }
     }
 
     inline void WalkoutReturnDone(SeekWalkoutState& s)

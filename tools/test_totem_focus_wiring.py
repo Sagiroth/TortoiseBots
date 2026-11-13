@@ -136,7 +136,10 @@ class TotemFocusWiringTest(unittest.TestCase):
         self.assertIn("LogKillFirstSpans(slot, lead, f);", block)
 
     def test_kill_first_trigger_drops_to_one_second_under_the_key(self):
-        self.assertIn('Trigger(ai, "boss tactics kill first", sPlayerbotAIConfig.dungeonRunTotemFocus ? 1 : 2)', TRIGGERS)
+        # jindo-r2: the base interval is 1 and Check() applies KillFirstCheckDue(totemFocus, carrierHold) per check: 1 s under
+        # TotemFocus, else 2 s (the Trigger base rule for interval 2).
+        self.assertIn('Trigger(ai, "boss tactics kill first", 1)', TRIGGERS)
+        self.assertIn("KillFirstCheckDue(sPlayerbotAIConfig.dungeonRunTotemFocus,", TRIGGERS)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,8 @@
     } \
 } while (0)
 
+using ai::VendorBuyAllowsAhFlip;
+using ai::VendorBuyMaxPurchases;
 using ai::VendorBuyRanksFirst;
 using ai::VendorBuyUsesGearBudget;
 using ai::VENDOR_BUY_USAGE_BAD_EQUIP;
@@ -51,6 +53,22 @@ int main()
     CHECK(VendorBuyRanksFirst(300, 20, 300, 20) == false);
     CHECK(VendorBuyRanksFirst(0, 20, 0, 20) == false);
     std::cout << "  [PASS] score orders stock, item level breaks unweighted ties\n";
+
+    // Purchases per item per visit (donor BuyAction.cpp:94-101): recipes
+    // and gear once (live pool: 20 copies of one recipe in one visit),
+    // stackable stock up to 10, stopped earlier by the usage re-check.
+    CHECK(VendorBuyMaxPurchases(1) == 1);     // recipe, gear
+    CHECK(VendorBuyMaxPurchases(0) == 1);     // unset stack size
+    CHECK(VendorBuyMaxPurchases(20) == 10);   // reagent / flux
+    CHECK(VendorBuyMaxPurchases(200) == 10);  // ammo
+    std::cout << "  [PASS] one buy for non-stackable stock, 10 for stackable\n";
+
+    // Vendor->AH resell: an owned or hired bot still buys limited-supply
+    // stock to relist; a bot on the item cheat does not, since its stock is
+    // seeded without gold and the flip only burns its trainer purse.
+    CHECK(VendorBuyAllowsAhFlip(false) == true);   // owned / hired bot
+    CHECK(VendorBuyAllowsAhFlip(true) == false);   // item cheat
+    std::cout << "  [PASS] owned bots resell, item-cheat bots do not\n";
 
     std::cout << "All vendor buy policy checks PASSED!\n";
     return 0;

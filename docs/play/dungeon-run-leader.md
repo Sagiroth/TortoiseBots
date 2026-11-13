@@ -222,6 +222,14 @@ The dry walk is opt-in with `AiPlayerbot.DungeonRunDryWalk = 1` (default `0`), s
 - An alive-by-spot-but-unpulled boss pauses at once with distance and height.
 - Health progress holds the ceiling, a 1-hp/1%-held unit is watched.
 
+### Focus (the skull)
+
+Every fight's skull comes from the run: the plan's `kill_first` unit of that fight is focused (skull on it, every bot attacks its skull target) and the focused unit is kept until it dies or is crowd-controlled; a pause or the fight's end takes the skull off.
+A `kill_first` target that is only passive so far — it is in no combat yet, or has stopped fighting while the adds still do — keeps the run's skull while it lives and can be attacked: the pack's fallback never replaces it, and only its death frees the skull for the pack's own best unit.
+A pull or move step whose fight has no `kill_first` unit of the pack — the plan lists none, or none of its entries joined the fight — focuses the pack's own best unit instead, so every pulled group gets a skull: a mana user (a healer or a caster) before the rest, and the nearest of that class to the lead bot within 15 yd of it. A unit the party cannot attack, one the run's crowd control holds (an aura, or an order on its way), one evading and one whose focus order was refused a moment ago are passed over; the skull moves to the next unit when the focused one dies.
+A boss step's fight does the same for its adds: never the boss itself, never an add the boss-tactics `kill_first` or `linked_death` rows name, and no fallback skull once only the boss is left. An event and a rest fight keep their own rule.
+A skull a player moves onto a living hostile of the fight becomes the focus ahead of the run's own pick, `kill_first` included: every bot is sent to that unit by GUID and the player's mark stays where they put it; while the target lives, the run picks nothing else. The run knows its own skull only while the marked mob is still alive in that fight and the mark is still the one it set: once that mob dies, despawns or leaves the fight, or the mark moves, the skull is read as the player's, so a skull a player puts on a new mob after the run's target died is followed, never taken for the run's own.
+
 ### Rest gate
 
 The rest gate runs after every fight and before every step.
@@ -249,6 +257,8 @@ Related opt-ins, one line each:
 ### Totem focus
 
 Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`). A totem on the plan's kill-first list dies in 1-2 s, so the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick. Only the damage dealers go: no tank, no healer. A totem a boss summons is read as soon as it stands, even when no bot has it on its attackers list. The damage dealers cut their own cast or channel first, but only an offensive one on an enemy — never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a crowd-control spell of the run, a resurrect or a hearthstone; they open with an instant where their class has one, and take the attack by GUID, so the skull stays on the boss and nobody follows it to the totem. While the party is pulling back from a lost fight, the totem waits. The kill-first check runs every second while the key is on, and the focus is sent again every 3 s while its totem lives and fewer than three damage dealers are attacking it (every living one, when the party has fewer), so the damage dealers that left it after one burst come back to finish it; the re-send goes out ahead of the crowd control and the guard, after the fight ceiling and the retreat (a kill-first unit that is no totem is focused once, not repeated). A bot carrying Delusions of Jin'do is never sent at a totem and is not counted as one of its attackers: its damage belongs to the Shade that curse names. The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line when a kill-first unit is first seen and when it dies.
+
+While the lead bot (the main tank) is charmed, a Brain Wash Totem was judged friendly against him and never focused. With `AiPlayerbot.DungeonRunFactJudgeCharmedLead = 1` (default `0`, recommended on) the first living, uncharmed commanded bot judges the kill-first read, the engaged units, the raid guard's anchor and the focus order's target instead; see [Boss Tactics](boss-tactics.md#brain-wash-totem-with-a-charmed-main-tank).
 
 ### Events
 

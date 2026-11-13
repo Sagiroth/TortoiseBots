@@ -13,6 +13,7 @@
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
 
 using namespace ai;
 
@@ -102,12 +103,13 @@ namespace
     }
 
     // Whether a free DPS bot leaves `unit` alone: a hold_kill row of its own entry holds it while the row's blocker lives
-    // (KillHeld), and a one_at_a_time row of its entry holds every unit that is not the pick. Opt-in like the tank pickup
-    // (IsTankHoldPickup): only a bot that runs "boss tactics" in combat holds.
+    // (KillHeld), a gate_hold row spares it at its health gate while its blocker fights (GateHeld), and a one_at_a_time
+    // row of its entry holds every unit that is not the pick. Opt-in like the tank pickup (IsTankHoldPickup): only a bot
+    // that runs "boss tactics" in combat holds.
     // Cheapest check first: the candidate's rows (a map without such rows, which is every map but ZG, returns on the
     // first lookup), then the strategy, then the role gate the hold-kill action uses (IsFreeDps: a tank or a healer keeps
-    // its own pick, an explicit attack order wins). The blocker count is the "hold kill blockers" value, one grid search
-    // per bot and entry per second, never a search of its own inside a candidate loop.
+    // its own pick, an explicit attack order wins). The blocker counts are the "hold kill blockers" and "fighting
+    // blockers" values, one grid search per bot and entry per second, never a search of its own inside a candidate loop.
     bool HeldDpsTarget(PlayerbotAI* ai, Player* bot, Unit* unit)
     {
         if (!unit || !ai || !bot)
@@ -130,13 +132,18 @@ namespace
         active.reserve(rows->size());
         bool holdRow = false;
         bool pacedRow = false;
+        bool gateRow = false;
         for (const BossTacticRow& row : *rows)
         {
+            // gate_hold is its own key's: with it off the rows are not read here either (the fight scan drops them too).
+            if (row.kind == BossTacticKind::GateHold && !sPlayerbotAIConfig.dungeonRunGateHold)
+                continue;
             active.push_back(&row);
             holdRow = holdRow || row.kind == BossTacticKind::HoldKill;
             pacedRow = pacedRow || row.kind == BossTacticKind::OneAtATime;
+            gateRow = gateRow || row.kind == BossTacticKind::GateHold;
         }
-        if (!holdRow && !pacedRow)
+        if (!holdRow && !pacedRow && !gateRow)
             return false;
         if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
             return false;
@@ -151,7 +158,27 @@ namespace
         if (ordered)
             return false;
         const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
-        return DpsLeavesAlone(true, active, unit->GetEntry(), countNear);
+        const auto countFighting = [ai](const BossTacticRow& row)
+        { return GateHoldFighters(ai, row.targetEntry, GateHoldRadius(row.windowSec)); };
+        return DpsLeavesAlone(true, active, unit->GetEntry(), static_cast<int>(unit->GetHealthPercent()), countNear,
+                              countFighting);
+    }
+
+    // Solnius Call of Nightmare (Emerald Sanctum, 807): while a major add
+    // lives, a DPS bot's dps target is that add (the one it already hits,
+    // else the nearest), so "dps assist" agrees with "solnius attack add"
+    // instead of resetting the bot to Solnius every tick. Cached attackers
+    // only, and only while the "solnius" fight strategy is on.
+    Unit* SolniusAddTarget(PlayerbotAI* ai, Player* bot)
+    {
+        if (bot->GetMapId() != 807 || !ai->HasStrategy("solnius", BotState::BOT_STATE_COMBAT))
+            return nullptr;
+        if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return nullptr;
+        Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (IsSolniusAdd(current) && current->IsAlive() && !current->IsFriendlyTo(bot))
+            return current;
+        return FindSolniusAdd(ai);
     }
 
     // mod-playerbots DPS target tournament (LD-1/LD-4): lifetime buckets per
@@ -531,6 +558,10 @@ Unit* DpsTargetValue::Calculate()
     // the next pick like the tank's victim below. A mark on a member the group holds falls through to the group's pick
     // for the same reason the tactic exists (that member has to live to the burn); an explicit attack order above is
     // the only thing that outranks the tactic, and a mark anywhere else still wins.
+    // Solnius adds beat the tank's target and raid marks (both are Solnius).
+    if (Unit* add = SolniusAddTarget(ai, bot))
+        return add;
+
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&
         !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, rti->GetObjectGuid().GetRawValue())))

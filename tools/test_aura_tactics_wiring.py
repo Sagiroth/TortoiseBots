@@ -72,7 +72,8 @@ class RowGateWiring(unittest.TestCase):
         # No row is gated on the loop's own unit any more (the old first-attacker pick).
         self.assertNotIn("int const bossHpPct = static_cast<int>(unit->GetHealthPercent());", scan)
         self.assertIn("bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;", scan)
-        self.assertIn("RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura))", scan)
+        self.assertIn("RowGateOpen(row, tankPostRow ? true : keyOn, bossHpPct,", scan)
+        self.assertIn("row.botAura != 0 && bot->HasAura(row.botAura)))", scan)
         self.assertIn("fight.rows.push_back(&row);", scan)
         self.assertNotIn("GetHealthPercent()) && !RowGateOpen", scan)
         # The six aura kinds are the key's own: with it off their rows never reach a consumer.
@@ -109,9 +110,10 @@ class RowGateWiring(unittest.TestCase):
                       "row.kind == BossTacticKind::TankHold ||", add)
         # Every kind read straight from the table is refused a gate: the fight scan never answers it for one of them.
         gated = add[add.index("if (RowGateSet(row) && ("):add.index("if (row.kind == BossTacticKind::Interrupt")]
-        for kind in ("HoldKill", "TankHold", "OneAtATime", "LinkedDeath", "ThreatSuccessor", "TankIgnore"):
+        for kind in ("HoldKill", "TankHold", "OneAtATime", "LinkedDeath", "ThreatSuccessor", "TankIgnore",
+                     "AddCrew"):
             self.assertIn("BossTacticKind::%s" % kind, gated)
-        self.assertIn("TankIgnore))", gated)
+        self.assertIn("AddCrew))", gated)
         self.assertIn("if (row.hpMin > row.hpMax || row.hpMax > 100)", add)
         # The duplicate key includes the band, so one boss can carry the same kind once per band.
         self.assertIn("have.hpMin == row.hpMin && have.hpMax == row.hpMax", add)

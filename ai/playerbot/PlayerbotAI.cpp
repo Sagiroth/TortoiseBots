@@ -84,6 +84,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/actions/FishAction.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/SeekWalkoutPolicy.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
@@ -168,7 +169,9 @@ bool PlayerbotAI::HandlesBotOutgoingOpcode(uint16 opcode)
     // HandleBotOutgoingPacket also reads these directly, outside the
     // PacketHandlingHelper queue.
     static OpcodeSet const set = BuildOpcodeSet(kBotOutgoingPacketHandlers, kBotOutgoingPacketHandlerCount,
-        { SMSG_SPELL_FAILURE, SMSG_SPELL_DELAYED, SMSG_MESSAGECHAT, SMSG_MOVE_KNOCK_BACK });
+        { SMSG_SPELL_FAILURE, SMSG_SPELL_DELAYED, SMSG_MESSAGECHAT, SMSG_MOVE_KNOCK_BACK,
+          SMSG_FORCE_WALK_SPEED_CHANGE, SMSG_FORCE_RUN_BACK_SPEED_CHANGE, SMSG_FORCE_SWIM_SPEED_CHANGE,
+          SMSG_FORCE_SWIM_BACK_SPEED_CHANGE, SMSG_FORCE_TURN_RATE_CHANGE });
     return set.test(opcode);
 }
 
@@ -434,11 +437,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Issue #846: after the master check, so the gate sees the live master.
     PublishChatGate();
 
-    // Raid/dungeon wedge: sample the leader's path on every AI tick, because the
-    // follow action is not called while the core follow runs and a straggler
-    // needs the points from before it fell behind. One branch while off.
-    if (sPlayerbotAIConfig.raidFollowWedge)
-        UpdateLeadTrail();
+    // Sample the leader's path on every AI tick, because the follow action is
+    // not called while the core follow runs: a straggler needs the points from
+    // before it fell behind, and a back-off needs the ground the group came from.
+    UpdateLeadTrail();
 
     if(aiInternalUpdateDelay > elapsed)
     {
@@ -1099,9 +1101,10 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
     return reactionInProgress;
 }
 
-// The leader's recent positions for the raid/dungeon trail catch-up
-// (FollowTrailPolicy.h). The trail is per follower and dropped as soon as the
-// pair leaves an instance group, so it never carries a stale route.
+// The leader's recent positions for the raid/dungeon trail catch-up and the
+// cleared-ground back-off (FollowTrailPolicy.h), plus the bot's own steps when
+// the leader adds nothing. Per follower, dropped as soon as the pair leaves an
+// instance group, so it never carries a stale route.
 void PlayerbotAI::UpdateLeadTrail()
 {
     Map* map = bot ? bot->FindMap() : nullptr;
@@ -1119,9 +1122,15 @@ void PlayerbotAI::UpdateLeadTrail()
         leadTrail.clear();
         return;
     }
-
-    FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
-        followTarget->GetPositionZ());
+    // When the leader camps (at the entrance, on a boss seat) he adds no new
+    // points, so bots walking in would record nothing to go back along. Fall
+    // back to the bot's own recent steps: out of combat it only walks cleared
+    // ground, and the 2 yd sample keeps it to one record per AI tick.
+    if (FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
+        followTarget->GetPositionZ()))
+        return;
+    if (!bot->IsInCombat() && !followTarget->IsInCombat())
+        FollowTrailRecord(leadTrail, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
 }
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
@@ -1139,9 +1148,12 @@ void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
                 Unit* target = AI_VALUE(Unit*, "current target");
                 if(target)
                 {
-                    // Do not update the facing while pulling
+                    // Do not update the facing while pulling, nor for the live, unshot Hakkar walk-out puller, which
+                    // faces its Son, not its current target (DungeonRunSeekWalkoutFaceCast)
                     Unit* pullTarget = AI_VALUE(Unit*, "pull target");
-                    if (pullTarget == nullptr)
+                    bool const faceCastOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast;
+                    if (pullTarget == nullptr &&
+                        !ai::WalkoutFaceTargetYields(faceCastOn, faceCastOn && ai::IsLiveWalkoutPuller(bot)))
                     {
                         if (!AI_VALUE2(bool, "facing", "current target"))
                         {
@@ -5067,6 +5079,9 @@ void PlayerbotAI::StartPullWindow(uint8 windowSeconds, bool leadKeyed, uint8 min
     if (!aiObjectContext)
         return;
 
+    if (pullWindow_.Running() && pullWindow_.engage)
+        EndPullWindow("order");
+
     // A restarted or chained window must not log the previous pull's reason.
     SetPullReleaseReason(nullptr);
 
@@ -5089,6 +5104,31 @@ void PlayerbotAI::StartPullWindow(uint8 windowSeconds, bool leadKeyed, uint8 min
 
     waitTime->Set(windowSeconds);
     pullWindow_.Start(time(0), added, previousSeconds, leadKeyed, minSeconds, fightStart);
+}
+
+void PlayerbotAI::StartEngageWindow(uint64_t requesterGuid, uint32 delaySeconds, uint32 timeoutSeconds)
+{
+    if (!aiObjectContext)
+        return;
+
+    SetPullReleaseReason(nullptr);
+
+    auto* waitTime = aiObjectContext->GetValue<uint8>("wait for attack time");
+    uint8 const previousSeconds = waitTime->Get();
+
+    unsigned added = 0;
+    for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
+    {
+        BotState const state = static_cast<BotState>(i);
+        if (HasStrategy("wait for attack", state))
+            continue;
+        ChangeStrategy("+wait for attack", state);
+        added |= ai::PullJoinWindow::EngineBit(i);
+    }
+
+    waitTime->Set(static_cast<uint8>(std::min<uint32>(timeoutSeconds + delaySeconds, 255)));
+    pullWindow_.StartEngage(time(0), added, previousSeconds, requesterGuid, delaySeconds, timeoutSeconds);
+    ParkPetForPullHold();
 }
 
 void PlayerbotAI::SetPlayerWaitForAttackTime(uint8 seconds)
@@ -5136,7 +5176,7 @@ void PlayerbotAI::EndPullWindow(const char* reason)
         std::string const stored = PullReleaseReason();
         std::string const logged = reason && *reason ? reason : (stored.empty() ? "order" : stored);
         sLog.outBasic("[BOT] pull-release %s reason=%s kind=%s elapsed=%u", bot->GetName(), logged.c_str(),
-            window.fightStart ? "fight-start" : (window.leadKeyed ? "pull" : "chat"), window.start ? uint32(time(0) - window.start) : 0);
+            window.engage ? "engage" : (window.fightStart ? "fight-start" : (window.leadKeyed ? "pull" : "chat")), window.start ? uint32(time(0) - window.start) : 0);
     }
     SetPullReleaseReason(nullptr);
 

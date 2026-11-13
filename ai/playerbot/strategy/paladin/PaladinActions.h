@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 namespace ai
 {
@@ -134,49 +135,78 @@ namespace ai
     {
     public:
         CastDevotionAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "devotion aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastRetributionAuraAction : public CastBuffSpellAction
     {
     public:
         CastRetributionAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "retribution aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastConcentrationAuraAction : public CastBuffSpellAction
     {
     public:
         CastConcentrationAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "concentration aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastShadowResistanceAuraAction : public CastBuffSpellAction
     {
     public:
         CastShadowResistanceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "shadow resistance aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastFrostResistanceAuraAction : public CastBuffSpellAction
     {
     public:
         CastFrostResistanceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "frost resistance aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastFireResistanceAuraAction : public CastBuffSpellAction
     {
     public:
         CastFireResistanceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "fire resistance aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastCrusaderAuraAction : public CastBuffSpellAction
     {
     public:
         CastCrusaderAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "crusader aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastSanctityAuraAction : public CastBuffSpellAction
     {
     public:
         CastSanctityAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "sanctity aura") {}
+        virtual bool isUseful() override;
     };
+
+    // The aura the player ordered and this paladin has trained, as its
+    // spell name; empty when on auto (or untrained after a respec).
+    std::string OrderedAuraFor(PlayerbotAI* ai);
+
+    class CastChoiceAuraAction : public CastBuffSpellAction
+    {
+    public:
+        CastChoiceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "choice aura") { isOwner = true; }
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+    };
+
+    // The blessing the player ordered for this member's class and this paladin
+    // has trained, as its base spell name; empty when the class is on auto.
+    std::string OrderedBlessingFor(PlayerbotAI* ai, Unit* target);
+
+    // The cast an ordered blessing still needs on this member, or empty: the
+    // same family from any caster already covers it.
+    std::string OrderedBlessingCast(PlayerbotAI* ai, Unit* target, std::string const& ordered, bool greater);
 
     // Pick the best blessing based on spec
     class CastBlessingAction : public CastSpellAction
@@ -596,10 +626,18 @@ namespace ai
 		virtual std::string getName() override { return "purify disease on party"; }
 	};
 
+	// Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
+	// inherits this isUseful, and GetTarget() there is the value's pick. Stands down at cast time when the mob is already on another tank (TauntHeldTargetPolicy.h).
 	class CastHandOfReckoningAction : public CastSpellAction
 	{
 	public:
 		CastHandOfReckoningAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of reckoning") {}
+
+		virtual bool isUseful() override
+		{
+			return CastSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "hand of reckoning") &&
+				!TauntTargetHeldByOtherTank(bot, GetTarget());
+		}
 	};
 
 	// Taunt the mob picked by "attacker of non-tank target"; the cast reads

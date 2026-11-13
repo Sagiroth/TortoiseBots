@@ -198,27 +198,32 @@ ItemUsage ItemUsageValue::Calculate()
 
     // Class consumables upkeep (c-cons, r-poisons finding 14): poisons the
     // bot's class is masked for, and stones/oils its class actually uses,
-    // are never vendor trash or AH stock while level-appropriate - the seed
-    // side (AddConsumables/TopUpConsumableFamily, refreshed on ding) plants
-    // exactly these entries, so selling them just re-buys the same stack.
-    // KEEP also shields them from the full-bag destroy list, like food/ammo.
+    // are never vendor trash or AH stock until the bot holds a higher tier
+    // of the same line - the seed side (AddConsumables/TopUpConsumableFamily,
+    // refreshed on ding) plants exactly these entries, so selling them just
+    // re-buys the same stack. A fixed level window used to sell the seed tier
+    // itself (live: 85 Crippling Poison, 174 Minor Wizard Oil, 71 Dense
+    // Sharpening Stone sold). KEEP also shields them from the full-bag
+    // destroy list, like food/ammo.
     // Rules live in runtime/ClassConsumablePolicy.h (unit-tested).
     if (proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_CONSUMABLE)
     {
         uint32_t botClass = bot->GetClass();
         uint32_t botLevel = bot->GetLevel();
+        auto holds = [this](uint32_t id) { return bot->HasItemCount(id, 1); };
         if (TortoiseBots::IsStoneEntry(proto->ItemId))
         {
-            if (TortoiseBots::ShouldKeepStone(botClass, proto->RequiredLevel, botLevel))
+            if (TortoiseBots::ShouldKeepStone(botClass, proto->RequiredLevel, botLevel, TortoiseBots::HoldsHigherTier(proto->ItemId, holds)))
                 return ItemUsage::ITEM_USAGE_KEEP;
         }
         else if (TortoiseBots::IsOilEntry(proto->ItemId))
         {
-            if (TortoiseBots::ShouldKeepOil(botClass, proto->RequiredLevel, botLevel))
+            if (TortoiseBots::ShouldKeepOil(botClass, proto->RequiredLevel, botLevel, TortoiseBots::HoldsHigherTier(proto->ItemId, holds)))
                 return ItemUsage::ITEM_USAGE_KEEP;
         }
         else if (proto->Class == ITEM_CLASS_CONSUMABLE &&
-                 TortoiseBots::ShouldKeepClassMaskedConsumable(botClass, proto->AllowableClass, proto->RequiredLevel, botLevel))
+                 TortoiseBots::ShouldKeepClassMaskedConsumable(botClass, proto->AllowableClass, proto->RequiredLevel, botLevel,
+                     TortoiseBots::HoldsHigherTier(proto->ItemId, holds)))
         {
             return ItemUsage::ITEM_USAGE_KEEP;
         }
@@ -309,16 +314,27 @@ ItemUsage ItemUsageValue::Calculate()
             foodType = "bandage";
         }
 
-        bool botHasHealingSpells = bot->GetClass() == CLASS_PALADIN || bot->GetClass() == CLASS_PRIEST || bot->GetClass() == CLASS_DRUID || bot->GetClass() == CLASS_SHAMAN;
+        //Any food, drink, potion or bandage the bot can use is kept, whatever
+        //its item level against the bot's level (mod-playerbots ItemUsageValue:
+        //no item-level gate). The old `ItemLevel >= bot level` rule made the
+        //best tier there is vendor stock: Major Healing Potion (item level 55)
+        //was sold by 42 level 56-60 bots, and the seed handed out the next one.
+        //Bandages count for every class with the First Aid skill they ask for
+        //(CanUseItem checks it): healers were excluded, and 1,306 seeded Linen
+        //Bandages went to vendors.
+        bool isUsableConsumable = IsHpFoodOrDrink(proto) || IsHealingPotion(proto) || IsBandage(proto)
+            || (bot->GetPowerType() == POWER_MANA && (IsManaFoodOrDrink(proto) || IsManaPotion(proto)));
 
-        //itemlevel 1 consumables are mostly level-independent
-        bool isAppropriateConsumableLevel = proto->RequiredLevel <= bot->GetLevel()
+        //Buying stays level-tiered: itemlevel 1 consumables are mostly
+        //level-independent, older tiers are kept but not bought.
+        bool isBuyTier = proto->RequiredLevel <= bot->GetLevel()
             && (proto->ItemLevel == 1 || proto->ItemLevel >= bot->GetLevel());
 
-        bool isAppropriateConsumable = isAppropriateConsumableLevel
-            && (IsHpFoodOrDrink(proto) || IsHealingPotion(proto) || (IsBandage(proto) && !botHasHealingSpells) || (bot->GetPowerType() == POWER_MANA && (IsManaFoodOrDrink(proto) || IsManaPotion(proto))));
+        //A full stack of a better tier of the same kind covers the need; only
+        //then is this lower tier surplus that may be sold.
+        float betterStacks = isUsableConsumable ? BetterStacks(proto, foodType) : 0.0f;
 
-        if (isAppropriateConsumable && bot->CanUseItem(proto) == EQUIP_ERR_OK)
+        if (isUsableConsumable && betterStacks < 1 && bot->CanUseItem(proto) == EQUIP_ERR_OK)
         {
             //A consumable the bot can actually use is never vendor trash - with
             //or without the item cheat. The random pool runs with
@@ -334,15 +350,8 @@ ItemUsage ItemUsageValue::Calculate()
             if (ai->HasCheat(BotCheatMask::item))
                 return ItemUsage::ITEM_USAGE_KEEP;
 
-            float stacks = BetterStacks(proto, foodType);
-
-            if (stacks < 1)
-            {
-                stacks += CurrentStacks(ai, proto);
-
-                if (stacks < 1)
-                    return ItemUsage::ITEM_USAGE_USE; //Buy some to get to 1 stack
-            }
+            if (isBuyTier && betterStacks + CurrentStacks(ai, proto) < 1)
+                return ItemUsage::ITEM_USAGE_USE; //Buy some to get to 1 stack
 
             return ItemUsage::ITEM_USAGE_KEEP; //Never sell what the bot eats, drinks or bandages with.
         }

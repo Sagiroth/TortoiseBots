@@ -1,9 +1,9 @@
-"""Guards the rows of data/sql/world/20261107110000_world.sql that fill ai_combat_aura_watch.
+"""Guards the rows of data/sql/world/20261107110000_world.sql and 20261108233000_world.sql that fill ai_combat_aura_watch.
 
 The combat timeline (AiPlayerbot.CombatTimeline) lists an aura's apply/remove only for the spell ids
 in this table (runtime/CombatMonitorService.cpp LoadTimelineWatch). A wrong or missing id silently
 drops the aura from every fight record, so this pins the table shape, the idempotent DELETE and the
-six Zul'Gurub seeds.
+six Zul'Gurub seeds of the first migration and the two (Hex, Brainwash) of the second.
 
 With TORTOISE_CORE=<tortoise-wow checkout> set, the ids are checked against the core's own data:
 each one must be a spell_template row and its name must match the seed's comment.
@@ -16,6 +16,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATION = os.path.join(ROOT, "data/sql/world/20261107110000_world.sql")
+MIGRATION2 = os.path.join(ROOT, "data/sql/world/20261108233000_world.sql")
 
 # The seeds the ZG investigations need, and the spell_template name each one must carry.
 SEEDS = {
@@ -27,11 +28,19 @@ SEEDS = {
     24466: "Banish",
 }
 
+# The second migration: Jin'do's Hex and Brainwash (the Auras panel's Hex preset reads them).
+SEEDS2 = {
+    17172: "Hex",
+    24261: "Brainwash",
+}
+# The core spells the second migration's ids are, where its name is spelled differently from our comment's.
+CORE_NAMES2 = {24261: "Brain Wash"}
+
 ROW = re.compile(r"^\((\d+), '((?:[^']|'')*)'\)[,;]$")
 
 
-def migration_text():
-    with open(MIGRATION, encoding="utf-8") as handle:
+def migration_text(path=MIGRATION):
+    with open(path, encoding="utf-8") as handle:
         return handle.read()
 
 
@@ -86,6 +95,21 @@ class CombatTimelineSQL(unittest.TestCase):
             self.assertIn(SEEDS[spell_id], comment,
                           "spell %d's comment does not name %r" % (spell_id, SEEDS[spell_id]))
 
+    def test_second_migration_shape_delete_and_seeds(self):
+        text = migration_text(MIGRATION2)
+        self.assertIn("CREATE TABLE IF NOT EXISTS `ai_combat_aura_watch`", text)
+        deleted = re.search(r"DELETE FROM `ai_combat_aura_watch` WHERE `spell_id` IN \(([\d, ]+)\)", text)
+        self.assertIsNotNone(deleted, "the second migration has no scoped DELETE")
+        self.assertEqual(sorted(int(x) for x in deleted.group(1).split(",")), sorted(SEEDS2),
+                         "the DELETE must remove exactly the rows the INSERT writes")
+        rows = insert_rows(text)
+        self.assertEqual(sorted(row[0] for row in rows), sorted(SEEDS2))
+        self.assertEqual(len(rows), len(SEEDS2), "a seed row is duplicated")
+        for spell_id, comment in rows:
+            self.assertIn(SEEDS2[spell_id], comment,
+                          "spell %d's comment does not name %r" % (spell_id, SEEDS2[spell_id]))
+        self.assertFalse(set(SEEDS) & set(SEEDS2), "the two migrations seed different spells")
+
 
 CORE = os.environ.get("TORTOISE_CORE")
 CORE_SPELLS = os.path.join(CORE or "", "sql", "base", "tw_world_spell_template.sql")
@@ -95,6 +119,14 @@ CORE_SPELLS = os.path.join(CORE or "", "sql", "base", "tw_world_spell_template.s
 class CombatTimelineCoreData(unittest.TestCase):
     def test_every_seed_is_the_expected_core_spell(self):
         for spell_id, name in SEEDS.items():
+            rows = core_spell_rows(CORE_SPELLS, spell_id)
+            self.assertTrue(rows, "spell %d has no spell_template row" % spell_id)
+            self.assertTrue(any(name in texts for texts in rows),
+                            "spell %d is not %r in spell_template" % (spell_id, name))
+
+    def test_every_second_migration_seed_is_the_expected_core_spell(self):
+        for spell_id, name in SEEDS2.items():
+            name = CORE_NAMES2.get(spell_id, name)
             rows = core_spell_rows(CORE_SPELLS, spell_id)
             self.assertTrue(rows, "spell %d has no spell_template row" % spell_id)
             self.assertTrue(any(name in texts for texts in rows),

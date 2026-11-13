@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -13,11 +14,31 @@
 
 using ai::FleeHeadingDistance;
 using ai::FleeFailureMemory;
+using ai::IsRaidSpreadStayExempt;
 using ai::IsSpreadExemptOwned;
 using ai::IsSpreadOnCooldown;
 using ai::kSpreadStepCooldownMs;
 using ai::ShouldCombatSpread;
 using ai::ShouldRaidSurvivalSpread;
+using ai::ShouldSpreadStayVeto;
+using ai::SpreadLogCaller;
+using ai::SpreadLogOwned;
+using ai::SpreadCastClock;
+using ai::SpreadCentreFor;
+using ai::SpreadCentreKind;
+using ai::SpreadCentreWord;
+using ai::SpreadSlotCastCutDue;
+using ai::SpreadSlotCastStart;
+using ai::SpreadSlotFallback;
+using ai::SpreadSlotIndexOf;
+using ai::SpreadSlotOrder;
+using ai::SpreadSlotPoint;
+using ai::SpreadSlotPoints;
+using ai::SpreadSlotRings;
+using ai::SpreadSlotSelect;
+using ai::SpreadSlotVerdict;
+using ai::SpreadSlotVerdictWord;
+using ai::SpreadSlotWanted;
 
 int main()
 {
@@ -165,6 +186,170 @@ int main()
     CHECK(IsSpreadOnCooldown(10u, 0xFFFFFF00u));
     CHECK(!IsSpreadOnCooldown(100000u, 0xFFFFFF00u));
     std::cout << "  [PASS] spread re-step throttle\n";
+
+    // Fixed slots: rings fit the anchor's circle and never pass the cap.
+    CHECK(SpreadSlotRings(12.0f, true, 30.0f) == 2);
+    CHECK(SpreadSlotRings(12.0f, true, 13.9f) == 0);
+    CHECK(SpreadSlotRings(12.0f, true, 14.0f) == 1);
+    CHECK(SpreadSlotRings(12.0f, false, 0.0f) == 2);
+    CHECK(SpreadSlotRings(5.0f, true, 60.0f) == 3);
+    CHECK(SpreadSlotRings(0.0f, true, 30.0f) == 0);
+    std::cout << "  [PASS] slot rings fit the anchor and cap at three\n";
+
+    // Two rings of 6 and 12 points, the row's spacing apart, none past 24 yd.
+    {
+        const std::vector<SpreadSlotPoint> points = SpreadSlotPoints(0.0f, 0.0f, 12.0f, 2);
+        float closest = 1e9f;
+        for (std::size_t i = 0; i < points.size(); ++i)
+        {
+            CHECK(std::sqrt(points[i].x * points[i].x + points[i].y * points[i].y) <= 24.01f);
+            for (std::size_t j = i + 1; j < points.size(); ++j)
+            {
+                const float dx = points[i].x - points[j].x;
+                const float dy = points[i].y - points[j].y;
+                const float yd = std::sqrt(dx * dx + dy * dy);
+                if (yd < closest)
+                    closest = yd;
+                CHECK(yd >= 11.9f);
+            }
+        }
+        CHECK(points.size() == 18);
+        CHECK(closest > 11.9f && closest < 12.1f);
+    }
+    std::cout << "  [PASS] the 18 slot points keep the row's spacing\n";
+
+    // Nearest to the preference point first; an equal distance keeps the lower j.
+    {
+        std::vector<SpreadSlotPoint> points = SpreadSlotPoints(0.0f, 0.0f, 12.0f, 2);
+        SpreadSlotOrder(points, 0.0f, -15.0f);
+        const auto prefYd = [](const SpreadSlotPoint& point) {
+            return std::sqrt(point.x * point.x + (point.y + 15.0f) * (point.y + 15.0f));
+        };
+        CHECK(points[0].ring == 1 && points[0].j == 4);
+        CHECK(std::fabs(prefYd(points[0]) - 7.57f) <= 0.05f);
+        CHECK(points[1].ring == 1 && points[1].j == 5);
+        CHECK(std::fabs(prefYd(points[12]) - 31.42f) <= 0.05f);
+        for (std::size_t i = 1; i < points.size(); ++i)
+            CHECK(prefYd(points[i - 1]) <= prefYd(points[i]) + 0.001f);
+    }
+    std::cout << "  [PASS] the slot order runs nearest to the seek spot first\n";
+
+    // The index counts lower guids only, and a bot outside the list has none.
+    const std::vector<std::uint64_t> guids = { 50, 10, 30 };
+    CHECK(SpreadSlotIndexOf(guids, 10) == 0);
+    CHECK(SpreadSlotIndexOf(guids, 30) == 1);
+    CHECK(SpreadSlotIndexOf(guids, 50) == 2);
+    CHECK(SpreadSlotIndexOf(guids, 99) == -1);
+    CHECK(SpreadSlotFallback(0, 13, 18) == 13);
+    CHECK(SpreadSlotFallback(5, 13, 18) == 13);
+    CHECK(SpreadSlotFallback(7, 13, 18) == 15);
+    CHECK(SpreadSlotFallback(0, 18, 18) == -1);
+    std::cout << "  [PASS] slots are stable and the spare slots catch the overflow\n";
+
+    // SpreadSlot_FallbackKeepsOwnedTelemetry: the row reports the owned
+    // slot and its distance, while the walk goes to the spare point.
+    {
+        const ai::SpreadSlotSelection here = SpreadSlotSelect(7, 15, true, false);
+        CHECK(here.slot == 7 && here.moveSlot == 7 && here.fallback == -1);
+        const ai::SpreadSlotSelection spare = SpreadSlotSelect(7, 15, false, true);
+        CHECK(spare.slot == 7);
+        CHECK(spare.moveSlot == 15);
+        CHECK(spare.fallback == 15);
+        const ai::SpreadSlotSelection refused = SpreadSlotSelect(7, 15, false, false);
+        CHECK(refused.slot == 7 && refused.moveSlot == -1 && refused.fallback == -1);
+        const ai::SpreadSlotSelection none = SpreadSlotSelect(7, -1, false, false);
+        CHECK(none.slot == 7 && none.moveSlot == -1 && none.fallback == -1);
+    }
+    std::cout << "  [PASS] fallback keeps the owned slot telemetry\n";
+
+    // The verdict precedence of the slot decision, in D6 order.
+    CHECK(SpreadSlotWanted(true, true, true, true, false, false, false, false, true, true) ==
+          SpreadSlotVerdict::Seek);
+    CHECK(SpreadSlotWanted(false, true, true, true, true, true, true, true, false, false) ==
+          SpreadSlotVerdict::Stand);
+    CHECK(SpreadSlotWanted(false, false, true, true, true, true, true, true, false, false) ==
+          SpreadSlotVerdict::Victim);
+    CHECK(SpreadSlotWanted(false, false, false, true, true, true, true, true, false, false) ==
+          SpreadSlotVerdict::Walkout);
+    CHECK(SpreadSlotWanted(false, false, false, false, false, true, true, true, false, false) ==
+          SpreadSlotVerdict::NoCentre);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, false, true, true, false, false) ==
+          SpreadSlotVerdict::NoSlot);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, false, true, false, false) ==
+          SpreadSlotVerdict::Floor);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, false, false, false) ==
+          SpreadSlotVerdict::Range);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, false, true) ==
+          SpreadSlotVerdict::SlotHold);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, true, false) ==
+          SpreadSlotVerdict::Cast);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, false, false) ==
+          SpreadSlotVerdict::SlotMove);
+    CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::SlotHold)) == "slot_hold");
+    CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::NoCentre)) == "no_centre");
+    CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::MoveFailed)) == "move_failed");
+    std::cout << "  [PASS] slot verdict precedence and words\n";
+
+    // SpreadVerdict_OwnerByKeyState: the row has one writer per key state,
+    // so the slot read and the old step-away never share its 5 s window.
+    CHECK(SpreadLogOwned(true, SpreadLogCaller::Read));
+    CHECK(!SpreadLogOwned(true, SpreadLogCaller::Legacy));
+    CHECK(!SpreadLogOwned(false, SpreadLogCaller::Read));
+    CHECK(SpreadLogOwned(false, SpreadLogCaller::Legacy));
+    std::cout << "  [PASS] one spread-row owner per key state\n";
+
+    // A heal is never cut; a damage dealer cuts after 6 s of blocked reads.
+    CHECK(!SpreadSlotCastCutDue(true, 1000u, 100000u));
+    CHECK(!SpreadSlotCastCutDue(false, 0u, 100000u));
+    CHECK(!SpreadSlotCastCutDue(false, 5000u, 5000u + 5999u));
+    CHECK(SpreadSlotCastCutDue(false, 5000u, 5000u + 6000u));
+    CHECK(SpreadSlotCastCutDue(false, 0xFFFFFF00u, 0xFFFFFF00u + 6000u));
+    std::cout << "  [PASS] only a damage dealer's cast is cut, after 6 s\n";
+
+    // SpreadSlot_CentreKindDistinct: the row's centre word separates a live anchor, a seek spot and
+    // neither, so a no_centre read is not logged as a spot read.
+    CHECK(SpreadCentreFor(true, true) == SpreadCentreKind::Anchor);
+    CHECK(SpreadCentreFor(true, false) == SpreadCentreKind::Anchor);
+    CHECK(SpreadCentreFor(false, true) == SpreadCentreKind::Spot);
+    CHECK(SpreadCentreFor(false, false) == SpreadCentreKind::None);
+    CHECK(std::string(SpreadCentreWord(SpreadCentreKind::Anchor)) == "anchor");
+    CHECK(std::string(SpreadCentreWord(SpreadCentreKind::Spot)) == "spot");
+    CHECK(std::string(SpreadCentreWord(SpreadCentreKind::None)) == "none");
+    std::cout << "  [PASS] the centre kind keeps anchor, spot and none distinct\n";
+
+    // SpreadSlot_CastClockRestartsAfterGap: the action only runs on cast, slot_move and slot_hold, so a stamp left
+    // by another verdict (or the previous pull) must not cut the first cast after a gather. A gap of more than
+    // 1.5 s between two cast reads starts the run over.
+    {
+        SpreadCastClock clock;
+        CHECK(SpreadSlotCastStart(clock, 0u) == 1u);
+        CHECK(SpreadSlotCastStart(clock, 3000u) == 3000u);
+        CHECK(SpreadSlotCastStart(clock, 33000u) == 33000u);
+        CHECK(!SpreadSlotCastCutDue(false, clock.sinceMs, 33000u + 5999u));
+        CHECK(SpreadSlotCastCutDue(false, clock.sinceMs, 33000u + 6000u));
+    }
+    std::cout << "  [PASS] the cast clock restarts after a gap\n";
+
+    // RaidSpreadAction::isUseful's stay gate. The base movement gate refuses
+    // a bot whose current state holds a stay; only that stay can be
+    // exempted, and only with the key on and a live spread row. A stay in
+    // the current state with no live row still refuses the step, and a bot
+    // the base gate did not refuse is never exempt, whatever row is live
+    // (the combat-state stay is not the refusal being answered).
+    CHECK(!ShouldSpreadStayVeto(false, true));
+    CHECK(!ShouldSpreadStayVeto(false, false));
+    CHECK(ShouldSpreadStayVeto(true, false));
+
+    CHECK(!IsRaidSpreadStayExempt(false, true, true));
+    CHECK(!IsRaidSpreadStayExempt(false, true, false));
+    CHECK(!IsRaidSpreadStayExempt(false, false, true));
+    CHECK(!IsRaidSpreadStayExempt(false, false, false));
+
+    CHECK(IsRaidSpreadStayExempt(true, true, true));
+    CHECK(!IsRaidSpreadStayExempt(true, true, false));
+    CHECK(!IsRaidSpreadStayExempt(true, false, true));
+    CHECK(!IsRaidSpreadStayExempt(true, false, false));
+    std::cout << "  [PASS] raid spread stay gate reads the key, the current-state stay and the live row\n";
     std::cout << "TortoiseBots combat-spread policy tests passed.\n";
     return 0;
 }

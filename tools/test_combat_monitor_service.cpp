@@ -724,7 +724,9 @@ static void TestTimelineWatchFromData()
     CHECK(fight.find("\"boss_hp\":[[0,50.0,11502]]") != std::string::npos);
     CHECK(fight.find("\"victims\":[[0,7,\"Tanky\",\"tank\"]]") != std::string::npos);
     CHECK(fight.find("\"auras\":[[500,7,24321,1]]") != std::string::npos);
-    CHECK(fight.find("9999") == std::string::npos);
+    // Match the spell id in its aura tuple, never a bare "9999": the fight payload also carries the real wall-clock
+    // epoch in "start", and an epoch such as 1793999950 contains that digit run, which failed this check once.
+    CHECK(fight.find(",9999,") == std::string::npos);
     svc.Forget(91);
 }
 

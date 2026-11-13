@@ -36,7 +36,7 @@ assert.ok(ctx.FightReplay && typeof ctx.FightReplay.botsAt === "function", "figh
 assert.ok(ctx.AggroLanes && typeof ctx.AggroLanes.lanes === "function", "aggrolanes.js loads as AggroLanes");
 vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grabConst("cmdPt"), grab("cmdPlanSvg"),
   grab("cmdFloors"), grab("cmdFloorZs"), grabConst("CMD_FLOOR_GAP_YD"), grabConst("FD_REPLAY_OFF"), grab("fdPlayHtml"),
-  grab("fdLanesHtml"), grab("cmdBossTable"), grab("fdReplayBind")].join("\n"), ctx);
+  grab("fdRangeBandHtml"), grab("fdLanesHtml"), grab("cmdBossTable"), grab("fdReplayBind")].join("\n"), ctx);
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const f = (n) => n.toFixed(2);
@@ -162,7 +162,7 @@ assert.ok(src.includes("clearTimeout(fd.rp.timer)"), "stopping clears the pendin
 assert.ok(grab("fdReplayStop").includes("clearTimeout("), "fdReplayStop clears the pending step");
 assert.ok(src.includes("const liveBind = cmdBindForCard(key)"), "the map keeps the live binding beside the replayed one");
 assert.ok(src.includes("fd.tracks["), "the per-commander state keeps the tracks");
-assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
+assert.strictEqual((src.match(/setInterval\(/g) || []).length, 10, "no new setInterval but the live stream's fallback poll and the live views' 1 s repaint (FdLive.TICK_MS)");
 const off = run("FD_REPLAY_OFF");
 assert.ok(off.includes("trail") && off.includes("membertrails") && off.includes("events"));
 assert.ok(!off.includes("threat") && !off.includes("bots") && !off.includes("plan"));

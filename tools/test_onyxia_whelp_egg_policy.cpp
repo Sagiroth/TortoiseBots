@@ -115,6 +115,31 @@ int main()
     CHECK(!ShouldHoldOnyxiaWhelpTarget(true, true, true, true, true, true));
     CHECK(!ShouldHoldOnyxiaWhelpTarget(true, true, true, true, false, false));
 
+    // OnyxiaWhelpDutyFor_States: the add crew switches the whelp duty only once the row's switch unit is dead: state 1
+    // takes it, state 2 leaves it, anything else (the key off, no row, the switch unit alive) keeps today's answer.
+    CHECK(OnyxiaWhelpDutyFor(true, 1));
+    CHECK(OnyxiaWhelpDutyFor(false, 1)); // a tank or a melee bot joins the crew: today's false becomes true
+    CHECK(!OnyxiaWhelpDutyFor(true, 2));
+    CHECK(!OnyxiaWhelpDutyFor(false, 2));
+    CHECK(OnyxiaWhelpDutyFor(true, 0));
+    CHECK(!OnyxiaWhelpDutyFor(false, 0));
+    CHECK(OnyxiaWhelpDutyFor(true, 3)); // an unknown state is no crew state: today's duty
+    CHECK(!OnyxiaWhelpDutyFor(false, 3));
+    CHECK(OnyxiaWhelpDutyFor(IsOnyxiaWhelpHunter(kWhelpClassMage, false, false, true), 1));
+    CHECK(!OnyxiaWhelpDutyFor(IsOnyxiaWhelpHunter(kWhelpClassMage, false, false, true), 2));
+
+    // ShouldReturnToOnyxia_Gates: a ranged damage dealer off the crew leaves a whelp for the hovering boss; every gate
+    // flips it off.
+    CHECK(ShouldReturnToOnyxia(true, 2, true, true, true, false, true));
+    CHECK(!ShouldReturnToOnyxia(false, 2, true, true, true, false, true));  // key off
+    CHECK(!ShouldReturnToOnyxia(true, 0, true, true, true, false, true));   // the switch unit still lives
+    CHECK(!ShouldReturnToOnyxia(true, 1, true, true, true, false, true));   // on the crew: the whelp is its
+    CHECK(!ShouldReturnToOnyxia(true, 2, false, true, true, false, true));  // not a ranged damage dealer
+    CHECK(!ShouldReturnToOnyxia(true, 2, true, false, true, false, true));  // she is grounded
+    CHECK(!ShouldReturnToOnyxia(true, 2, true, true, false, false, true));  // not on a whelp
+    CHECK(!ShouldReturnToOnyxia(true, 2, true, true, true, true, true));    // an explicit order wins
+    CHECK(!ShouldReturnToOnyxia(true, 2, true, true, true, false, false));  // no live, valid boss
+
     std::cout << "onyxia whelp/egg policy: OK\n";
     return 0;
 }

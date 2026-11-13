@@ -616,6 +616,114 @@ static void TestNoteBossKeepsRunBoss()
     CHECK(Contains(p[0], "\"boss_name\":\"RunBoss\""));
 }
 
+static std::string EndedPayload(Book& b, Seq& seq, uint32_t endMs);
+
+// The glue adopts the plan boss on an open fight only when he is one of the units being fought; his death, before or
+// after the adoption, then makes the kill.
+static void TestAdoptBossKillAfterMoveStart()
+{
+    FightContext ctx;
+    ctx.kind = "move";
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.NoteBossDied(14834, 0);
+    CHECK(b.Context().bossEntry == 0);
+    b.AdoptBoss(14834, "Hakkar");
+    CHECK(b.Context().bossEntry == 14834);
+    CHECK(b.Context().bossPhase == 1 && b.Context().bossPhaseEntry == 14834);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(!p.empty());
+    CHECK(Contains(p, "\"kind\":\"move\""));
+    CHECK(Contains(p, "\"boss\":14834"));
+    CHECK(Contains(p, "\"boss_name\":\"Hakkar\""));
+    CHECK(Contains(p, "\"outcome\":\"kill\""));
+}
+
+// A trash fight still open when the run reaches the boss step: the boss is not among the units being fought, so the
+// glue adopts nothing and the fight ends unnamed (never the boss's kill).
+static void TestTrashFightOnBossStepStaysUnnamed()
+{
+    FightContext ctx;
+    ctx.kind = "move";
+    ctx.plan = "zul_gurub";
+    ctx.step = 693;
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.OnDamage(1, 0, 500, "Tanky", 11357, 777, "Son of Hakkar", 1000);
+    b.NoteBossDied(11357, 0);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(!p.empty());
+    CHECK(Contains(p, "\"kind\":\"move\""));
+    CHECK(Contains(p, "\"boss\":0"));
+    CHECK(Contains(p, "\"outcome\":\"end\""));
+    CHECK(!Contains(p, "\"outcome\":\"kill\""));
+}
+
+// The data pick names the boss on a move-step pull (he is among the units being fought), and his death makes the
+// fight a kill: this, not AdoptBoss, is what fixes the walk 52 fights.
+static void TestDataPickOnMoveStartIsKill()
+{
+    FightContext ctx;
+    ctx.kind = "move";
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.NoteBoss(14834, "Hakkar");
+    b.NoteBossDied(14834, 0);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(!p.empty());
+    CHECK(Contains(p, "\"kind\":\"move\""));
+    CHECK(Contains(p, "\"boss\":14834"));
+    CHECK(Contains(p, "\"outcome\":\"kill\""));
+}
+
+static void TestAdoptBossNeverOverrides()
+{
+    FightContext ctx;
+    ctx.kind = "boss";
+    ctx.bossEntry = 11380;
+    ctx.bossName = "Jin'do the Hexxer";
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.AdoptBoss(14834, "Hakkar");
+    CHECK(b.Context().bossEntry == 11380);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(Contains(p, "\"boss\":11380"));
+    CHECK(!Contains(p, "\"boss\":14834"));
+}
+
+static void TestAdoptBossOutsideFightNoop()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.AdoptBoss(14834, "Hakkar");
+    b.Start(0, 1700000000, FightContext{}, 1);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(Contains(p, "\"boss\":0"));
+}
+
+// The death of a fight's boss can land before the run path adopts the plan boss: the adoption still makes a kill.
+static void TestNoteBossAfterDeathStillKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBossDied(11380, 0);
+    b.NoteBoss(11380, "Jin'do the Hexxer");
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(Contains(p, "\"boss\":11380"));
+    CHECK(Contains(p, "\"outcome\":\"kill\""));
+}
+
 static void TestRefinedBossDeathIsKill()
 {
     Book b;
@@ -1678,6 +1786,12 @@ int main()
     TestTurtleHealSpell();
     TestNoteBossOutsideFightIgnored();
     TestNoteBossKeepsRunBoss();
+    TestAdoptBossKillAfterMoveStart();
+    TestTrashFightOnBossStepStaysUnnamed();
+    TestDataPickOnMoveStartIsKill();
+    TestAdoptBossNeverOverrides();
+    TestAdoptBossOutsideFightNoop();
+    TestNoteBossAfterDeathStillKill();
     TestRefinedBossDeathIsKill();
     TestBossDeathBeforePickIsKill();
     TestBossFormDeathIsKill();

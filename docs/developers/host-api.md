@@ -519,7 +519,7 @@ cmd attack|pull|pullback <guid> [seconds] | cc <mark> <guid> [bot] [family] | fo
 inv <bot>  # TBM:INV_BEGIN/INV_EQ/INV_ITEM/INV_END inventory snapshot
 professions <bot>  # TBM:PROF_BEGIN/PROF/RECIPE/RECIPE_MISSING/PROF_END profession snapshot (RECIPE carries an order field: ok/enchant/bound/needsprofession/cooldown)
 item <bot> trade | equip|unequip|give <bag> <slot>  # item order by server bag/slot; ACK/ERR intent "item <op>"
-behavior <bot> <loot|aoe|autocc|savemana|boost|threat|potions> <on|off>  # allowlisted per-bot strategy toggle; ACK + TBM:BOTSTATE line
+behavior <bot> <loot|aoe|autocc|savemana|boost|threat|potions|mimic|spread|hold|noblink> <on|off>  # allowlisted per-bot strategy toggle; ACK + TBM:BOTSTATE line
 follow
 invite
 uninvite
@@ -943,7 +943,7 @@ durable `tortoise_bots_claimed` ledger end to end:
 
 ## 19. Battleground auto-queue (optional, default-on)
 
-`BattlegroundQueueService` provides bounded, demand-aware WSG/AB/AV participation
+`BattlegroundQueueService` provides bounded, demand-aware WSG/AB/AV/SV/BR participation
 for live Headless random bots through the existing native
 `WorldSession::HandleBattlemasterJoinOpcode` (guid 1337) for join and the existing
 native `WorldSession::HandleBattleFieldPortOpcode` action 0 (`CMSG_BATTLEFIELD_PORT`
@@ -965,7 +965,8 @@ alive/idle state, deserter/taxi/combat status, and active human master;
 reconcile is guarded by `InBattleGround`, `(guid, queueType)` ownership,
 `HasActivePlayerMaster` and `InBattleGroundQueueForBattleGroundQueueType` with
 fail-closed map validation, so a human's own party bots — never queued by the
-service and never holding its `BgQueued` lease — are left alone. AV is always
+service and never holding its `BgQueued` lease — are left alone. AV and the
+Blood Ring arena (max-level bots only, like the core's own arena join) are always
 queued solo and success is verified after the native handler; WSG/AB group joins
 require every member to be a service-owned Headless bot. Cadence and per-interval
 budget are clamped and the setting defaults on (`RandomBotBgEnabled=1`; set `0`

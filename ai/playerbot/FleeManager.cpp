@@ -7,8 +7,40 @@
 #include "Group/Group.h"
 #include "strategy/values/MoveStyleValue.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/PoolFleePolicy.h"
 
 using namespace ai;
+
+IdleMobVeto::IdleMobVeto(PlayerbotAI* ai, Player* bot, std::list<ObjectGuid> const& units, Unit* ignore, float stepLength)
+{
+    for (ObjectGuid const& guid : units)
+    {
+        if (count >= kMaxSleepers)
+            break;
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || unit == ignore || !sServerFacade.IsAlive(unit) || unit->IsInCombat())
+            continue;
+        Creature* creature = unit->ToCreature();
+        if (!creature || !unit->IsHostileTo(bot))
+            continue;
+        float const radius = creature->GetAttackDistance(bot);
+        float const toBot = sServerFacade.getDistance2d(unit, bot);
+        if (radius <= 0.0f || !PoolFleeMobInReach(toBot, radius, stepLength))
+            continue;
+        sleepers[count++] = { unit, radius, toBot };
+    }
+}
+
+bool IdleMobVeto::Wakes(float x, float y) const
+{
+    for (int i = 0; i < count; ++i)
+    {
+        Sleeper const& sleeper = sleepers[i];
+        if (PoolFleeLandingWakesMob(sServerFacade.getDistance2d(sleeper.unit, x, y), sleeper.toBot, sleeper.radius))
+            return true;
+    }
+    return false;
+}
 
 void FleeManager::calculateDistanceToCreatures(FleePoint *point)
 {
@@ -88,6 +120,9 @@ void FleeManager::calculatePossibleDestinations(std::list<FleePoint*> &points)
                     continue;
 
                 if (/*!bot->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true) || */(target && !target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true)))
+                    continue;
+
+                if (idleMobVeto && idleMobVeto->Wakes(x, y))
                     continue;
 
                 FleePoint *point = new FleePoint(PlayerbotAIStorage::Instance().GetAI(bot), x, y, z);

@@ -71,6 +71,33 @@ int BgSideIndex(Team team)
     return -1;
 }
 
+// Battlegrounds the service fills: the three vanilla ones plus Turtle's own
+// Sunnyglade Valley (type 5, map 27) and the Blood Ring 3v3 arena (type 4,
+// map 26), see the core's SharedDefines.h / battleground_template.
+bool IsServiceBgType(BattleGroundTypeId bgType)
+{
+    switch (bgType)
+    {
+        case BATTLEGROUND_WS:
+        case BATTLEGROUND_AB:
+        case BATTLEGROUND_AV:
+        case BATTLEGROUND_SV:
+        case BATTLEGROUND_BR:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The core's own Blood Ring join (BattleGroundMgr::ProcessQueueArenaJoin)
+// takes max-level players only; bots keep to the same rule.
+bool MeetsServiceTypeGate(::Player* bot, BattleGroundTypeId bgType)
+{
+    if (bgType == BATTLEGROUND_BR)
+        return bot->GetLevel() >= sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
+    return true;
+}
+
 bool IsHumanWaitingParticipant(BattleGroundQueue::QueuedParticipantInfo const& info)
 {
     if (!info.online || info.isInvited)
@@ -91,7 +118,7 @@ std::vector<HumanBgDemand> GetHumanBgDemands()
     {
         BattleGroundQueueTypeId queueType = BattleGroundQueueTypeId(queueIndex);
         BattleGroundTypeId bgType = sServerFacade.BGTemplateId(queueType);
-        if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+        if (!IsServiceBgType(bgType))
             continue;
 
         BattleGround* bgTemplate = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
@@ -167,7 +194,7 @@ void BattlegroundQueueService::Initialize()
         return;
     }
 
-    TB_LOG_BASIC("TortoiseBots: demand-aware BG auto-queue enabled interval %u max %u, human demand every %u ms up to %u (WSG/AB/AV, guid 1337 bypass, core BattleGroundMgr ownership)",
+    TB_LOG_BASIC("TortoiseBots: demand-aware BG auto-queue enabled interval %u max %u, human demand every %u ms up to %u (WSG/AB/AV/SV/BR, guid 1337 bypass, core BattleGroundMgr ownership)",
         sPlayerbotAIConfig.randomBotBgQueueInterval, sPlayerbotAIConfig.randomBotBgMaxQueuePerInterval,
         kHumanBgDemandIntervalMs, kHumanBgDemandMaxPerCheck);
 }
@@ -226,18 +253,20 @@ bool BattlegroundQueueService::IsEligible(::Player* bot) const
     // Lease arbitration (issue #89): host guards above stay authoritative.
     if (!BotActivityLeaseManager::Instance().IsAvailableForBackground(bot->GetGUIDLow()))
         return false;
-    // Must have at least one WSG/AB/AV type accessible by level.
+    // Must have at least one WSG/AB/AV/SV/BR type accessible by level.
     bool hasEligibleType = false;
     for (uint32 i = 1; i < MAX_BATTLEGROUND_QUEUE_TYPES; ++i)
     {
         BattleGroundQueueTypeId q = BattleGroundQueueTypeId(i);
         BattleGroundTypeId bgType = sServerFacade.BGTemplateId(q);
-        if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+        if (!IsServiceBgType(bgType))
             continue;
         BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
         if (!bg)
             continue;
         if (!bot->GetBGAccessByLevel(bgType))
+            continue;
+        if (!MeetsServiceTypeGate(bot, bgType))
             continue;
         if (bot->InBattleGroundQueueForBattleGroundQueueType(q))
             continue;
@@ -306,7 +335,7 @@ void BattlegroundQueueService::PruneOwnedQueueSet()
         {
             BattleGroundQueueTypeId q = BattleGroundQueueTypeId(i);
             BattleGroundTypeId bgType = sServerFacade.BGTemplateId(q);
-            if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+            if (!IsServiceBgType(bgType))
                 continue;
             if (p->InBattleGroundQueueForBattleGroundQueueType(q))
                 liveQueued.insert(EncodeOwnedKey(p->GetObjectGuid().GetCounter(), uint32_t(q)));
@@ -343,11 +372,11 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
 
     BattleGroundQueueTypeId queueType = BattleGroundQueueTypeId(queueTypeValue);
     BattleGroundTypeId bgType = sServerFacade.BGTemplateId(queueType);
-    if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+    if (!IsServiceBgType(bgType))
         return false;
 
     BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
-    if (!bg || !bot->GetBGAccessByLevel(bgType) ||
+    if (!bg || !bot->GetBGAccessByLevel(bgType) || !MeetsServiceTypeGate(bot, bgType) ||
         bot->InBattleGroundQueueForBattleGroundQueueType(queueType))
         return false;
 
@@ -365,7 +394,9 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
     // AV cannot queue as group in core (BattleGroundHandler returns early
     // for bgTypeId==BATTLEGROUND_AV && joinAsGroup). Force solo to avoid
     // silent failure and never report success for joinAsGroup AV.
-    if (bgType == BATTLEGROUND_AV)
+    // Blood Ring is a 3v3 arena: a bot group of any other size cannot fill
+    // one side, so it queues solo as well.
+    if (bgType == BATTLEGROUND_AV || bgType == BATTLEGROUND_BR)
         joinAsGroup = 0;
     else if (joinAsGroup)
     {
@@ -459,6 +490,8 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
     if (bgType == BATTLEGROUND_WS) name = "WSG";
     else if (bgType == BATTLEGROUND_AB) name = "AB";
     else if (bgType == BATTLEGROUND_AV) name = "AV";
+    else if (bgType == BATTLEGROUND_SV) name = "SV";
+    else if (bgType == BATTLEGROUND_BR) name = "BR";
 
     // Verify native queue ownership: core silently drops AV joinAsGroup and
     // other invalid joins; never report success if not actually queued.
@@ -540,7 +573,7 @@ void BattlegroundQueueService::ReconcileMasterQueue()
             if (!bot->InBattleGroundQueueForBattleGroundQueueType(q))
                 continue;
             BattleGroundTypeId bgType = sServerFacade.BGTemplateId(q);
-            if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+            if (!IsServiceBgType(bgType))
                 continue;
             uint64_t key = EncodeOwnedKey(bot->GetObjectGuid().GetCounter(), uint32_t(q));
             if (m_ownedQueuedGuids.find(key) == m_ownedQueuedGuids.end())
@@ -664,10 +697,10 @@ void BattlegroundQueueService::Update(uint32_t diff)
             if (bot->GetBattleGroundBracketIdFromLevel(demand.bgType) != demand.bracket)
                 continue;
             // A WSG/AB bot group leader queues its whole group; count every
-            // member so a group never pushes the side past its target (AV is
-            // always queued solo).
+            // member so a group never pushes the side past its target. AV and
+            // Blood Ring are always queued solo, so they count per bot.
             uint32 entrySize = 1;
-            if (demand.bgType != BATTLEGROUND_AV)
+            if (demand.bgType != BATTLEGROUND_AV && demand.bgType != BATTLEGROUND_BR)
                 if (Group* group = bot->GetGroup())
                     entrySize = group->GetMembersCount();
             if (!HumanBgSideWantsBot(demand.need[side], demand.queuedThisCheck[side], entrySize))
@@ -1026,7 +1059,7 @@ void BattlegroundQueueService::OnLeaseEvicted(uint32_t guidLow)
         if (m_ownedQueuedGuids.find(key) == m_ownedQueuedGuids.end())
             continue;
         BattleGroundTypeId bgType = sServerFacade.BGTemplateId(q);
-        if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+        if (!IsServiceBgType(bgType))
             continue;
         if (bot && bot->InBattleGroundQueueForBattleGroundQueueType(q))
         {

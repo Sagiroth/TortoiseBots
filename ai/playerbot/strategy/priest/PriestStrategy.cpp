@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "PriestMultipliers.h"
 #include "PriestStrategy.h"
 
 using namespace ai;
@@ -86,6 +87,16 @@ PriestStrategy::PriestStrategy(PlayerbotAI* ai) : ClassStrategy(ai)
     actionNodeFactories.Add(std::make_unique<PriestStrategyActionNodeFactory>());
 }
 
+void PriestStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PriestLesserHealMultiplier(ai));
+}
+
+void PriestStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PriestLesserHealMultiplier(ai));
+}
+
 
 void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
@@ -150,6 +161,10 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // (or the wand is not allowed), so this never costs a cast.
     triggers.push_back(new TriggerNode(
         "wand blocks cast",
+        NextAction::array(0, new NextAction("stop wand", ACTION_CRITICAL_HEAL + 4), NULL)));
+    // The healer part of the stop above, every tick (no spell probe).
+    triggers.push_back(new TriggerNode(
+        "healer wand not allowed",
         NextAction::array(0, new NextAction("stop wand", ACTION_CRITICAL_HEAL + 4), NULL)));
 }
 

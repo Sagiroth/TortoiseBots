@@ -37,6 +37,7 @@ namespace ai
     {
     public:
         OnyxiaBreathSafeZoneAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia breath safe zone") {}
+        bool isUseful() override;
         bool Execute(Event& event) override;
     };
 
@@ -71,6 +72,15 @@ namespace ai
     public:
         OnyxiaWhelpHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "onyxia whelp hold") {}
         float GetValue(Action* action) override;
+    };
+
+    // The other ranged damage dealers after the add crew takes over (AiPlayerbot.DungeonRunAddCrew): a bot past the
+    // crew on a whelp returns to the hovering boss, which the melee cannot reach.
+    class OnyxiaAttackBossAction : public AttackAction
+    {
+    public:
+        OnyxiaAttackBossAction(PlayerbotAI* ai) : AttackAction(ai, "onyxia attack boss") {}
+        bool Execute(Event& event) override;
     };
 
     // Step back out of an egg cave (mod-playerbots parity:
