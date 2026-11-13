@@ -12,6 +12,7 @@
 
 #include <cerrno>
 #include <csignal>
+#include <signal.h>
 #include <cstdio>
 #include <cstdlib>
 #include <sys/wait.h>
@@ -25,6 +26,11 @@ int Fail(const char* what)
     std::fprintf(stderr, "FAIL: %s\n", what);
     return 1;
 }
+
+// Set by the alarm that bounds the wait for the child; the handler must not restart waitpid, or a broken guard would
+// block the parent too.
+volatile sig_atomic_t g_alarmFired = 0;
+void OnAlarm(int) { g_alarmFired = 1; }
 }
 #endif
 
@@ -62,12 +68,25 @@ int main()
         _exit(0);  // reached only if the guard did not fire
     }
 
+    struct sigaction alarmAction {};
+    alarmAction.sa_handler = OnAlarm;
+    sigemptyset(&alarmAction.sa_mask);
+    alarmAction.sa_flags = 0;  // no SA_RESTART: the alarm interrupts the waitpid below
+    sigaction(SIGALRM, &alarmAction, nullptr);
     alarm(20);
     int status = 0;
     const pid_t waited = waitpid(child, &status, 0);
     alarm(0);
     if (waited != child)
+    {
+        if (waited < 0 && errno == EINTR && g_alarmFired)
+        {
+            kill(child, SIGKILL);
+            waitpid(child, &status, 0);
+            return Fail("the second lock by the owner did not abort within 20 s");
+        }
         return Fail("waitpid");
+    }
     if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGABRT)
         return Fail("the second lock by the owner did not abort");
 

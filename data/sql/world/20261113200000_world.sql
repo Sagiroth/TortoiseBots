@@ -4,7 +4,7 @@
 -- the 7-9.5 healers alive at the landing heal one target and nothing else with AiPlayerbot.DungeonRunTankPostHealers,
 -- and stay within 30 yd of the holder; the row's `spell_id` names Bellowing Roar 18431, whose aura on a raid member
 -- marks the cast the holder answers with its class's defensive actions (warrior shield wall then last stand; druid
--- frenzied regeneration then barkskin) inside a 10 s window opened by the first sighting after she was on the tank,
+-- frenzied regeneration) inside a 10 s window opened by the first sighting after she was on the tank,
 -- once per post. The other three post rows keep `spell_id` 0 and `healers` 0; no stand row changes.
 --
 -- The column: `healers` is a tinyint (0-4) on `hold_spot` tank_post rows only, added through
