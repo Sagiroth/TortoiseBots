@@ -2792,7 +2792,12 @@ struct Run
     // A new focus moves the skull with its order; until that order lands (it may be refused before the glue moves
     // the skull: not visible/found/dead) the old skull stays where it was, remembered here. The glue clears both
     // where they still are (EndRunIcon: a moved skull is a Drop, a no-op).
+    // A record is live only while its unit is a living hostile of the fight and the group's skull is still on it
+    // (SettleFocusIcons): a record left by a unit that died, despawned or left the fight, or whose mark a player
+    // moved, is dropped, so the run reads the group's skull as the player's again. focusIconMs is when the run set
+    // the mark: a fresh record's icon may not have landed yet.
     std::uint64_t focusIconGuid = 0;
+    std::uint64_t focusIconMs = 0;
     std::uint64_t focusIconClear = 0;
     std::uint64_t prevFocusIconGuid = 0;
     // Aggro estimate (Facts::joinerCeiling): a pull expected to bring more
@@ -3691,6 +3696,7 @@ inline void DropFocus(Run& r)
     {
         r.focusIconClear = r.focusIconGuid;
         r.focusIconGuid = 0;
+        r.focusIconMs = 0;
     }
     r.focusGuid = 0;
 }
@@ -3705,6 +3711,7 @@ inline void DropStaleFocusIcon(Run& r)
         return;
     r.focusIconClear = r.focusIconGuid;
     r.focusIconGuid = 0;
+    r.focusIconMs = 0;
 }
 
 // Clears what belongs to one step (also on resume, so a resumed step gets
@@ -10585,6 +10592,7 @@ inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkul
     {
         r.prevFocusIconGuid = r.focusIconGuid;
         r.focusIconGuid = k.guid;
+        r.focusIconMs = r.runMs;
         r.focusIconClear = 0;
     }
     r.focusGuid = k.guid;
@@ -10703,6 +10711,52 @@ inline const UnitFact* PickKillFirst(const Run& r, const Facts& f)
     return best;
 }
 
+// The unit a recorded skull guid names among this tick's living hostiles in the fight (Facts::engagedUnits: in combat
+// with the party). Any other unit's record is stale.
+inline const UnitFact* EngagedHostile(const Facts& f, std::uint64_t guid)
+{
+    if (!guid)
+        return nullptr;
+    for (const UnitFact& u : f.engagedUnits)
+        if (u.guid == guid && u.hostile)
+            return &u;
+    return nullptr;
+}
+
+// Drops the run's stale skull records (Run::focusIconGuid, and the mark an order replaced: Run::prevFocusIconGuid):
+// the recorded unit died, despawned or left the fight, or the group's skull has moved off it (a player moved the
+// mark). Only an exact guid match with a live record is the run's own mark. A stale mark still on the group's skull
+// goes to the glue to take off (Run::focusIconClear, where it still is): left there it draws every DPS bot that
+// follows the skull, the way a mark on a unit that went home did (DropStaleFocusIcon).
+inline void SettleFocusIcons(Run& r, const Facts& f)
+{
+    if (!f.raidIconsRead)
+        return;
+    std::uint64_t const skull = f.raidIcons[kFocusIcon];
+    // The glue sets the mark from the order it answers, so a fresh record may not show on the group's skull yet:
+    // only after kFocusRefusedIgnoreMs is a mismatch a player's move. Once the new mark lands, the old one is off
+    // (one skull slot) and its record has nothing left to clear.
+    bool const landed = r.runMs >= r.focusIconMs && r.runMs - r.focusIconMs >= kFocusRefusedIgnoreMs;
+    if (r.focusIconGuid && skull != r.focusIconGuid && landed)
+    {
+        r.focusIconGuid = 0;
+        r.focusIconMs = 0;
+    }
+    if (r.prevFocusIconGuid && skull != r.prevFocusIconGuid)
+        r.prevFocusIconGuid = 0;
+    if (!f.engagedRead)
+        return;
+    if (r.focusIconGuid && !EngagedHostile(f, r.focusIconGuid))
+    {
+        if (skull == r.focusIconGuid && r.focusIconClear == 0)
+            r.focusIconClear = r.focusIconGuid;
+        r.focusIconGuid = 0;
+        r.focusIconMs = 0;
+    }
+    if (r.prevFocusIconGuid && !EngagedHostile(f, r.prevFocusIconGuid))
+        r.prevFocusIconGuid = 0;
+}
+
 // The skull a player moved onto a living hostile of this fight (a raid mark the run did not set, Run::focusIconGuid):
 // the run adopts it as the focus and sends the bots to it by guid, leaving the player's mark where it is. Null for
 // none.
@@ -10711,7 +10765,9 @@ inline const UnitFact* PlayerSkullFocus(const Run& r, const Facts& f)
     if (!f.raidIconsRead)
         return nullptr;
     std::uint64_t const skull = f.raidIcons[kFocusIcon];
-    if (!skull || skull == r.focusIconGuid)
+    // The run's own marks: the record of its last order (a fresh one may not have landed yet), the mark it replaced
+    // until that order lands, and a mark it is taking off now (Run::focusIconClear: its unit left the fight).
+    if (!skull || skull == r.focusIconGuid || skull == r.prevFocusIconGuid || skull == r.focusIconClear)
         return nullptr;
     auto const find = [skull](const std::vector<UnitFact>& units) -> const UnitFact*
     {
@@ -22466,6 +22522,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // None left and the focused unit is gone (FocusGone: dead or
         // crowd-controlled): the focus is over, and with it the guard's reason
         // to keep watching (GuardTarget). One still alive (evading, say) keeps it.
+        SettleFocusIcons(r, f);
         if (const UnitFact* const h = PlayerSkullFocus(r, f))
         {
             // Its focus was refused a moment ago (kFocusRefusedIgnoreMs): left alone for the window, like any

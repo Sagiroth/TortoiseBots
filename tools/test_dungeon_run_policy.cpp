@@ -8252,6 +8252,125 @@ static void TestHumanSkullIsAdopted()
     CHECK(r.focusGuid == 1);
 }
 
+// A run mark's record dies with its unit: once the recorded unit leaves the fight its guid is not the run's mark any
+// more, so a new spawn carrying that guid and skulled by a player is the player's to keep.
+static void TestSkullRecordDiesWithItsUnit()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss, 10, 0, 0)};
+    plan.steps[0].entry = 5000; // the boss, alive throughout
+    plan.steps[0].entries = {4287, 4296};
+    ai::NormalizePlanStep(plan.steps[0]);
+    plan.killFirst = {4287}; // the run's own mark
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8)), Engaged(Unit(7, 5000, 9))};
+    f.killFirst = {Engaged(Unit(1, 4287, 6))};
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusIconGuid == 1);
+    // A player moves the skull to an add: the run follows the player and keeps its own record.
+    f.raidIconsRead = true;
+    f.raidIcons[kFocusIcon] = 2;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 1);
+    // The recorded unit dies: its record is dropped, and the player's mark stays the focus.
+    f.engagedUnits = {Engaged(Unit(2, 4296, 8)), Engaged(Unit(7, 5000, 9))};
+    f.killFirst.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 2);
+    CHECK(r.focusIconGuid == 0); // a dead unit's guid is not the run's mark
+    // A new spawn carries the dead unit's guid and a player skulls it: the run adopts it as the player's.
+    f.units = {Unit(1, 4296, 7)};
+    f.raidIcons[kFocusIcon] = 1;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1);
+    CHECK(r.focusIconGuid == 0); // the player's skull is not the run's: it is never moved or cleared
+}
+
+// The run's own mark goes with its unit and the run re-skulls: the dead mark is handed to the glue to take off where
+// it still is, and the pack's next pick gets the mark.
+static void TestRunSkullsAgainAfterItsOwnTargetDied()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8))};
+    f.engagedUnits[0].caster = true;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusIconGuid == 1 && r.focusIconMs == r.runMs);
+    f.raidIcons[kFocusIcon] = 1; // the glue set the mark
+    // The focused unit dies: the pack's next best unit gets a new mark.
+    f.engagedUnits.erase(f.engagedUnits.begin());
+    f.units.erase(f.units.begin());
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2);
+    CHECK(r.prevFocusIconGuid == 0 && r.focusIconClear == 0); // the dead record never became a pending clear
+}
+
+// A run mark on a unit that left the fight alive (an evade home, still within the step's units) is not a player's
+// skull: the run hands its own mark to the glue to take off, and the pack's next unit gets the new one.
+static void TestRunsMarkOnAUnitThatLeftIsNotThePlayers()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6))};
+    CHECK(Tick(r, f) == "focus 1");
+    f.raidIcons[kFocusIcon] = 1;
+    // The marked unit leaves the fight; the melee add stays engaged and takes the mark.
+    f.engagedUnits = {Engaged(Unit(2, 4296, 8))};
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2 && r.focusIconClear == 0);
+}
+
+// The run's previous mark is not the player's: a re-skull leaves the old skull on the group's icon until the new order
+// lands, and the tick must read it as the run's own, not adopt it and fight its own order.
+static void TestPreviousRunSkullIsNotThePlayers()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6))};
+    CHECK(Tick(r, f) == "focus 1");
+    // A caster of a better class takes the mark; the group's skull still shows the old one.
+    f.engagedUnits.push_back(Engaged(Unit(2, 4296, 8)));
+    f.engagedUnits[1].caster = true;
+    f.raidIcons[kFocusIcon] = 1;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2 && r.prevFocusIconGuid == 1);
+    // The old mark is the run's own: no order, and no adoption of the run's own skull.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 2 && r.prevFocusIconGuid == 1);
+    // The new mark lands: the old record is done.
+    f.raidIcons[kFocusIcon] = 2;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.prevFocusIconGuid == 0);
+    // A player's skull on that unit is the player's again.
+    f.raidIcons[kFocusIcon] = 1;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 2); // the player's mark: the run's own record stays where it was
+}
+
 // The plan's own kill_first unit still wins over the pack's fallback: the fallback fills a gap, it never outranks the
 // list the plan names.
 static void TestPackFocusNeverOutranksThePlan()
@@ -37621,6 +37740,10 @@ int main()
     TestBossAddsGetTheSkull();
     TestMoveAggroGetsTheSkull();
     TestHumanSkullIsAdopted();
+    TestSkullRecordDiesWithItsUnit();
+    TestRunSkullsAgainAfterItsOwnTargetDied();
+    TestRunsMarkOnAUnitThatLeftIsNotThePlayers();
+    TestPreviousRunSkullIsNotThePlayers();
     TestPackFocusNeverOutranksThePlan();
     TestCrowdControlMustLand();
     TestKillFirstIsThisFightsOnly();

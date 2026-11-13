@@ -12,6 +12,9 @@ W4: a mana user goes before the rest and only a unit of the fight, attackable, n
 W5: a skull a player moved onto a living hostile of the fight is adopted as the focus (ahead of the plan's
     kill_first and the fallback), sent by guid without moving the player's mark.
 W6: FocusGone also reads Facts::engagedUnits, so a pack focus whose unit left the fight is dropped.
+W7: a run skull record is live only while its unit is a living hostile of the fight (SettleFocusIcons drops a record
+    whose unit died, despawned or left the fight, and the previous mark once the new one landed); the tick reads a
+    skull as the player's only when no live record matches it.
 """
 import pathlib
 import unittest
@@ -62,13 +65,27 @@ class PackFocusWiringTest(unittest.TestCase):
     def test_a_players_skull_is_adopted(self):
         fn = body(POLICY, "inline const UnitFact* PlayerSkullFocus(")
         self.assertIn("std::uint64_t const skull = f.raidIcons[kFocusIcon];", fn)
-        self.assertIn("if (!skull || skull == r.focusIconGuid)", fn)
+        self.assertIn(
+            "if (!skull || skull == r.focusIconGuid || skull == r.prevFocusIconGuid || skull == r.focusIconClear)",
+            fn)
         self.assertIn("if (u.guid == skull && u.hostile)", fn)
         self.assertIn("return &u;", fn)
-        tick = body(POLICY, "        if (const UnitFact* const h = PlayerSkullFocus(r, f))")
+        tick = body(POLICY, "        SettleFocusIcons(r, f);")
         # The player's mark is adopted ahead of the run's own pick, and its order moves no skull.
         self.assertLess(tick.index("PlayerSkullFocus"), tick.index("PickKillFirst(r, f)"))
         self.assertIn("order = IssueKillFirstFocus(r, *h, false);", tick)
+
+    def test_a_runs_skull_record_dies_with_its_unit(self):
+        fn = body(POLICY, "inline void SettleFocusIcons(")
+        self.assertIn("bool const landed = r.runMs >= r.focusIconMs && r.runMs - r.focusIconMs >= kFocusRefusedIgnoreMs;", fn)
+        self.assertIn("if (r.focusIconGuid && skull != r.focusIconGuid && landed)", fn)
+        self.assertIn("if (r.prevFocusIconGuid && skull != r.prevFocusIconGuid)", fn)
+        self.assertIn("if (r.focusIconGuid && !EngagedHostile(f, r.focusIconGuid))", fn)
+        self.assertIn("if (r.prevFocusIconGuid && !EngagedHostile(f, r.prevFocusIconGuid))", fn)
+        tick = body(POLICY, "        SettleFocusIcons(r, f);")
+        self.assertLess(tick.index("SettleFocusIcons(r, f)"), tick.index("PlayerSkullFocus(r, f)"))
+        issue = body(POLICY, "inline std::string IssueKillFirstFocus(")
+        self.assertIn("r.focusIconMs = r.runMs;", issue)
 
     def test_priority_and_the_filters(self):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")
