@@ -10,6 +10,8 @@
 
 #include <cstdint>
 
+#include "SpeedChangeAckPolicy.h"
+
 namespace TortoiseBots
 {
 namespace DeferredDelivery
@@ -39,11 +41,16 @@ enum : uint16_t
     kSmsgSpellDelayed = 0x1E2,
 };
 
-// The AI handlers that read the bot's map: its movement or cast target.
+// The AI handlers that read the bot's map: its movement or cast target, and
+// the forced speed change whose ack the core applies (and broadcasts) as a
+// movement of the bot.
 inline bool ReadsBotMap(uint16_t opcode)
 {
     return opcode == kSmsgMoveKnockBack || opcode == kSmsgCastResult ||
-        opcode == kSmsgSpellFailure || opcode == kSmsgSpellDelayed;
+        opcode == kSmsgSpellFailure || opcode == kSmsgSpellDelayed ||
+        opcode == SpeedChangeAck::kServerWalk || opcode == SpeedChangeAck::kServerRun ||
+        opcode == SpeedChangeAck::kServerRunBack || opcode == SpeedChangeAck::kServerSwim ||
+        opcode == SpeedChangeAck::kServerSwimBack || opcode == SpeedChangeAck::kServerTurnRate;
 }
 
 inline Verdict Decide(bool inWorld, bool farTeleport, uint16_t opcode)

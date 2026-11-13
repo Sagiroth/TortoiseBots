@@ -120,6 +120,18 @@ static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellFailure == SMSG_SPELL_FA
     "DeferredDelivery::kSmsgSpellFailure no longer matches SMSG_SPELL_FAILURE");
 static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellDelayed == SMSG_SPELL_DELAYED,
     "DeferredDelivery::kSmsgSpellDelayed no longer matches SMSG_SPELL_DELAYED");
+static_assert(TortoiseBots::SpeedChangeAck::kServerWalk == SMSG_FORCE_WALK_SPEED_CHANGE,
+    "SpeedChangeAck::kServerWalk no longer matches SMSG_FORCE_WALK_SPEED_CHANGE");
+static_assert(TortoiseBots::SpeedChangeAck::kServerRun == SMSG_FORCE_RUN_SPEED_CHANGE,
+    "SpeedChangeAck::kServerRun no longer matches SMSG_FORCE_RUN_SPEED_CHANGE");
+static_assert(TortoiseBots::SpeedChangeAck::kServerRunBack == SMSG_FORCE_RUN_BACK_SPEED_CHANGE,
+    "SpeedChangeAck::kServerRunBack no longer matches SMSG_FORCE_RUN_BACK_SPEED_CHANGE");
+static_assert(TortoiseBots::SpeedChangeAck::kServerSwim == SMSG_FORCE_SWIM_SPEED_CHANGE,
+    "SpeedChangeAck::kServerSwim no longer matches SMSG_FORCE_SWIM_SPEED_CHANGE");
+static_assert(TortoiseBots::SpeedChangeAck::kServerSwimBack == SMSG_FORCE_SWIM_BACK_SPEED_CHANGE,
+    "SpeedChangeAck::kServerSwimBack no longer matches SMSG_FORCE_SWIM_BACK_SPEED_CHANGE");
+static_assert(TortoiseBots::SpeedChangeAck::kServerTurnRate == SMSG_FORCE_TURN_RATE_CHANGE,
+    "SpeedChangeAck::kServerTurnRate no longer matches SMSG_FORCE_TURN_RATE_CHANGE");
 
 // The world thread deletes AIs, so a hook running on it can hand a packet to
 // the AI at once, as before: the AI's own casts, hire provisioning (which drops

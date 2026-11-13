@@ -169,7 +169,9 @@ bool PlayerbotAI::HandlesBotOutgoingOpcode(uint16 opcode)
     // HandleBotOutgoingPacket also reads these directly, outside the
     // PacketHandlingHelper queue.
     static OpcodeSet const set = BuildOpcodeSet(kBotOutgoingPacketHandlers, kBotOutgoingPacketHandlerCount,
-        { SMSG_SPELL_FAILURE, SMSG_SPELL_DELAYED, SMSG_MESSAGECHAT, SMSG_MOVE_KNOCK_BACK });
+        { SMSG_SPELL_FAILURE, SMSG_SPELL_DELAYED, SMSG_MESSAGECHAT, SMSG_MOVE_KNOCK_BACK,
+          SMSG_FORCE_WALK_SPEED_CHANGE, SMSG_FORCE_RUN_BACK_SPEED_CHANGE, SMSG_FORCE_SWIM_SPEED_CHANGE,
+          SMSG_FORCE_SWIM_BACK_SPEED_CHANGE, SMSG_FORCE_TURN_RATE_CHANGE });
     return set.test(opcode);
 }
 

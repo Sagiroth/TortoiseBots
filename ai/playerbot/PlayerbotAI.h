@@ -1143,6 +1143,8 @@ protected:
     WorldPosition jumpDestination;
     uint32 jumpTime;
     bool fallAfterJump;
+    // Last SpeedChange diagnostic row, in milliseconds (RaidBossDiagnostics).
+    uint32 speedChangeAckLogMs = 0;
     // Scripted area triggers the bot stands in (issue #984, BotAreaTriggers.h).
     ai::BotAreaTriggerState areaTriggerState;
     uint32 areaTriggerCheckDelay = 0;

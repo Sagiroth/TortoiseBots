@@ -21,7 +21,7 @@ The native module has its own independent logging system. This allows administra
 | :--- | :---: | :--- |
 | [`TortoiseBots.LogLevel`](#tortoisebotsloglevel) | `2` (Detail) | Sets module logging verbosity independently of the core server log level. |
 | [`AiPlayerbot.AllowedLogFiles`](#aiplayerbotallowedlogfiles) | `bot_events.csv,deaths.csv` | Comma-separated list of structured diagnostic CSV files enabled for writing. |
-| [`AiPlayerbot.RaidBossDiagnostics`](#aiplayerbotraidbossdiagnostics) | `0` | Opt-in raid boss threat snapshots and spell-hit observations in `bot_events.csv`. |
+| [`AiPlayerbot.RaidBossDiagnostics`](#aiplayerbotraidbossdiagnostics) | `0` | Opt-in raid boss threat snapshots, spell-hit observations and bot speed-change acks in `bot_events.csv`. |
 | [`AiPlayerbot.LogRetentionDays`](#aiplayerbotlogretentiondays) | `3` | Days to keep compressed historical CSV logs before automatic deletion. |
 | [`AiPlayerbot.EnableActionLog`](#aiplayerbotenableactionlog) | `1` | Writes dedicated per-bot execution logs under `logs/bots/`. |
 | [`AiPlayerbot.ActionLogScope`](#aiplayerbotactionlogscope) | `commanded` | Filters which bots generate action log files (`commanded`, `all`, `none`). |
@@ -457,5 +457,10 @@ sample the current victim and top five numeric threat entries at most once per
 two seconds per boss/instance. `BossSpellHit` rows record supported victim-session
 spell-damage packets. `hp_sample` is sampled at packet
 send and `hp_est` is clamped subtraction of reported damage; neither guarantees
-exact post-hit health. Disable the option after collecting a diagnostic capture.
+exact post-hit health. `SpeedChange` rows record a bot answering a forced speed
+change: info1 is the move type (`walk`, `run`, `run_back`, `swim`, `swim_back`,
+`turn_rate`) and info2 is `rate=<applied rate>|counter=<packet counter>|slowed=<1
+while a speed-reducing aura is worn>`, at most one row per bot per second. They
+show whether a slow aura applies and clears at once on a bot (the Sand Storm's
+Harsh Winds pulses every second). Disable the option after collecting a diagnostic capture.
 See [column definitions and coverage](../../developers/host-api.md#csv-columns-unchanged-nine-column-layout).

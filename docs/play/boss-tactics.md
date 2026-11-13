@@ -127,6 +127,8 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Obsidian Sentinel | `kill_first` Shard |
 | Grimlok | `interrupt` Lightning Bolt 9532 |
 
+The Ancient Stone Keeper's Sand Storm slows through Harsh Winds (10093), a one-second aura refreshed every second inside its radius. Bots acknowledge the server's forced speed changes as a client does, so the slow and its removal apply at once instead of lagging the resend timeout; no row is needed for it (the generic avoid-AoE move still walks them out).
+
 ### Deadmines (36)
 
 | Boss | Rows |
