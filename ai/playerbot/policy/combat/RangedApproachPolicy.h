@@ -56,9 +56,9 @@ namespace ai
 
     // A mob that is already running at someone in the bot's group comes into
     // range by itself; walking to meet it ends next to the tank.
-    inline bool RangedReachWaitsForTarget(bool targetMoving, bool targetOnOurGroup, bool inLos)
+    inline bool RangedReachWaitsForTarget(bool targetMoving, bool targetOnOurGroup)
     {
-        return targetMoving && targetOnOurGroup && inLos;
+        return targetMoving && targetOnOurGroup;
     }
 
     // Whether the bot already stands where the reach wants it: inside the
@@ -183,9 +183,14 @@ namespace ai
     //   within range and sees the target. Where the walk leaves range, the point
     //   on that segment exactly `distance` from the target is used if it sees
     //   the target; where it loses sight, the last point that saw it is used.
+    // - `startInSight` false (the bot does not see the target): the bot's own
+    //   distance does not bound the anchor, a bot in range still gets a point,
+    //   and the segment where sight is lost is stepped back from the seeing
+    //   end, so a two-point path does not end at the target's feet.
     template <typename LosFn>
     inline RangedApproachChoice SelectRangedApproachPoint(
-        std::vector<ApproachPoint> const& path, ApproachPoint const& target, float distance, LosFn hasLos)
+        std::vector<ApproachPoint> const& path, ApproachPoint const& target, float distance, LosFn hasLos,
+        bool startInSight = true)
     {
         RangedApproachChoice result;
 
@@ -198,11 +203,11 @@ namespace ai
         float const rangeSq = distance * distance;
         float const startSq = ApproachDistanceSq(path.front(), target);
 
-        if (startSq <= rangeSq)
+        if (startInSight && startSq <= rangeSq)
             return result;
 
         std::size_t i = path.size() - 1;
-        while (i > 0 && !(ApproachDistanceSq(path[i], target) < startSq && hasLos(path[i])))
+        while (i > 0 && !((!startInSight || ApproachDistanceSq(path[i], target) < startSq) && hasLos(path[i])))
             --i;
 
         if (i == 0)
@@ -214,16 +219,36 @@ namespace ai
         if (ApproachDistanceSq(path[i], target) > rangeSq)
             return result; // closer and in sight, but short of range
 
-        while (i > 0 && ApproachDistanceSq(path[i - 1], target) <= rangeSq && hasLos(path[i - 1]))
+        while (i > 1 && ApproachDistanceSq(path[i - 1], target) <= rangeSq && hasLos(path[i - 1]))
             --i;
 
-        // i > 0 always: the front is out of range. path[i] is the earliest point
-        // of the in-range, in-sight stretch ending at the anchor.
+        // path[i] is the earliest point past the front of the in-range,
+        // in-sight stretch ending at the anchor.
         result.point = path[i];
 
         ApproachPoint const& outside = path[i - 1];
         if (ApproachDistanceSq(outside, target) <= rangeSq)
-            return result; // lost sight, not range: stop at the last point in sight
+        {
+            // Lost sight, not range: stop at the last point in sight.
+            if (startInSight)
+                return result;
+            ApproachPoint const& seeing = path[i];
+            float const dx = outside.x - seeing.x;
+            float const dy = outside.y - seeing.y;
+            float const dz = outside.z - seeing.z;
+            float const length = std::sqrt(dx * dx + dy * dy + dz * dz);
+            for (float walked = 2.0f; walked < length; walked += 2.0f)
+            {
+                ApproachPoint step;
+                step.x = seeing.x + dx * walked / length;
+                step.y = seeing.y + dy * walked / length;
+                step.z = seeing.z + dz * walked / length;
+                if (ApproachDistanceSq(step, target) > rangeSq || !hasLos(step))
+                    break;
+                result.point = step;
+            }
+            return result;
+        }
 
         // The point on outside -> path[i] at exactly `distance` from the target:
         // |outside + t * (inside - outside) - target|^2 = distance^2, the smaller

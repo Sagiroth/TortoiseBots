@@ -215,7 +215,7 @@ namespace ai
                     Unit* const targetVictim = target->GetVictim();
                     Player* const victimOwner = targetVictim ? targetVictim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
                     bool const onOurGroup = victimOwner && (victimOwner == bot || bot->IsInSameRaidWith(victimOwner));
-                    if (RangedReachWaitsForTarget(target->m_movementInfo.HasMovementFlag(MOVEFLAG_MASK_MOVING), onOurGroup, inLos))
+                    if (RangedReachWaitsForTarget(target->m_movementInfo.HasMovementFlag(MOVEFLAG_MASK_MOVING), onOurGroup))
                         return false;
                 }
 
@@ -449,7 +449,7 @@ namespace ai
         // target end to the first point within `distance` that still sees the
         // target (a partial path never parks the bot out of sight), and
         // point-move there. False leaves the move to the chase:
-        // outside dungeons, out of sight, within melee distance, no usable path
+        // outside dungeons, within melee distance, no usable path
         // or point, a hazard at the point, or a move that does not start.
         bool MoveIntoRangeAlongPath(Unit* target, float distance)
         {
@@ -472,8 +472,10 @@ namespace ai
             if (!bot->IsStopped() && !bot->movespline->Finalized())
                 return true;
 
-            if (!bot->IsWithinLOSInMap(target, true))
-                return false;
+            // Out of sight the chase would walk to the target's own spot and
+            // no tick stops it on the way (casts are refused while moving),
+            // so the path point below is picked without sight as well.
+            bool const startInSight = bot->IsWithinLOSInMap(target, true);
 
             if (!ai->CanMove() || !ai->IsSafe(target))
                 return false;
@@ -521,7 +523,7 @@ namespace ai
             };
 
             float const stop = distance;
-            RangedApproachChoice choice = SelectRangedApproachPoint(points, goal, stop, seesTarget);
+            RangedApproachChoice choice = SelectRangedApproachPoint(points, goal, stop, seesTarget, startInSight);
             if (!choice.valid)
                 return false;
 

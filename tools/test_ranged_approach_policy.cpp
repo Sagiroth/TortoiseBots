@@ -192,15 +192,30 @@ int main()
         std::cout << "  [PASS] near-tangent crossing: clamps, keeps the touch point\n";
     }
 
+    // A bot that does not see its target gets the first point in sight and
+    // range, never the target's own spot; in range but hidden still walks.
+    {
+        auto const pastWall = [](ApproachPoint const& point) { return point.x <= 15.0f; };
+        std::vector<ApproachPoint> corner = { P(20, 10), P(15, 0), P(0, 0) };
+        RangedApproachChoice choice = SelectRangedApproachPoint(corner, P(0, 0), 23.0f, pastWall, false);
+        CHECK(choice.valid);
+        CHECK(choice.point.x == 15.0f && choice.point.y == 0.0f);
+        std::vector<ApproachPoint> straight = { P(21, 0), P(0, 0) };
+        choice = SelectRangedApproachPoint(straight, P(0, 0), 23.0f, pastWall, false);
+        CHECK(choice.valid);
+        CHECK(choice.point.x >= 13.0f && choice.point.x <= 15.0f);
+        CHECK(!SelectRangedApproachPoint(straight, P(0, 0), 23.0f, pastWall, true).valid);
+        std::cout << "  [PASS] out of sight: first point in sight and range, not the target's feet\n";
+    }
+
     // The stop band sits just inside the range rim: a bot there
     // already casts, so the walk ends before the tank instead of on it.
     {
         CHECK(RangedApproachStopDistance(26.0f) == 23.0f);
         CHECK(RangedApproachStopDistance(8.0f) == 6.0f);
-        CHECK(ai::RangedReachWaitsForTarget(true, true, true));
-        CHECK(!ai::RangedReachWaitsForTarget(false, true, true));
-        CHECK(!ai::RangedReachWaitsForTarget(true, false, true));
-        CHECK(!ai::RangedReachWaitsForTarget(true, true, false));
+        CHECK(ai::RangedReachWaitsForTarget(true, true));
+        CHECK(!ai::RangedReachWaitsForTarget(false, true));
+        CHECK(!ai::RangedReachWaitsForTarget(true, false));
         CHECK(RangedApproachStopDistance(0.0f) == 0.0f);
         CHECK(RangedApproachInPosition(23.0f, 26.0f, true));
         CHECK(RangedApproachInPosition(10.0f, 26.0f, true));
