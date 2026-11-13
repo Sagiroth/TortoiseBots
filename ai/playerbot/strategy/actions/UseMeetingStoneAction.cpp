@@ -3,6 +3,7 @@
 #include "UseMeetingStoneAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/SummonPetFollowPolicy.h"
 
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -250,12 +251,31 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
                 player->GetMotionMaster()->Clear();
 
+                // Issue #1606: a summoned bot used to leave its pet behind, and
+                // the pet walked the direct route to its owner through the
+                // instance, pulling whatever it passed. Hand a live bot pet to
+                // the core's temporary unsummon cache: it resummons the pet
+                // beside its owner when the teleport lands, as it already does
+                // for players. A real player keeps the core's own rule (the pet
+                // is only dropped beyond the grid activation distance).
+                Pet* const pet = player->GetPet();
+                bool const petFollows = !isRealPlayer_Helper(player) &&
+                    ai::SummonTeleportMovesPet(pet != nullptr, pet && sServerFacade.IsAlive(pet),
+                        player->GetTemporaryUnsummonedPetNumber() == 0,
+                        !player->IsPetNeedBeTemporaryUnsummoned());
+                if (petFollows)
+                    player->UnsummonPetTemporaryIfAny();
+
                 // TeleportTo can refuse - in combat, mid flight, or when the
                 // destination map is not open to this player. Reporting success
                 // regardless left the bot standing where it was with nobody any
                 // the wiser.
                 if (!player->TeleportTo(mapId, x, y, z, 0))
                 {
+                    // Give the pet back: the bot stays where it was.
+                    if (petFollows)
+                        player->ResummonPetTemporaryUnSummonedIfAny();
+
                     sLog.outError("SummonAction: %s could not be teleported to map %u at %.2f %.2f %.2f.",
                         player->GetGuidStr().c_str(), mapId, x, y, z);
 
