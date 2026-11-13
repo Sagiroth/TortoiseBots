@@ -165,9 +165,27 @@ static void TestTrailBackOff()
     CHECK(ai::FollowTrailBackOffIndex(empty, 0.0f, 0.0f, 10.0f) == -1);
 }
 
+// Entrance camp: the leader stands still, so only the bot's own walk in
+// extends the trail, and the back-off then runs back along those steps.
+static void TestTrailBackOffOnOwnSteps()
+{
+    std::vector<ai::FollowTrailPoint> trail;
+    for (int i = 0; i <= 10; ++i)
+        CHECK(ai::FollowTrailRecord(trail, 0.0f, 2.0f * static_cast<float>(i), 0.0f) || i == 0);
+
+    int nearest = -1;
+    CHECK(ai::FollowTrailBackOffIndex(trail, 0.0f, 0.0f, 8.0f, &nearest) == -1); // at the start: nothing behind
+    CHECK(nearest == 0);
+
+    int late = -1;
+    CHECK(ai::FollowTrailBackOffIndex(trail, 0.0f, 20.0f, 8.0f, &late) == 6);
+    CHECK(late == 10);
+}
+
 int main()
 {
     TestTrailBackOff();
+    TestTrailBackOffOnOwnSteps();
     TestWedgeNeverInFront();
     TestWedgeRings();
     TestDropRejected();

@@ -1099,9 +1099,10 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
     return reactionInProgress;
 }
 
-// The leader's recent positions for the raid/dungeon trail catch-up
-// (FollowTrailPolicy.h). The trail is per follower and dropped as soon as the
-// pair leaves an instance group, so it never carries a stale route.
+// The leader's recent positions for the raid/dungeon trail catch-up and the
+// cleared-ground back-off (FollowTrailPolicy.h), plus the bot's own steps when
+// the leader adds nothing. Per follower, dropped as soon as the pair leaves an
+// instance group, so it never carries a stale route.
 void PlayerbotAI::UpdateLeadTrail()
 {
     Map* map = bot ? bot->FindMap() : nullptr;
@@ -1119,9 +1120,15 @@ void PlayerbotAI::UpdateLeadTrail()
         leadTrail.clear();
         return;
     }
-
-    FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
-        followTarget->GetPositionZ());
+    // When the leader camps (at the entrance, on a boss seat) he adds no new
+    // points, so bots walking in would record nothing to go back along. Fall
+    // back to the bot's own recent steps: out of combat it only walks cleared
+    // ground, and the 2 yd sample keeps it to one record per AI tick.
+    if (FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
+        followTarget->GetPositionZ()))
+        return;
+    if (!bot->IsInCombat() && !followTarget->IsInCombat())
+        FollowTrailRecord(leadTrail, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
 }
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
