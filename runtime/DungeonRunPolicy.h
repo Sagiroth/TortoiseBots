@@ -897,7 +897,7 @@ struct UnitFact
     // goes before a melee unit, and its level bounds which bot may take it
     // (kRunCcMaxLevelOver). fleeRoomYd: for a fear family, the 3D distance to
     // the nearest living creature outside its pack; -1 not read (no room).
-    // Read on Facts::engagedUnits too: the pack focus's first class (PickPackFocus, #1584).
+    // Read on Facts::engagedUnits too: the pack focus's first class (PickPackFocus).
     bool caster = false;
     std::uint32_t level = 0;
     float fleeRoomYd = -1.0f;
@@ -10444,9 +10444,9 @@ inline bool KillFirstBounded(const Run& r)
         (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
 }
 
-// The focused unit is gone: no longer among this fight's units (a kill_first one, or the pack's own fallback focus,
-// issue #1584) — it died, so the glue lists living ones only — or crowd-controlled by the run. Then there is nothing
-// left to take the focus back from.
+// The focused unit is gone: no longer among this fight's units (a kill_first one, or the pack's own fallback focus) —
+// it died, so the glue lists living ones only — or crowd-controlled by the run. Then there is nothing left to take the
+// focus back from.
 inline bool FocusGone(const Run& r, const Facts& f)
 {
     if (r.ccSent.count(r.focusGuid))
@@ -10703,19 +10703,68 @@ inline const UnitFact* PickKillFirst(const Run& r, const Facts& f)
     return best;
 }
 
-// The pack's own focus (issue #1584). The run's skull came from the plan's kill_first list alone, so a wing whose list
+// A player's skull (a raid mark the run did not set) on a living hostile of this fight: the pack focus leaves it alone.
+// The run only moves its own skull; a mark a player put on a mob is theirs to keep.
+inline bool PlayerSkullOnFight(const Run& r, const Facts& f)
+{
+    if (!f.raidIconsRead)
+        return false;
+    std::uint64_t const skull = f.raidIcons[kFocusIcon];
+    if (!skull || skull == r.focusIconGuid)
+        return false;
+    auto const marked = [skull](const std::vector<UnitFact>& units)
+    {
+        for (const UnitFact& u : units)
+            if (u.guid == skull && u.hostile)
+                return true;
+        return false;
+    };
+    return marked(f.engagedUnits) || marked(f.units);
+}
+
+// Whether the boss tactics of this step own the unit's entry: a kill_first or linked_death row keyed on the boss (or on
+// one of the step's own adds) names it. Such a unit keeps its row's rule — the plan's kill_first list, a linked group
+// that dies together — and is never the pack focus's fallback.
+inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t entry)
+{
+    if (!r.liveTactics || !r.plan || !entry)
+        return false;
+    std::vector<std::uint32_t> keys = s.entries;
+    keys.push_back(s.entry);
+    for (std::uint32_t const key : keys)
+    {
+        if (!key)
+            continue;
+        const std::vector<ai::BossTacticRow>* const rows = r.liveTactics->Rows(r.plan->map, key);
+        if (!rows)
+            continue;
+        for (const ai::BossTacticRow& row : *rows)
+            if ((row.kind == ai::BossTacticKind::KillFirst || row.kind == ai::BossTacticKind::LinkedDeath) &&
+                (entry == row.targetEntry || entry == row.bossEntry))
+                return true;
+    }
+    return false;
+}
+
+// The pack's own focus. The run's skull otherwise comes from the plan's kill_first list alone, so a wing whose list
 // names one entry (scarlet_library: 4291, its Scarlet Diviner) had a skull on that entry's pulls and none on the
-// others — "the tank only marks the Scarlet Diviners". When no kill_first unit of this fight is eligible, a pull
-// step's pack gets the skull on its best engaged unit: a mana user (a healer or a caster) before the rest, and the
-// nearest of that class to the lead bot. Only a unit of this fight: alive (the read lists living ones), not friendly,
-// attackable, not evading, not under the run's crowd control (an aura, or an order out — Run::ccSent), and not one
-// whose focus order was refused a moment ago. Bounded like a kill_first focus on a pull step (kKillFirstMaxYd: the
-// focus sends every bot at it). A boss step, an event and a rest fight keep their own rule (a boss's adds belong to
-// the boss tactics' rows, a linked_death group must die together), as before.
+// others — "the tank only marks the Scarlet Diviners". When no kill_first unit of this fight is eligible, the step's
+// pack gets the skull on its best engaged unit: a mana user (a healer or a caster) before the rest, and the nearest of
+// that class to the lead bot. A pull or move step (a pack that aggros on the way) takes any engaged unit; a boss step
+// only an add: never the boss, never an add a kill_first or linked_death row names, and no fallback skull at all once
+// only the boss is left. A skull a player set on a living hostile of the fight is left alone. Only a unit of this
+// fight: alive (the read lists living ones), not friendly, attackable, not evading, not under the run's crowd control
+// (an aura, or an order out — Run::ccSent), not one whose focus order was refused a moment ago, and within
+// kKillFirstMaxYd of the lead bot (the focus sends every bot at it). An event and a rest fight keep their own rule.
 inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
 {
     const PlanStep* const s = Current(r);
-    if (!s || s->kind != PlanStepKind::Pull || InEvent(r))
+    if (!s || InEvent(r))
+        return nullptr;
+    bool const pullOrMove = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move ||
+        s->kind == PlanStepKind::MoveDirect;
+    bool const boss = s->kind == PlanStepKind::Boss;
+    if ((!pullOrMove && !boss) || PlayerSkullOnFight(r, f))
         return nullptr;
     const UnitFact* best = nullptr;
     int bestClass = 2;
@@ -10724,6 +10773,10 @@ inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
     for (const UnitFact& u : f.engagedUnits)
     {
         if (!u.hostile || !u.attackable || u.evading || !u.engaged || u.polymorphed || r.ccSent.count(u.guid))
+            continue;
+        // A boss step's fallback is for its adds: the boss itself and the units its own rows name keep their rule.
+        if (boss && (IsStepBoss(*s, u) || (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||
+                BossTacticOwnsEntry(r, *s, u.entry)))
             continue;
         // Its focus was refused a moment ago (kFocusRefusedIgnoreMs).
         auto const refused = r.focusRefused.find(u.guid);
@@ -22399,10 +22452,11 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // totem, sent again every kTotemRefocusMs ahead of the crowd control
         // and the guard (resendTotem, above).
         // No kill_first unit of this fight (a wing whose plan list names no
-        // unit of the pack): a pull step's pack gets the skull on its own best
-        // unit instead (PickPackFocus, issue #1584), so every pulled group is
-        // focused: a healer or caster before the rest, then the nearest. A
-        // boss step keeps the boss tactics' rows and no such fallback.
+        // unit of the pack): the pack gets the skull on its own best unit
+        // instead (PickPackFocus), so every pulled group is focused: a healer
+        // or caster before the rest, then the nearest. A move step's pack that
+        // aggros on the way counts too; a boss step only gives the skull to an
+        // add, never to the boss, and never to a unit its rows name.
         // None left and the focused unit is gone (FocusGone: dead or
         // crowd-controlled): the focus is over, and with it the guard's reason
         // to keep watching (GuardTarget). One still alive (evading, say) keeps it.

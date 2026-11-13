@@ -1,15 +1,16 @@
-"""The pack focus's glue (issue #1584): the run's skull used to come from the plan's kill_first list alone, so a plan
-whose list names one entry (scarlet_library: 4291, its Scarlet Diviner) marked that entry and no other mob of the wing.
+"""The pack focus's glue: the run's skull used to come from the plan's kill_first list alone, so a plan whose list names
+one entry (scarlet_library: 4291, its Scarlet Diviner) marked that entry and no other mob of the wing.
 
 W1: the glue reads a mana user (a healer or a caster) on every engaged unit, the pack focus's first class
     (ReadEngagedWith, Facts::engagedUnits).
 W2: the fight tick keeps PickKillFirst first and falls back to PickPackFocus, then to FocusGone/DropFocus, so the
     plan's own list is never outranked.
-W3: the pack focus is a pull step's own: a boss step, an event and a rest fight return no pick (their adds belong to
-    the boss tactics' rows; a linked_death group must die together).
+W3: a pull or move step's pack gets the fallback, and so does a boss step's adds: the boss itself, the units a
+    kill_first/linked_death row names, an event and a rest fight return no pick.
 W4: a mana user goes before the rest and only a unit of the fight, attackable, not evading, not held by the run's
     crowd control and within kKillFirstMaxYd of the lead bot is a candidate.
-W5: FocusGone also reads Facts::engagedUnits, so a pack focus whose unit left the fight is dropped.
+W5: a skull a player set on a living hostile of the fight is never overwritten.
+W6: FocusGone also reads Facts::engagedUnits, so a pack focus whose unit left the fight is dropped.
 """
 import pathlib
 import unittest
@@ -39,10 +40,29 @@ class PackFocusWiringTest(unittest.TestCase):
         self.assertLess(fn.index("PickPackFocus"), fn.index("FocusGone(r, f)"))
         self.assertIn("DropFocus(r);", fn)
 
-    def test_a_pull_step_owns_the_fallback(self):
+    def test_pull_move_and_boss_adds_get_the_fallback(self):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")
-        self.assertIn("if (!s || s->kind != PlanStepKind::Pull || InEvent(r))", fn)
+        self.assertIn("bool const pullOrMove = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move ||",
+                      fn)
+        self.assertIn("bool const boss = s->kind == PlanStepKind::Boss;", fn)
+        self.assertIn("if ((!pullOrMove && !boss) || PlayerSkullOnFight(r, f))", fn)
         self.assertIn("return nullptr;", fn)
+
+    def test_a_boss_add_is_no_boss_and_no_tactic_row_unit(self):
+        fn = body(POLICY, "inline const UnitFact* PickPackFocus(")
+        self.assertIn("if (boss && (IsStepBoss(*s, u) || (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||", fn)
+        self.assertIn("BossTacticOwnsEntry(r, *s, u.entry)))", fn)
+        own = body(POLICY, "inline bool BossTacticOwnsEntry(")
+        self.assertIn("(row.kind == ai::BossTacticKind::KillFirst || row.kind == ai::BossTacticKind::LinkedDeath)",
+                      own)
+        self.assertIn("(entry == row.targetEntry || entry == row.bossEntry)", own)
+
+    def test_a_players_skull_is_left_alone(self):
+        fn = body(POLICY, "inline bool PlayerSkullOnFight(")
+        self.assertIn("std::uint64_t const skull = f.raidIcons[kFocusIcon];", fn)
+        self.assertIn("if (!skull || skull == r.focusIconGuid)", fn)
+        self.assertIn("if (u.guid == skull && u.hostile)", fn)
+        self.assertIn("return marked(f.engagedUnits) || marked(f.units);", fn)
 
     def test_priority_and_the_filters(self):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")

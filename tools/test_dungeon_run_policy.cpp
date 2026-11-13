@@ -8063,10 +8063,10 @@ static void TestNoCrowdControlWithoutAMageOrPlanList()
     CHECK(Tick(c, h) == "pullback 2");
 }
 
-// Issue #1584: the run's skull came from the plan's kill_first list alone. Scarlet Library's list names one entry
-// (4291, its Scarlet Diviner), so the tank marked that entry and nothing else: the other packs were pulled with no
-// skull on any unit. With no kill_first unit of the fight, the pack's own best unit is focused: a healer or caster (a
-// mana user) first, then the nearest of the rest.
+// The run's skull came from the plan's kill_first list alone. Scarlet Library's list names one entry (4291, its
+// Scarlet Diviner), so the tank marked that entry and nothing else: the other packs were pulled with no skull on any
+// unit. With no kill_first unit of the fight, the pack's own best unit is focused: a healer or caster (a mana user)
+// first, then the nearest of the rest.
 static void TestEveryPullFocusesThePack()
 {
     DungeonPlan plan;
@@ -8134,15 +8134,12 @@ static void TestPackFocusLeavesHeldAndUnattackableUnitsOut()
     CHECK(r.focusGuid == 0); // FocusGone: the focus was crowd-controlled
 }
 
-// The pack focus is a pull step's own and bounded like a kill_first one (the order sends every bot at it): a caster far
-// off the tank is left to come in, and a boss step keeps its own rule (no pack fallback at all).
-static void TestPackFocusIsAPullStepsOwn()
+// The pack focus is bounded like a kill_first one on a pull or move step (the order sends every bot at it): a caster
+// far off the tank is left to come in.
+static void TestPackFocusIsBoundedOnTheStep()
 {
     DungeonPlan plan;
-    plan.steps = {PullStep(10, {4287, 4296}), Step(PlanStepKind::Boss, 10, 0, 0)};
-    plan.steps[1].entry = 4287;
-    plan.steps[1].entries = {4296};
-    ai::NormalizePlanStep(plan.steps[1]);
+    plan.steps = {PullStep(10, {4287, 4296})};
     Run pull = Start(&plan, 0);
     Facts f = Party(0);
     f.units = {Unit(1, 4287, 4), Unit(2, 4296, 20)};
@@ -8152,17 +8149,97 @@ static void TestPackFocusIsAPullStepsOwn()
     f.engagedUnits[1].caster = true;
     // 20 yd off the tank: the caster is left to come in, the close melee is the skull.
     CHECK(Tick(pull, f) == "focus 1");
-    // A boss step has no pack fallback: the boss tactics' rows (kill_first, linked_death) own its adds as before.
-    DungeonPlan bossPlan;
-    bossPlan.steps = {plan.steps[1]};
-    Run boss = Start(&bossPlan, 0);
-    boss.fighting = true;
-    Facts g = Party(0);
-    g.anyInCombat = true;
-    g.engagedUnits = {Engaged(Unit(1, 4287, 4)), Engaged(Unit(2, 4296, 20))};
-    g.engagedUnits[1].caster = true;
-    CHECK(Tick(boss, g).empty());
-    CHECK(boss.focusGuid == 0);
+}
+
+// A boss step's fight with adds: with no kill_first unit of the fight the fallback puts the skull on an add, never on
+// the boss, and never on an add a kill_first or linked_death row names. Once only the boss is left, no fallback skull.
+static void TestBossAddsGetTheSkull()
+{
+    DungeonPlan plan;
+    plan.map = 249;
+    plan.steps = {Step(PlanStepKind::Boss, 10, 0, 0)};
+    plan.steps[0].entry = 4287; // the boss
+    plan.steps[0].entries = {4296, 4299, 4304};
+    ai::NormalizePlanStep(plan.steps[0]);
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 4287;
+    row.kind = ai::BossTacticKind::KillFirst;
+    row.targetEntry = 4299;
+    row.priority = 1;
+    CHECK(table.Add(row));
+    ai::BossTacticRow linked;
+    linked.map = 249;
+    linked.bossEntry = 4287;
+    linked.kind = ai::BossTacticKind::LinkedDeath;
+    linked.targetEntry = 4304;
+    linked.param = 20.0f;
+    CHECK(table.Add(linked));
+    table.Seal();
+    Run r = Start(&plan);
+    r.liveTactics = &table;
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    // The boss is the nearest unit; the rows' adds 4299 and 4304 are casters; the free add 4296 is melee.
+    f.engagedUnits = {Engaged(Unit(1, 4287, 2)), Engaged(Unit(2, 4299, 3)), Engaged(Unit(3, 4296, 9)),
+        Engaged(Unit(4, 4304, 5))};
+    f.engagedUnits[1].caster = true;
+    f.engagedUnits[3].caster = true;
+    CHECK(Tick(r, f) == "focus 3");
+    CHECK(r.focusGuid == 3);
+    CHECK(r.focusIconGuid == 3);
+    // Only the boss and the rows' own adds are left: none takes the fallback skull.
+    f.engagedUnits = {f.engagedUnits[0], f.engagedUnits[1], f.engagedUnits[3]};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0);
+    // Only the boss: still no fallback skull.
+    f.engagedUnits.erase(f.engagedUnits.begin() + 1);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0);
+}
+
+// A pack that aggros during a move step is focused like a pulled one.
+static void TestMoveAggroGetsTheSkull()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50, 0, 0)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    CHECK(Tick(r, f) == "move 50.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 4)), Engaged(Unit(2, 4296, 8))};
+    f.engagedUnits[1].caster = true;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2);
+    // The fight over, the walk goes on with no skull left.
+    f.anyInCombat = false;
+    f.engagedUnits.clear();
+    std::string const after = Tick(r, f);
+    CHECK(after.empty() || after == "move 50.0 0.0 0.0");
+    CHECK(r.focusGuid == 0);
+}
+
+// A skull a player set on a living hostile of the group is never overwritten: the fallback leaves the mark alone and
+// focuses nothing. Once the player takes it off, the run marks the pack as usual.
+static void TestHumanSkullIsKept()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 8)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8))};
+    f.raidIconsRead = true;
+    f.raidIcons[kFocusIcon] = 2; // a player's skull on the pack
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 0);
+    CHECK(r.focusIconGuid == 0);
+    f.raidIcons[kFocusIcon] = 0;
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1);
 }
 
 // The plan's own kill_first unit still wins over the pack's fallback: the fallback fills a gap, it never outranks the
@@ -37530,7 +37607,10 @@ int main()
     TestNoCrowdControlWithoutAMageOrPlanList();
     TestEveryPullFocusesThePack();
     TestPackFocusLeavesHeldAndUnattackableUnitsOut();
-    TestPackFocusIsAPullStepsOwn();
+    TestPackFocusIsBoundedOnTheStep();
+    TestBossAddsGetTheSkull();
+    TestMoveAggroGetsTheSkull();
+    TestHumanSkullIsKept();
     TestPackFocusNeverOutranksThePlan();
     TestCrowdControlMustLand();
     TestKillFirstIsThisFightsOnly();

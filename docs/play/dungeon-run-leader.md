@@ -225,8 +225,9 @@ The dry walk is opt-in with `AiPlayerbot.DungeonRunDryWalk = 1` (default `0`), s
 ### Focus (the skull)
 
 Every fight's skull comes from the run: the plan's `kill_first` unit of that fight is focused (skull on it, every bot attacks its skull target) and the focused unit is kept until it dies or is crowd-controlled; a pause or the fight's end takes the skull off.
-A pull step whose fight has no `kill_first` unit of the pack — the plan lists none, or none of its entries joined the fight — focuses the pack's own best unit instead, so every pulled group gets a skull: a mana user (a healer or a caster) before the rest, and the nearest of that class to the lead bot within 15 yd of it. A unit the party cannot attack, one the run's crowd control holds (an aura, or an order on its way), one evading and one whose focus order was refused a moment ago are passed over; the skull moves to the next unit when the focused one dies (#1584).
-Boss steps, events and rest fights keep their own rule: their adds belong to the boss-tactics rows (`kill_first`, `linked_death`), which a linked group of adds must die together for.
+A pull or move step whose fight has no `kill_first` unit of the pack — the plan lists none, or none of its entries joined the fight — focuses the pack's own best unit instead, so every pulled group gets a skull: a mana user (a healer or a caster) before the rest, and the nearest of that class to the lead bot within 15 yd of it. A unit the party cannot attack, one the run's crowd control holds (an aura, or an order on its way), one evading and one whose focus order was refused a moment ago are passed over; the skull moves to the next unit when the focused one dies.
+A boss step's fight does the same for its adds: never the boss itself, never an add the boss-tactics `kill_first` or `linked_death` rows name, and no fallback skull once only the boss is left. An event and a rest fight keep their own rule.
+The run never moves a skull a player set: while the skull is on another living hostile of the fight, the fallback leaves it alone.
 
 ### Rest gate
 

@@ -8857,7 +8857,7 @@ void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit, 
         }
         fact.respawnSec = RunRespawnSec(other);
         // A mana user is a healer or a caster: the automatic crowd control's first pick (RunAutoCcBetter), and the
-        // pack focus's first class when the plan's kill_first list names no unit of the fight (PickPackFocus, #1584).
+        // pack focus's first class when the plan's kill_first list names no unit of the fight (PickPackFocus).
         fact.caster = other->GetMaxPower(POWER_MANA) > 0;
         // The nest read: only a fast respawn needs its home position (InRespawnNest).
         if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
