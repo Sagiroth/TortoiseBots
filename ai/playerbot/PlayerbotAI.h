@@ -358,10 +358,12 @@ public:
 
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
-    // The leader's recent positions as this bot saw them (AiPlayerbot.
-    // RaidFollowWedge). Sampled every AI tick: the follow action runs only when
-    // the core follow has to be replaced, which is too late to know the path
-    // the leader took.
+    // The leader's and the bot's own recent positions as this bot saw them
+    // (AiPlayerbot. RaidFollowWedge). Sampled every AI tick: the follow action
+    // runs only when the core follow has to be replaced, which is too late to
+    // know the path the leader took. The bot's own out-of-combat steps join
+    // when the leader camps at the entrance, so the trail still covers the
+    // ground the bot walked in on.
     std::vector<FollowTrailPoint> const& GetLeadTrail() const { return leadTrail; }
 
     void HandleCommands();

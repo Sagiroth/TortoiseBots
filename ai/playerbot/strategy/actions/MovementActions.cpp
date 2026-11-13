@@ -3109,6 +3109,23 @@ bool MovementAction::Flee(Unit *target)
 
     Unit* fleeTarget = nullptr;
     Group* group = bot->GetGroup();
+    // Cleared ground first: in a dungeon or raid a mob on a caster, healer or
+    // ranged bot backs it off along the recorded trail before the old order runs, whose run-to-member
+    // step can walk toward the next pack and whose usefulness check refuses a
+    // mob that hits from melee range without standing inside the bot yet.
+    // Hold position turns every self-initiated move away off.
+    Map* instanceMap = bot->GetMap();
+    if (isTarget && !isTank && (isRanged || isHealer) && !ai->HasStrategy("hold position", BotState::BOT_STATE_COMBAT) &&
+        group && instanceMap && (instanceMap->IsDungeon() || instanceMap->IsRaid()))
+    {
+        bool const playerAttacker = target->IsPlayer();
+        float const trailDistance = (playerAttacker || WorldPosition(bot).isOverworld())
+            ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
+        IdleMobVeto const trailVeto(ai, bot, AI_VALUE(std::list<ObjectGuid>, "possible targets no los"), target, trailDistance);
+        if (FleeAlongLeadTrail(target, trailDistance, trailVeto, nowMs))
+            return true;
+    }
+
     if (group)
     {
         Unit* spareTarget = nullptr;
