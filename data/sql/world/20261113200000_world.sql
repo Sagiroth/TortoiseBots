@@ -22,4 +22,4 @@ PREPARE stmt FROM @s;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-UPDATE `ai_boss_tactic` SET `spell_id` = 18431, `healers` = 2, `comment` = 'Onyxia P3: slot 0 holds her at the east spot E; 2 healers stay within 30 yd and heal only this tank, and it uses its defensive cooldown at the first Bellowing Roar 18431 (walks 2g-2h: the main tank dead at +50 s in 15 of 15 P3 pulls; needs AiPlayerbot.DungeonRunTankPostMain and AiPlayerbot.DungeonRunTankPostHealers)' WHERE `map` = 249 AND `boss_entry` = 10184 AND `kind` = 'tank_post' AND `target_entry` = 10184 AND `hp_max` = 40;
+UPDATE `ai_boss_tactic` SET `spell_id` = 18431, `healers` = 2, `comment` = 'Onyxia P3: slot 0 holds her at east spot E; 2 healers within 30 yd heal only this tank, and it uses its defensive cooldown at the first Bellowing Roar 18431 (walk 2h: tank dead at +50 s in 15/15; needs DungeonRunTankPostMain, DungeonRunTankPostHealers)' WHERE `map` = 249 AND `boss_entry` = 10184 AND `kind` = 'tank_post' AND `target_entry` = 10184 AND `hp_max` = 40;
