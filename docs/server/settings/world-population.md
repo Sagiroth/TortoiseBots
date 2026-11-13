@@ -1257,6 +1257,8 @@ Defines baseline combat strategy adjustments applied to pool bots after their sp
 
 Note that `-threat` only applies to masterless pool bots; once a bot joins a human player's party, standard threat management is restored. Tank bots maintain tank-assist behavior regardless of these settings.
 
+A bot still in a group keeps a role the dungeon finder (or `.bot role`) handed it: the timed re-apply never runs for it, so an LFT-filled healer keeps its heal kit and a player's own combat or non-combat strategy changes stand until the bot leaves the group. The re-apply also skips any pool bot in a group with a real player's character, online or offline, whether or not it holds a role: the dungeon finder assigns no role to a bot whose natural kit already matches its slot, and that bot's kit belongs to the player's run as well. A group of module bots alone still re-rolls.
+
 </details>
 
 ### `AiPlayerbot.CombatStrategies`
