@@ -110,13 +110,17 @@ namespace ai
     INTERRUPT_TRIGGER(DeathCoilInterruptTrigger, "death coil");
     INTERRUPT_HEALER_TRIGGER(DeathCoilInterruptTHealerTrigger, "death coil");
     SNARE_TRIGGER(DeathCoilSnareTrigger, "death coil");
-    SNARE_TRIGGER(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
+    SNARE_TRIGGER_A(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
 
-    class CurseOfExhaustionTrigger : public DebuffTrigger
+
+    // A `.bot choice` order casts through its own trigger row: fires only
+    // while the given spell is the order and missing on the target.
+    class ChoiceCurseTrigger : public DebuffTrigger
     {
     public:
-        CurseOfExhaustionTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "curse of exhaustion") {}
+        ChoiceCurseTrigger(PlayerbotAI* ai, std::string const& spell) : DebuffTrigger(ai, spell) {}
         bool IsActive() override;
+        std::string getName() override;
     };
 
     class CorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger

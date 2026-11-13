@@ -183,7 +183,6 @@ std::string ai::OrderedAuraFor(PlayerbotAI* ai)
     return spell;
 }
 
-
 std::string ai::OrderedBlessingFor(PlayerbotAI* ai, Unit* target)
 {
     if (!target || !target->IsPlayer())

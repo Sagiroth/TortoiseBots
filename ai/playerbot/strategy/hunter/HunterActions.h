@@ -170,14 +170,14 @@ public:
     {
     public:
         CastAspectOfTheCheetahAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the cheetah") {}
-        bool isUseful() override;
+        virtual bool isUseful() override;
     };
 
     class CastAspectOfThePackAction : public CastBuffSpellAction
     {
     public:
         CastAspectOfThePackAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the pack") {}
-        bool isUseful() override;
+        virtual bool isUseful() override;
     };
 
     class CastAspectOfTheBeastAction : public CastBuffSpellAction

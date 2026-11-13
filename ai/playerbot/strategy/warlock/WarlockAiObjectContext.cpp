@@ -237,6 +237,13 @@ namespace ai
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new DeathCoilSnareTrigger(ai); };
                 creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionSnareTrigger(ai); };
                 creators["curse of exhaustion"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionTrigger(ai); };
+                creators["choice curse curse of agony"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of agony"); };
+                creators["choice curse curse of the elements"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of the elements"); };
+                creators["choice curse curse of weakness"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of weakness"); };
+                creators["choice curse curse of tongues"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of tongues"); };
+                creators["choice curse curse of shadow"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of shadow"); };
+                creators["choice curse curse of recklessness"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of recklessness"); };
+                creators["choice curse curse of doom"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of doom"); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["life tap top-up"] = [](PlayerbotAI* ai) { return new LifeTapTopUpTrigger(ai); };

@@ -170,6 +170,15 @@ bool ChoiceCurseRowActive(PlayerbotAI* ai, char const* row, char const* manual)
         return true;
     return ai->HasStrategy(manual, BotState::BOT_STATE_COMBAT);
 }
+
+bool ChoiceCurseTrigger::IsActive()
+{
+    if (OrderedCurseFor(ai) != spell)
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+std::string ChoiceCurseTrigger::getName() { return "choice curse " + spell; }
 } // namespace
 
 bool CurseOfAgonyTrigger::IsActive()
@@ -335,11 +344,15 @@ bool CurseOfShadowTrigger::IsActive()
     return DebuffTrigger::IsActive();
 }
 
-bool CurseOfExhaustionTrigger::IsActive()
+bool CurseOfExhaustionSnareTrigger::IsActive()
 {
-    if (!ChoiceCurseRowActive(ai, "curse of exhaustion", "curse exhaustion"))
+    // The manual "curse exhaustion" row fires as today; the saved order
+    // casts through the same chassis and must not let the row fire for any
+    // other reason (the snare target exists in most fights).
+    if (!ai->HasStrategy("curse exhaustion", BotState::BOT_STATE_COMBAT) &&
+        OrderedCurseFor(ai) != "curse of exhaustion")
         return false;
-    return DebuffTrigger::IsActive();
+    return SnareTargetTrigger::IsActive();
 }
 
 bool NoCurseTrigger::IsActive()

@@ -631,32 +631,26 @@ void WarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         "no curse",
         NextAction::array(0, new NextAction("curse of agony", ACTION_NORMAL + 2), NULL)));
 
-    // A saved `.bot choice` order casts through its own row, so every
-    // orderable curse lands even when no spec row would ever queue it
+    // A saved `.bot choice` order casts through its own trigger row, so
+    // every orderable curse lands even when no spec row would ever queue it
     // (weakness, tongues, shadow, doom outside their niches, exhaustion on
-    // the current target). Each row's own trigger stands down unless it is
-    // the order, and `no curse` above keeps the slot open for it.
+    // the current target). The `choice curse ...` triggers fire only as the
+    // order, and `no curse` above keeps the slot open for them; the shared
+    // rows above stand their own non-ordered curses down while one is set.
+    char const* const choiceCurses[] = {
+        "curse of agony", "curse of the elements", "curse of weakness", "curse of tongues",
+        "curse of shadow", "curse of recklessness", "curse of doom"
+    };
+    for (char const* curse : choiceCurses)
+        triggers.push_back(new TriggerNode(
+            std::string("choice curse ") + curse,
+            NextAction::array(0, new NextAction(curse, ACTION_NORMAL + 2), NULL)));
+    // Exhaustion snares the snare target (WAR-7), never the current target:
+    // same trigger chassis as the manual row, minus the aoe "on attacker"
+    // twin. The gate below keeps it quiet unless exhaustion is ordered.
     triggers.push_back(new TriggerNode(
-        "curse of the elements",
-        NextAction::array(0, new NextAction("curse of the elements", ACTION_NORMAL + 2), NULL)));
-    triggers.push_back(new TriggerNode(
-        "curse of weakness",
-        NextAction::array(0, new NextAction("curse of weakness", ACTION_NORMAL + 2), NULL)));
-    triggers.push_back(new TriggerNode(
-        "curse of tongues",
-        NextAction::array(0, new NextAction("curse of tongues", ACTION_NORMAL + 2), NULL)));
-    triggers.push_back(new TriggerNode(
-        "curse of shadow",
-        NextAction::array(0, new NextAction("curse of shadow", ACTION_NORMAL + 2), NULL)));
-    triggers.push_back(new TriggerNode(
-        "curse of recklessness",
-        NextAction::array(0, new NextAction("curse of recklessness", ACTION_NORMAL + 2), NULL)));
-    triggers.push_back(new TriggerNode(
-        "curse of doom",
-        NextAction::array(0, new NextAction("curse of doom", ACTION_NORMAL + 2), NULL)));
-    triggers.push_back(new TriggerNode(
-        "curse of exhaustion",
-        NextAction::array(0, new NextAction("curse of exhaustion", ACTION_NORMAL + 2), NULL)));
+        "curse of exhaustion on snare target",
+        NextAction::array(0, new NextAction("curse of exhaustion on snare target", ACTION_NORMAL + 2), NULL)));
 }
 
 void WarlockCursesPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

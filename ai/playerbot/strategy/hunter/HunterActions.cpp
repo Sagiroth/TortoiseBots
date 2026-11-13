@@ -358,6 +358,7 @@ bool CastFeignDeathAction::isUseful()
     uint8 threat = AI_VALUE2(uint8, "threat", "current target");
     return TortoiseBots::HunterFeignDeathRaidAllowed(group && group->isRaidGroup(), others, threat);
 }
+
 namespace ai
 {
 // The aspect the saved `.bot choice` order wants, as its spell name; empty
