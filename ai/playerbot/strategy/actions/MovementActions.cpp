@@ -3109,13 +3109,13 @@ bool MovementAction::Flee(Unit *target)
 
     Unit* fleeTarget = nullptr;
     Group* group = bot->GetGroup();
-    // Cleared ground first: in a dungeon or raid a mob on a non-tank backs off
-    // along the recorded trail before the old order runs, whose run-to-member
+    // Cleared ground first: in a dungeon or raid a mob on a caster, healer or
+    // ranged bot backs it off along the recorded trail before the old order runs, whose run-to-member
     // step can walk toward the next pack and whose usefulness check refuses a
     // mob that hits from melee range without standing inside the bot yet.
     // Hold position turns every self-initiated move away off.
     Map* instanceMap = bot->GetMap();
-    if (isTarget && !isTank && !ai->HasStrategy("hold position", BotState::BOT_STATE_COMBAT) &&
+    if (isTarget && !isTank && (isRanged || isHealer) && !ai->HasStrategy("hold position", BotState::BOT_STATE_COMBAT) &&
         group && instanceMap && (instanceMap->IsDungeon() || instanceMap->IsRaid()))
     {
         bool const playerAttacker = target->IsPlayer();
