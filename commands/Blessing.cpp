@@ -135,12 +135,18 @@ static void SendBlessingLine(ChatHandler* handler, Player* bot, PlayerbotAI* ai)
         line += (first ? "" : "+") + word;
         first = false;
     }
+    std::string const players = ai::FormatBlessingPlayerOrders(
+        ai::ParseBlessingPlayerOrders(
+            ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::BlessingOrderPlayersKey())->Get()));
+    if (!players.empty())
+        line += ",players=" + players;
     handler->PSendSysMessage("TBM:BLESSING|%s|%s", ProtocolSafe(bot->GetName()).c_str(), line.c_str());
 }
 
-// `.bot blessing <bot|party|raid> <class> <blessing|auto>` - per paladin, the
-// blessing one class gets; saved per bot. `.bot blessing <scope> status`
-// reports every paladin's assignment as TBM:BLESSING records.
+// `.bot blessing <bot|party|raid> <class> <blessing|auto>` or
+// `.bot blessing <bot|party|raid> player <name> <blessing|auto>` - per paladin,
+// the blessing one class or character gets; saved per bot.
+// `.bot blessing <scope> status` reports every paladin's assignment as TBM:BLESSING records.
 bool HandleBlessing(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
@@ -148,17 +154,24 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
     std::string scope;
     std::string word2;
     std::string word3;
-    input >> scope >> word2 >> word3;
-    for (std::string* word : { &scope, &word2, &word3 })
-        for (char& c : *word)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::string word4;
+    input >> scope >> word2 >> word3 >> word4;
+    scope = ai::BlessingOrderLower(scope);
+    word2 = ai::BlessingOrderLower(word2);
+    word4 = ai::BlessingOrderLower(word4);
 
     char const* const usage =
         "Usage: .bot blessing <bot|party|raid> <warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid> "
-        "<might|wisdom|kings|salvation|sanctuary|light|auto> | status";
+        "<might|wisdom|kings|salvation|sanctuary|light|auto> | "
+        ".bot blessing <bot|party|raid> player <name> <might|wisdom|kings|salvation|sanctuary|light|auto> | status";
     bool const status = word2 == "status";
-    int const classIndex = ai::BlessingOrderClassIndex(word2);
-    if (scope.empty() || (!status && (classIndex < 0 || !ai::IsBlessingOrderWord(word3))))
+    bool const playerMode = word2 == "player";
+    std::string const targetName = playerMode ? word3 : std::string();
+    std::string const blessingWord = playerMode ? word4 : ai::BlessingOrderLower(word3);
+    int const classIndex = playerMode ? -1 : ai::BlessingOrderClassIndex(word2);
+    if (scope.empty() ||
+        (!status && playerMode && (targetName.empty() || !ai::IsBlessingOrderWord(blessingWord))) ||
+        (!status && !playerMode && (classIndex < 0 || !ai::IsBlessingOrderWord(blessingWord) || !word4.empty())))
     {
         SendActionError(handler, "blessing", "invalid", usage);
         return true;
@@ -195,7 +208,9 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
 
     uint32 paladins = 0;
     bool refused = false;
-    std::string const spell = ai::BlessingOrderSpell(word3);
+    bool notInGroupReported = false;
+    std::string ackPlayerName = targetName;
+    std::string const spell = ai::BlessingOrderSpell(blessingWord);
     for (Player* bot : bots)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -203,14 +218,53 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
             continue;
         if (!status)
         {
-            if (!spell.empty() && !ai->HasSpell(spell))
+            if (playerMode)
             {
-                std::string msg = std::string(bot->GetName()) + " has not trained " + spell + ".";
-                SendActionError(handler, intent, "unknown-spell", msg.c_str());
-                refused = true;
-                continue;
+                std::string canonicalName;
+                if (Group* group = bot->GetGroup())
+                {
+                    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                    {
+                        if (ai::BlessingOrderNamesEqual(slot.name, targetName))
+                        {
+                            canonicalName = slot.name;
+                            break;
+                        }
+                    }
+                }
+                if (canonicalName.empty())
+                {
+                    if (!notInGroupReported)
+                    {
+                        std::string msg = targetName + " is not in the paladin's group.";
+                        SendActionError(handler, intent, "not-in-group", msg.c_str());
+                        notInGroupReported = true;
+                    }
+                    refused = true;
+                    continue;
+                }
+                if (!spell.empty() && !ai->HasSpell(spell))
+                {
+                    std::string msg = std::string(bot->GetName()) + " has not trained " + spell + ".";
+                    SendActionError(handler, intent, "unknown-spell", msg.c_str());
+                    refused = true;
+                    continue;
+                }
+                auto* const value = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::BlessingOrderPlayersKey());
+                value->Set(ai::SetBlessingPlayerOrder(value->Get(), canonicalName, blessingWord));
+                ackPlayerName = canonicalName;
             }
-            ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::BlessingOrderKey(classIndex))->Set(word3);
+            else
+            {
+                if (!spell.empty() && !ai->HasSpell(spell))
+                {
+                    std::string msg = std::string(bot->GetName()) + " has not trained " + spell + ".";
+                    SendActionError(handler, intent, "unknown-spell", msg.c_str());
+                    refused = true;
+                    continue;
+                }
+                ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::BlessingOrderKey(classIndex))->Set(blessingWord);
+            }
             sPlayerbotDbStore.Save(ai);
         }
         SendBlessingLine(handler, bot, ai);
@@ -227,7 +281,10 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "no-paladin", "No paladin bots in scope could take that order.");
         return true;
     }
-    SendActionAck(handler, intent, ackScope, paladins, word2 + "=" + word3);
+    std::string const ackDetail = playerMode
+        ? ("player:" + ackPlayerName + "=" + blessingWord)
+        : (word2 + "=" + blessingWord);
+    SendActionAck(handler, intent, ackScope, paladins, ackDetail);
     return true;
 }
 

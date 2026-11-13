@@ -37,7 +37,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot behavior`](#bot-behavior) | `<Name\|scope> <key> <on\|off>` | Sets persistent bot behaviors (loot, AoE, mimic...). |
 | [`.bot service`](#bot-service) | `<Name> [portal <spellId>]` | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](#bot-totem) | `<scope> <slot\|mode\|drop> [...]` | Configures and drops shaman totem loadouts. |
-| [`.bot blessing`](#bot-blessing) | `<scope> <class> <blessing\|auto>` \| `status` | Assigns the blessing each class gets from a paladin bot. |
+| [`.bot blessing`](#bot-blessing) | `<scope> <class> <blessing\|auto>` \| `<scope> player <name> <blessing\|auto>` \| `status` | Assigns the blessing each class or character exception gets from a paladin bot. |
 | [`.bot choice`](#bot-choice) | `<scope> <aura\|aspect\|curse> <value\|auto>` \| `status` | Orders one paladin aura, hunter aspect, or warlock curse per bot. |
 
 ---
@@ -352,22 +352,23 @@ Configures and manages shaman totem loadouts and casting policies.
 
 ### `.bot blessing` <a id="bot-blessing"></a>
 
-Assigns, per paladin bot, the blessing each class gets. Classes left on `auto` keep the automatic coverage pick.
+Assigns, per paladin bot, the blessing each class gets, plus optional per-character exceptions that override the class assignment. Classes left on `auto` keep the automatic coverage pick.
 
 ```text
 .bot blessing <bot|party|raid> <warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid> <might|wisdom|kings|salvation|sanctuary|light|auto>
+.bot blessing <bot|party|raid> player <name> <might|wisdom|kings|salvation|sanctuary|light|auto>
 .bot blessing <bot|party|raid> status
 ```
 
 <details>
 <summary>Blessing assignment rules</summary>
 
-- **Per Paladin, Per Class:** The order is saved with the paladin bot. A paladin gives one blessing per member, so the order replaces its automatic pick for that class and, where needed, its own live blessing on those members. `auto` clears the order.
+- **Per Paladin, Per Class or Character:** Orders are saved with the paladin bot. A paladin gives one blessing per member, so the order replaces its automatic pick and, where needed, its own live blessing on those members. A `player` exception overrides that character's class assignment; `<name>` is case-insensitive and must be in the paladin's group (otherwise `TBM:ACTION_ERR|blessing|not-in-group|<message>`). Up to 20 character exceptions are stored per paladin (adding beyond 20 drops the oldest). `auto` clears the class order or removes the character exception.
 - **Covered Already:** The paladin stands down on a member that already carries the ordered blessing from any caster, so two paladins ordered the same blessing do not overwrite each other.
 - **Untrained Blessing:** A paladin that has not trained the blessing answers `TBM:ACTION_ERR|blessing|unknown-spell|<message>` and keeps its assignment. After a respec an order for a blessing the bot no longer knows is ignored (automatic pick) until it is trained again.
-- **Fixed Blessing Strategies:** The `blessing kings`, `blessing might` and similar strategies still give one blessing to everyone and win over the per-class orders.
-- **Replies:** An order answers one fresh `TBM:BLESSING` record per paladin changed, then `TBM:ACTION_ACK|blessing|<scope>|<n>|<class>=<blessing>`. `status` answers one record per paladin bot in scope (other classes produce none), then `TBM:ACTION_ACK|blessing status|<scope>|<n>|-`.
-- **`TBM:BLESSING` Record:** `TBM:BLESSING|<bot>|warrior=<b>,paladin=<b>,hunter=<b>,rogue=<b>,priest=<b>,shaman=<b>,mage=<b>,warlock=<b>,druid=<b>,known=<b>+<b>+...`. `<b>` is `auto` or a blessing word; `known` lists the blessings the paladin has trained and may be empty.
+- **Fixed Blessing Strategies:** The `blessing kings`, `blessing might` and similar strategies still give one blessing to everyone and win over the per-class and per-character orders.
+- **Replies:** An order answers one fresh `TBM:BLESSING` record per paladin changed, then `TBM:ACTION_ACK|blessing|<scope>|<n>|<class>=<blessing>` (or `player:<Name>=<blessing>`). `status` answers one record per paladin bot in scope (other classes produce none), then `TBM:ACTION_ACK|blessing status|<scope>|<n>|-`.
+- **`TBM:BLESSING` Record:** `TBM:BLESSING|<bot>|warrior=<b>,paladin=<b>,hunter=<b>,rogue=<b>,priest=<b>,shaman=<b>,mage=<b>,warlock=<b>,druid=<b>,known=<b>+<b>+...[,players=<Name>:<b>+<Name>:<b>]`. `<b>` is `auto` or a blessing word; `known` lists the blessings the paladin has trained and may be empty; `players` is omitted when no character exceptions are set.
 
 </details>
 

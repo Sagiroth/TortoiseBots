@@ -561,6 +561,7 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
     // downtime = ".bot downtime" town errands for own alts;
     // professions = ".bot professions" and its TBM:PROF/RECIPE lines;
     // blessing = ".bot blessing" and its TBM:BLESSING lines;
+    // blessing-player = ".bot blessing <scope> player <name> <blessing|auto>" and players= field;
     // engage = ".bot action engage [seconds]" player-pull hold;
     // choice = ".bot choice" and its TBM:CHOICE lines;
     // dungeon-run = ".bot run" and its TBM:RUN status lines,
@@ -568,7 +569,7 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
     bool const dungeonRun = RemoteCommander::RunSurfaceOn(CurrentCommanderGates());
     bool const guildOrders = ai::GuildOrderSourcesReady();
     bool const playerBuyOff = guildOrders && !sPlayerbotAIConfig.guildOrderPlayerBuy;
-    handler->PSendSysMessage("TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime,professions,blessing,engage,choice%s%s%s",
+    handler->PSendSysMessage("TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime,professions,blessing,blessing-player,engage,choice%s%s%s",
         guildOrders ? ",guild-orders,guild-order-steps" : "", playerBuyOff ? ",guild-order-nobuy" : "",
         dungeonRun ? ",dungeon-run" : "");
     // Transport trailer: the addon sends its next commands over the addon
