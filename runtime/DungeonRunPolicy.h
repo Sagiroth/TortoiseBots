@@ -10451,6 +10451,41 @@ inline bool KillFirstBounded(const Run& r)
         (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
 }
 
+inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t entry); // defined below
+
+// Whether the plan or a live boss tactic row makes the entry a kill_first unit: the plan's own kill_first list, or a
+// kill_first / linked_death row of the current step that names it. The pack focus's fallback leaves such a unit alone,
+// and one the run put its skull on keeps it while it lives.
+inline bool KillFirstEntry(const Run& r, std::uint32_t entry)
+{
+    if (!entry)
+        return false;
+    if (r.plan && r.plan->KillFirstRank(entry) >= 0)
+        return true;
+    const PlanStep* const s = Current(r);
+    return s != nullptr && BossTacticOwnsEntry(r, *s, entry);
+}
+
+// The living, attackable kill_first unit a guid names, even passive (in no combat yet) and even after it dropped out of
+// every attacker list but still stands in the step (Facts::units): the run's skull stays on it until it dies, and the
+// pack's fallback takes over only then. Null for none.
+inline const UnitFact* LivingKillFirstUnit(const Run& r, const Facts& f, std::uint64_t guid)
+{
+    if (!guid)
+        return nullptr;
+    auto const find = [&r, guid](const std::vector<UnitFact>& units) -> const UnitFact*
+    {
+        for (const UnitFact& u : units)
+            if (u.guid == guid && u.hostile && u.attackable && !u.evading && !u.stealthed &&
+                KillFirstEntry(r, u.entry))
+                return &u;
+        return nullptr;
+    };
+    if (const UnitFact* const u = find(f.killFirst))
+        return u;
+    return find(f.units);
+}
+
 // The focused unit is gone: no longer among this fight's units (a kill_first one, or the pack's own fallback focus) —
 // it died, so the glue lists living ones only — or crowd-controlled by the run. Then there is nothing left to take the
 // focus back from.
@@ -10458,6 +10493,8 @@ inline bool FocusGone(const Run& r, const Facts& f)
 {
     if (r.ccSent.count(r.focusGuid))
         return true;
+    if (LivingKillFirstUnit(r, f, r.focusGuid))
+        return false;
     for (const UnitFact& u : f.killFirst)
         if (u.guid == r.focusGuid)
             return false;
@@ -10683,24 +10720,29 @@ inline const UnitFact* PickKillFirst(const Run& r, const Facts& f)
         auto const refused = r.focusRefused.find(u.guid);
         if (refused != r.focusRefused.end() && r.runMs < refused->second)
             continue;
-        // Only this fight's: engaged with the party, the ward of one that is,
-        // or a caster keeping an aura on one that is (a channeller).
-        if (!u.engaged && !(u.owner && u.ownerEngaged) && !u.auraOnEngaged)
+        // The focused unit keeps its pick while it lives: a kill_first unit that went passive (in no combat yet) or
+        // that only a kill_first/linked_death row names still holds the run's skull, so the pack's fallback never
+        // takes it over. A linked_death row's unit ranks behind every plan kill_first entry.
+        int const rank = r.plan->KillFirstRank(u.entry);
+        int const pickRank = rank >= 0 ? rank : static_cast<int>(r.plan->killFirst.size());
+        bool const heldEntry = u.guid == r.focusGuid && (rank >= 0 || KillFirstEntry(r, u.entry));
+        if (rank < 0 && !heldEntry)
+            continue;
+        // Only this fight's: engaged with the party, the ward of one that is, or a caster keeping an aura on one that is
+        // (a channeller). The unit the run already focused is this fight's while it lives.
+        if (!u.engaged && !(u.owner && u.ownerEngaged) && !u.auraOnEngaged && !heldEntry)
             continue;
         if (bounded && u.guid != r.focusGuid && u.distLead > kKillFirstMaxYd)
-            continue;
-        int const rank = r.plan->KillFirstRank(u.entry);
-        if (rank < 0)
             continue;
         if (u.guid == r.focusGuid)
         {
             held = &u;
-            heldRank = rank;
+            heldRank = pickRank;
         }
-        if (!best || rank < bestRank || (rank == bestRank && u.distLead < best->distLead))
+        if (!best || pickRank < bestRank || (pickRank == bestRank && u.distLead < best->distLead))
         {
             best = &u;
-            bestRank = rank;
+            bestRank = pickRank;
         }
     }
     // The focused unit stays against one of the same rank: the nearest of a rank changes as the tank and the mobs move,
@@ -10721,6 +10763,14 @@ inline const UnitFact* EngagedHostile(const Facts& f, std::uint64_t guid)
         if (u.guid == guid && u.hostile)
             return &u;
     return nullptr;
+}
+
+// Whether the unit a skull record names is still of this fight: in combat with the party, or a living kill_first unit
+// the run skulled even if passive (in no combat yet, so in no Facts::engagedUnits). The run's skull stays on it until
+// it dies.
+inline bool SkullUnitLives(const Run& r, const Facts& f, std::uint64_t guid)
+{
+    return EngagedHostile(f, guid) != nullptr || LivingKillFirstUnit(r, f, guid) != nullptr;
 }
 
 // Drops the run's stale skull records (Run::focusIconGuid, and the mark an order replaced: Run::prevFocusIconGuid):
@@ -10746,14 +10796,14 @@ inline void SettleFocusIcons(Run& r, const Facts& f)
         r.prevFocusIconGuid = 0;
     if (!f.engagedRead)
         return;
-    if (r.focusIconGuid && !EngagedHostile(f, r.focusIconGuid))
+    if (r.focusIconGuid && !SkullUnitLives(r, f, r.focusIconGuid))
     {
         if (skull == r.focusIconGuid && r.focusIconClear == 0)
             r.focusIconClear = r.focusIconGuid;
         r.focusIconGuid = 0;
         r.focusIconMs = 0;
     }
-    if (r.prevFocusIconGuid && !EngagedHostile(f, r.prevFocusIconGuid))
+    if (r.prevFocusIconGuid && !SkullUnitLives(r, f, r.prevFocusIconGuid))
         r.prevFocusIconGuid = 0;
 }
 
@@ -10824,6 +10874,10 @@ inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
         s->kind == PlanStepKind::MoveDirect;
     bool const boss = s->kind == PlanStepKind::Boss;
     if (!pullOrMove && !boss)
+        return nullptr;
+    // A skull the run set on a kill_first unit is never replaced by the fallback while that unit lives, even passive (in
+    // no combat yet): the pack's own pick waits for its death.
+    if (LivingKillFirstUnit(r, f, r.focusGuid))
         return nullptr;
     const UnitFact* best = nullptr;
     int bestClass = 2;

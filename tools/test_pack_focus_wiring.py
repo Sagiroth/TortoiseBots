@@ -15,6 +15,9 @@ W6: FocusGone also reads Facts::engagedUnits, so a pack focus whose unit left th
 W7: a run skull record is live only while its unit is a living hostile of the fight (SettleFocusIcons drops a record
     whose unit died, despawned or left the fight, and the previous mark once the new one landed); the tick reads a
     skull as the player's only when no live record matches it.
+W8: a kill_first unit that is only passive (in no combat yet) keeps the run's skull: the record survives on a living,
+    attackable kill_first unit (SkullUnitLives), PickKillFirst keeps the focused one, the pack's fallback waits for its
+    death, and FocusGone does not end the focus on it.
 """
 import pathlib
 import unittest
@@ -57,7 +60,7 @@ class PackFocusWiringTest(unittest.TestCase):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")
         self.assertIn("if (boss && (IsStepBoss(*s, u) || (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||", fn)
         self.assertIn("BossTacticOwnsEntry(r, *s, u.entry)))", fn)
-        own = body(POLICY, "inline bool BossTacticOwnsEntry(")
+        own = body(POLICY, "inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t entry)\n{")
         self.assertIn("(row.kind == ai::BossTacticKind::KillFirst || row.kind == ai::BossTacticKind::LinkedDeath)",
                       own)
         self.assertIn("(entry == row.targetEntry || entry == row.bossEntry)", own)
@@ -80,12 +83,30 @@ class PackFocusWiringTest(unittest.TestCase):
         self.assertIn("bool const landed = r.runMs >= r.focusIconMs && r.runMs - r.focusIconMs >= kFocusRefusedIgnoreMs;", fn)
         self.assertIn("if (r.focusIconGuid && skull != r.focusIconGuid && landed)", fn)
         self.assertIn("if (r.prevFocusIconGuid && skull != r.prevFocusIconGuid)", fn)
-        self.assertIn("if (r.focusIconGuid && !EngagedHostile(f, r.focusIconGuid))", fn)
-        self.assertIn("if (r.prevFocusIconGuid && !EngagedHostile(f, r.prevFocusIconGuid))", fn)
+        self.assertIn("if (r.focusIconGuid && !SkullUnitLives(r, f, r.focusIconGuid))", fn)
+        self.assertIn("if (r.prevFocusIconGuid && !SkullUnitLives(r, f, r.prevFocusIconGuid))", fn)
         tick = body(POLICY, "        SettleFocusIcons(r, f);")
         self.assertLess(tick.index("SettleFocusIcons(r, f)"), tick.index("PlayerSkullFocus(r, f)"))
         issue = body(POLICY, "inline std::string IssueKillFirstFocus(")
         self.assertIn("r.focusIconMs = r.runMs;", issue)
+
+    def test_a_passive_kill_first_target_keeps_the_skull(self):
+        lives = body(POLICY, "inline bool SkullUnitLives(")
+        self.assertIn("EngagedHostile(f, guid) != nullptr", lives)
+        self.assertIn("LivingKillFirstUnit(r, f, guid) != nullptr", lives)
+        living = body(POLICY, "inline const UnitFact* LivingKillFirstUnit(")
+        self.assertIn("u.guid == guid && u.hostile && u.attackable && !u.evading && !u.stealthed &&", living)
+        self.assertIn("KillFirstEntry(r, u.entry)", living)
+        self.assertIn("if (const UnitFact* const u = find(f.killFirst))", living)
+        self.assertIn("return find(f.units);", living)
+        pick = body(POLICY, "inline const UnitFact* PickKillFirst(")
+        self.assertIn("bool const heldEntry = u.guid == r.focusGuid && (rank >= 0 || KillFirstEntry(r, u.entry));", pick)
+        self.assertIn("!u.auraOnEngaged && !heldEntry", pick)
+        fallback = body(POLICY, "inline const UnitFact* PickPackFocus(")
+        self.assertIn("if (LivingKillFirstUnit(r, f, r.focusGuid))", fallback)
+        gone = body(POLICY, "inline bool FocusGone(")
+        self.assertIn("if (LivingKillFirstUnit(r, f, r.focusGuid))", gone)
+        self.assertIn("return false;", gone)
 
     def test_priority_and_the_filters(self):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")

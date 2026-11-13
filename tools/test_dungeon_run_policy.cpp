@@ -8389,6 +8389,43 @@ static void TestPackFocusNeverOutranksThePlan()
     CHECK(Tick(r, f) == "focus 1");
 }
 
+// A valid kill_first target that is only passive (in no combat) keeps the run's skull: a skull the run set from the
+// plan's kill_first unit is never replaced by the pack's fallback while that unit lives and can be attacked. Only its
+// death frees the skull for the engaged add.
+static void TestPassiveKillFirstKeepsTheSkull()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    plan.killFirst = {4287};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 4287, 10), Unit(2, 4296, 12)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.raidIconsRead = true;
+    // The kill_first unit fights: it is focused and the glue sets the run's skull.
+    f.engagedUnits = {Engaged(Unit(1, 4287, 8))};
+    f.killFirst = {Engaged(Unit(1, 4287, 8))};
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1);
+    f.raidIcons[kFocusIcon] = 1;
+    // It goes passive (in no combat, so in no engaged unit) while an add keeps fighting: the skull stays on it.
+    f.engagedUnits = {Engaged(Unit(2, 4296, 6))};
+    f.killFirst = {Unit(1, 4287, 8)}; // still this fight's candidate: a bot's target, not engaged
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1 && r.focusIconClear == 0);
+    // It leaves the kill_first read too (the step's own units still carry it): the skull stays, and the fallback
+    // does not take it over.
+    f.killFirst.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1 && r.focusIconClear == 0);
+    // It dies: the pack's fallback picks the engaged add.
+    f.units = {Unit(2, 4296, 6)};
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2 && r.focusIconGuid == 2);
+}
+
 // Codex on #1001: the Polymorph is pending until its aura shows on that unit
 // in the fight (the mage's cc strategy is a combat one): not within
 // kCcLandMs, the mark once more; still not, noted, and the fight goes on.
@@ -37745,6 +37782,7 @@ int main()
     TestRunsMarkOnAUnitThatLeftIsNotThePlayers();
     TestPreviousRunSkullIsNotThePlayers();
     TestPackFocusNeverOutranksThePlan();
+    TestPassiveKillFirstKeepsTheSkull();
     TestCrowdControlMustLand();
     TestKillFirstIsThisFightsOnly();
     TestAuraOnEngagedKeepsThePullBound();
