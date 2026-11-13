@@ -210,6 +210,15 @@ namespace ai
                     chaseDist = std::max(chaseDist - sPlayerbotAIConfig.contactDistance, 0.0f);
                 }
 
+                if (range > ATTACK_DISTANCE && !RequiresAttackableTarget() && !isFriend)
+                {
+                    Unit* const targetVictim = target->GetVictim();
+                    Player* const victimOwner = targetVictim ? targetVictim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+                    bool const onOurGroup = victimOwner && (victimOwner == bot || bot->IsInSameRaidWith(victimOwner));
+                    if (RangedReachWaitsForTarget(target->m_movementInfo.HasMovementFlag(MOVEFLAG_MASK_MOVING), onOurGroup, inLos))
+                        return false;
+                }
+
                 if (MoveStyleValue::WaitForEnemy(ai) && target->m_movementInfo.HasMovementFlag(MOVEFLAG_MASK_MOVING) &&
                         sServerFacade.isInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
@@ -511,9 +520,7 @@ namespace ai
                     goal.x, goal.y, goal.z + targetHeight, true);
             };
 
-            // The walk ends at the stop band inside casting distance, not at
-            // its rim, so the bot casts there instead of stepping again.
-            float const stop = RangedApproachStopDistance(distance);
+            float const stop = distance;
             RangedApproachChoice choice = SelectRangedApproachPoint(points, goal, stop, seesTarget);
             if (!choice.valid)
                 return false;

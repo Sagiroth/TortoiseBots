@@ -192,16 +192,21 @@ int main()
         std::cout << "  [PASS] near-tangent crossing: clamps, keeps the touch point\n";
     }
 
-    // The stop band sits inside the range rim: a bot at 75% of spell range
+    // The stop band sits just inside the range rim: a bot there
     // already casts, so the walk ends before the tank instead of on it.
     {
-        CHECK(RangedApproachStopDistance(26.0f) == 19.5f);
+        CHECK(RangedApproachStopDistance(26.0f) == 23.0f);
+        CHECK(RangedApproachStopDistance(8.0f) == 6.0f);
+        CHECK(ai::RangedReachWaitsForTarget(true, true, true));
+        CHECK(!ai::RangedReachWaitsForTarget(false, true, true));
+        CHECK(!ai::RangedReachWaitsForTarget(true, false, true));
+        CHECK(!ai::RangedReachWaitsForTarget(true, true, false));
         CHECK(RangedApproachStopDistance(0.0f) == 0.0f);
-        CHECK(RangedApproachInPosition(19.5f, 26.0f, true));
+        CHECK(RangedApproachInPosition(23.0f, 26.0f, true));
         CHECK(RangedApproachInPosition(10.0f, 26.0f, true));
         CHECK(!RangedApproachInPosition(19.6f, 26.0f, true));
         CHECK(!RangedApproachInPosition(10.0f, 26.0f, false));
-        std::cout << "  [PASS] stop band: in position at 75% of range, in sight\n";
+        std::cout << "  [PASS] stop band: in position just inside range, in sight\n";
     }
 
     // A destination inside an idle pack's aggro range is refused: the walk

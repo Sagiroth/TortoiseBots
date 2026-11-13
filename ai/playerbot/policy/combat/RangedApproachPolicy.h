@@ -43,16 +43,22 @@ namespace ai
         return dx * dx + dy * dy + dz * dz;
     }
 
-    // Stop band for a ranged reach: the walk ends this far inside the
-    // casting distance, so a bot at the band's edge casts instead of
-    // stepping again. Well inside real spell range, so a small step by the
-    // target does not kick the reach back off; far enough out that the bot
-    // does not stand on the tank.
+    // Where a ranged reach stops: a few yards inside the casting distance.
+    // The walk aims at where the target stood when it started, and a pulled
+    // mob runs toward the group meanwhile, so every extra yard walked is a
+    // yard closer to the fight and to the packs behind it.
     inline float RangedApproachStopDistance(float distance)
     {
         if (distance <= 0.0f)
             return 0.0f;
-        return distance * 0.75f;
+        return distance > 12.0f ? distance - 3.0f : distance * 0.75f;
+    }
+
+    // A mob that is already running at someone in the bot's group comes into
+    // range by itself; walking to meet it ends next to the tank.
+    inline bool RangedReachWaitsForTarget(bool targetMoving, bool targetOnOurGroup, bool inLos)
+    {
+        return targetMoving && targetOnOurGroup && inLos;
     }
 
     // Whether the bot already stands where the reach wants it: inside the
