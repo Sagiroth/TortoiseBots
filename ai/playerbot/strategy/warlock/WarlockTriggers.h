@@ -162,6 +162,7 @@ namespace ai
     {
     public:
         CurseOfTheElementsOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of the elements") {}
+        bool IsActive() override;
         Value<Unit*>* GetTargetValue() override;
     };
 

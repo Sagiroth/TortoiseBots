@@ -229,10 +229,18 @@ bool CurseOfTheElementsTrigger::IsActive()
     return DebuffTrigger::IsActive();
 }
 
+bool CurseOfTheElementsOnAttackerTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of the elements", "curse elements"))
+        return false;
+    return DebuffOnAttackerTrigger::IsActive();
+}
+
 Value<Unit*>* CurseOfTheElementsOnAttackerTrigger::GetTargetValue()
 {
     // The manual order lifts the health line only; the raid cap still holds.
-    bool const manual = ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT);
+    bool const manual = ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT) ||
+        OrderedCurseFor(ai) == "curse of the elements";
     return context->GetValue<Unit*>(manual ? "warlock spread attacker manual" : "warlock spread attacker", spell);
 }
 
