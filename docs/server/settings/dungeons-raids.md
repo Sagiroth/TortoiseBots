@@ -59,7 +59,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPackClearRepulls`](#aiplayerbotdungeonrunpackclearrepulls) | `3` | Residue pulls a pull step may send before it pauses for a human. |
 | [`AiPlayerbot.DungeonRunStragglerPull`](#aiplayerbotdungeonrunstragglerpull) | `0` | The tank walks to and pulls a pack unit or patrol the step waited for and did not come, instead of pausing; a stand-pull row's patrol is waited for one loop of its path at most. |
 | [`AiPlayerbot.DungeonRunTotemFocus`](#aiplayerbotdungeonruntotemfocus) | `0` | A totem the plan kills first is focused by the damage dealers alone, and before the guard, so its 1-2 s kill never waits. |
-| [`AiPlayerbot.DungeonRunPlayerLed`](#aiplayerbotdungeonrunplayerled) | `0` | Lets a player who leads his own party start a player-led run (`.bot run start ... player`): he walks, the run leader pulls the packs near him. |
+| [`AiPlayerbot.DungeonRunPlayerLed`](#aiplayerbotdungeonrunplayerled) | `1` | Lets a player who leads his own party start a player-led run (`.bot run start ... player`): he walks, the run leader pulls the packs near him. |
 | [`AiPlayerbot.DungeonRunPlayerLedAwayMinutes`](#aiplayerbotdungeonrunplayerledawayminutes) | `10` | How long the leading player of a player-led run may be out of the plan's dungeon before the run stops. |
 | [`AiPlayerbot.DungeonRunPlayerLedPullYd`](#aiplayerbotdungeonrunplayerledpullyd) | `40` | How close the leading player stands to a plan pack or boss for the player-led run to pull it. |
 | [`AiPlayerbot.DungeonRunRaid`](#aiplayerbotdungeonrunraid) | `0` | Lets the run leader bind the commander's raid of 6 to 40 bots and runs it with the raid rules (needs `AiPlayerbot.DungeonSelfClear` and `AiPlayerbot.RemoteCommander`). |
@@ -118,7 +118,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonReviveHoldYd`](#aiplayerbotdungeonreviveholdyd) | `0` (recommended `100`) | A run's bot revived farther than this (yards) from the lead bot, and every bot the run is bringing back, stands still until it arrives (60 s at most); `0` off. |
 | [`AiPlayerbot.DungeonRunWalkBackAfterWonFight`](#aiplayerbotdungeonrunwalkbackafterwonfight) | `0` | `1` walks the tank and party back to the stand after every guarded fight (the old way); `0` goes on from where the tank stands once the pack is cleared. |
 | [`AiPlayerbot.DungeonSelfClear`](#aiplayerbotdungeonselfclear) | `1` | Turns on the run leader (`.bot run`) for in-party, player-led and server-owned runs. |
-| [`AiPlayerbot.DungeonTactics`](#aiplayerbotdungeontactics) | `0` | Applies the per-boss tactics table (`ai_boss_tactic`) to every bot, not only commanded parties. |
+| [`AiPlayerbot.DungeonTactics`](#aiplayerbotdungeontactics) | `1` | Applies the per-boss tactics table (`ai_boss_tactic`) to every bot, not only commanded parties. |
 | [`AiPlayerbot.EnableCustomRaidTactics`](#aiplayerbotenablecustomraidtactics) | `1` | Gates scripted encounter tactics and transition strategies for custom raids. |
 | [`AiPlayerbot.HazardEvasionDistance`](#aiplayerbothazardevasiondistance) | `12.0` | Cap in yards on the step bots take when spreading for spacing. |
 | [`AiPlayerbot.OnyxiaWhelpsAndEggs`](#aiplayerbotonyxiawhelpsandeggs) | `1` | Prioritizes whelp clearing and egg avoidance during Onyxia phase two. |
@@ -591,7 +591,7 @@ Focuses a totem the plan kills first on the damage dealers alone, and before the
 
 ### `AiPlayerbot.DungeonRunPlayerLed`
 Lets a player who leads his own party of bots start a player-led run of a dungeon plan.
-**Default:** `0` · **Values:** `0` refused, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+**Default:** `1` · **Values:** `0` refused, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
@@ -1710,7 +1710,7 @@ Turns on the run leader (`.bot run`) for in-party, player-led and server-owned r
 
 ### `AiPlayerbot.DungeonTactics`
 Applies the per-boss rows of the world table `ai_boss_tactic` (interrupt, kill first, stay behind) while bots fight that boss.
-**Default:** `0` · **Values:** `0` only bound groups, `1` every bot on a map with rows · **Restart:** needed
+**Default:** `1` · **Values:** `0` only bound groups, `1` every bot on a map with rows · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

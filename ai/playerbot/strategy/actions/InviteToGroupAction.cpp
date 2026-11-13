@@ -5,6 +5,7 @@
 #include "playerbot/policy/rpg/GroupHygienePolicy.h"
 #include "playerbot/strategy/values/Formations.h"
 #include "../../../../runtime/BotActivityLease.h"
+#include "../../../../runtime/ClaimLifecycle.h"
 #include "Guild/GuildMgr.h"
 namespace ai
 {
@@ -12,6 +13,13 @@ namespace ai
     {
         return bot && TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow()) ==
             TortoiseBots::BotActivity::Dungeon;
+    }
+
+    // A claimed guild bot belongs to its player's guild: it never sends
+    // random invites, or it pesters that player whenever it walks by.
+    static bool IsClaimedGuildBot(Player* bot)
+    {
+        return bot && TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
     }
     bool InviteToGroupAction::Invite(Player* inviter, Player* player)
     {
@@ -374,6 +382,9 @@ namespace ai
         if (!sPlayerbotAIConfig.randomBotGroupNearby && !sPlayerbotAIConfig.randomBotInvitePlayer)
             return false;
 
+        if (IsClaimedGuildBot(bot))
+            return false;
+
         if (bot->InBattleGround())
             return false;
 
@@ -415,7 +426,7 @@ namespace ai
     bool InviteGuildToGroupAction::isUseful()
     {
         if (!bot->GetGuildId() || !sPlayerbotAIConfig.randomBotGuildNearby ||
-            !ai::RandomGroupInviteAllowed(IsDungeonCrew(bot)))
+            !ai::RandomGroupInviteAllowed(IsDungeonCrew(bot)) || IsClaimedGuildBot(bot))
             return false;
 
         if (ai->HasRealPlayerMaster())

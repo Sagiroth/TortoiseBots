@@ -2,10 +2,12 @@
 #include "PlayerbotAIAdapter.h"
 #include "BotManager.h"
 #include "PlayerbotAIStorage.h"
+#include "AltBotService.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BotActionLog.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotDbStore.h"
 #include "ByteBuffer.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -36,6 +38,9 @@ bool PlayerbotAIAdapter::Initialize()
     if (master_)
     {
         ai_->SetMaster(master_); // pi-lens-ignore: clang:all
+        // The engines were built before the master was known, so the saved
+        // strategies and values (loot settings, ignored spells) were skipped.
+        ai_->ResetStrategies(); // pi-lens-ignore: clang:all
         // AiFactory builds the engines before the native adapter knows the
         // owner. Re-apply the mature movement default at this seam so manual
         // same-account bots use Strategy/Trigger/Action follow rather than a
@@ -123,6 +128,20 @@ void PlayerbotAIAdapter::DetachMaster()
     master_ = nullptr;
     if (ai_)
         ai_->ClearMasterPointer(); // pi-lens-ignore: clang:all
+}
+
+// Value commands such as `ll` and `ss` change only the live AI, and a
+// strategy change saves only up to then, so a player's bot saves when it
+// leaves. An owned alt whose owner is offline is still the player's
+// companion; an alt playing on its own runs the pool kit, which must not
+// overwrite it. Call before the alt session ends (it ends on logout).
+void PlayerbotAIAdapter::SavePlayerSnapshot()
+{
+    if (!ai_ || !bot_ || sPlayerbotAIConfig.bExplicitDbStoreSave) // pi-lens-ignore: clang:all
+        return;
+    if (ai_->HasRealPlayerMaster() ||
+        (ai_->IsOwnedBot() && !AltBotService::Instance().IsAutonomous(bot_->GetObjectGuid())))
+        sPlayerbotDbStore.Save(ai_);
 }
 
 void PlayerbotAIAdapter::Shutdown()

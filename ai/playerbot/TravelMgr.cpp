@@ -3043,6 +3043,18 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
             return false;
     }
 
+    static uint32 const levellingPurposes =
+        (uint32)TravelDestinationPurpose::GenericRpg |
+        (uint32)TravelDestinationPurpose::Grind |
+        (uint32)TravelDestinationPurpose::GatherSkinning |
+        (uint32)TravelDestinationPurpose::GatherMining |
+        (uint32)TravelDestinationPurpose::GatherHerbalism |
+        (uint32)TravelDestinationPurpose::GatherFishing |
+        (uint32)TravelDestinationPurpose::Explore;
+    if ((purposeFlag & levellingPurposes) && posArea &&
+        ai::IsNoLevellingZone(posArea->ZoneId ? posArea->ZoneId : posArea->Id))
+        return false;
+
     // A beginner vendor trip is the one RPG errand a level 1-4 bot may make (see
     // RpgTravelDestination::IsPossible). The area-level check would reject the bot's
     // own camp vendor: starting areas are rated 2-5 while the bot is 1-4. The trip is

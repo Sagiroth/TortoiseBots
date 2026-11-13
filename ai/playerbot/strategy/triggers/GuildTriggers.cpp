@@ -3,6 +3,8 @@
 #include "GuildTriggers.h"
 #include "Guild/GuildMgr.h"
 #include "../../../runtime/AltBotService.h"
+#include "../../../runtime/GuildOrderStore.h"
+#include "playerbot/strategy/values/GuildValues.h"
 
 using namespace ai;
 
@@ -44,4 +46,16 @@ bool LeaveLargeGuildTrigger::IsActive()
 	uint32 maxMembers = ai->GetMaxPreferedGuildSize();
 
 	return members > maxMembers;
+}
+
+bool GuildCraftStepTrigger::IsActive()
+{
+    if (!bot->GetGuildId() || sServerFacade.IsInCombat(bot))
+        return false;
+    if (!AI_VALUE(GuildOrder, "guild order").IsCraftOrder())
+        return false;
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    return record && record->state == TortoiseBots::GuildOrders::OrderState::Working &&
+        record->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Craft;
 }

@@ -1178,6 +1178,7 @@ public:
     ai::LogFileRotation logRotation;
     // AiPlayerbot.LogRetentionDays; 0 = never delete old pieces.
     uint32 logRetentionDays = 0;
+    bool updateCheck = true;
     // Hour (unix time / 3600) each live log was opened in.
     std::unordered_map<std::string, time_t> logHour;
 

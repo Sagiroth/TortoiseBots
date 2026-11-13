@@ -117,6 +117,231 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.23.2 (2026-11-10)
+
+### Groups & Combat
+- Ordering the party to rest no longer interrupts bots that are already eating or drinking mid-meal. [#1583](https://github.com/Sagiroth/TortoiseBots/pull/1583)
+- A rest order now fills bots all the way up, so they eat and drink before the next pull. [#1583](https://github.com/Sagiroth/TortoiseBots/pull/1583)
+- Bots that were almost full now join the rest instead of stopping at 90%. [#1583](https://github.com/Sagiroth/TortoiseBots/pull/1583)
+
+---
+
+## v1.23.1 (2026-11-10)
+
+### Bots & Companions
+- Guild bots no longer send party invites just because they walk past you. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+- Bots no longer invite real players by default. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+
+### Crafting & Guild Bank
+- Craft orders now check the guild bank for ready-made parts before sending bots out to farm. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+- A Light Armor Kit order now uses stored Light Leather instead of farming Ruined Leather Scraps. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+- Bots now finish craft steps without switching back to other tasks between items. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+
+### Dashboard
+- The dashboard bot list can now be filtered, so you can find a specific bot faster. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+
+---
+
+## v1.23.0 (2026-11-10)
+
+### Companions & Parties
+- Party bots now walk to the flight master, take the same flight as you and land beside you. [#1571](https://github.com/Sagiroth/TortoiseBots/pull/1571)
+- A bot left behind at the flight master is summoned to you once you land. [#1571](https://github.com/Sagiroth/TortoiseBots/pull/1571)
+- Bots now take off blacklisted gear they were already wearing and fill the slot with something fitting. [#1572](https://github.com/Sagiroth/TortoiseBots/pull/1572)
+- A pool bot that leaves a party now goes back to acting on its own. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+
+### Classes & Combat
+- In a party, hunters now wait instead of running past monsters nobody has pulled yet. [#1570](https://github.com/Sagiroth/TortoiseBots/pull/1570)
+- A hunter stepping out of melee now picks a clear spot instead of backing into other monsters. [#1570](https://github.com/Sagiroth/TortoiseBots/pull/1570)
+- Bots now interrupt enemy spells far more reliably, even when they already hold high threat. [#1576](https://github.com/Sagiroth/TortoiseBots/pull/1576)
+- Bots also stop wasting interrupts on spells the target's facing blocks anyway. [#1576](https://github.com/Sagiroth/TortoiseBots/pull/1576)
+- The two new interrupt options are off by default; turn them on in the bot settings to get the improvement. [#1576](https://github.com/Sagiroth/TortoiseBots/pull/1576)
+
+### Movement & the World
+- Bots now walk only where a player can: no more climbing steep slopes or cutting through walls. [#1580](https://github.com/Sagiroth/TortoiseBots/pull/1580)
+- Short walks to vendors, portals, quest boards and flight masters now follow the ground instead of a straight line. [#1580](https://github.com/Sagiroth/TortoiseBots/pull/1580)
+- Long trips no longer replay stored route points that don't match the world, so bots stop drifting off course. [#1580](https://github.com/Sagiroth/TortoiseBots/pull/1580)
+- Bots no longer pile up on the unreachable ice floe at Iceflow Lake or the upper terrace at Algaz Station. [#1573](https://github.com/Sagiroth/TortoiseBots/pull/1573)
+- Bots that do get stuck are freed and now pick a different spot instead of heading straight back. [#1573](https://github.com/Sagiroth/TortoiseBots/pull/1573)
+- Bots on long walks keep going instead of pausing between each leg of the journey. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+
+### Starting Zones
+- New goblins and high elves now start in the emptiest start zone of their faction instead of always the same one. [#1568](https://github.com/Sagiroth/TortoiseBots/pull/1568)
+- Server owners who set their own start zone weights, or switch the even spread off, keep the old placement. [#1568](https://github.com/Sagiroth/TortoiseBots/pull/1568)
+
+### Guild Orders
+- Guild order bots no longer get stuck at the bank when their guild has no bank. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+- Order bots now try to craft or gather an item themselves before spending gold on it at the auction house. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+- Searching orders with many similar names no longer hides items a bot could actually make. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+
+### Performance
+- Bots near a player no longer take their turns first by default, so distant bots stop stuttering and reacting late. [#1578](https://github.com/Sagiroth/TortoiseBots/pull/1578) [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+- Server owners with a very large bot pool on a slow machine can switch the nearby-bots-first preference back on with the nearby range setting. [#1578](https://github.com/Sagiroth/TortoiseBots/pull/1578)
+
+### Behind the scenes
+- The install guide now warns server owners that the automatic database updater can re-apply old updates, so keep a backup or update by hand. [#1581](https://github.com/Sagiroth/TortoiseBots/pull/1581)
+
+---
+
+## v1.22.1 (2026-11-08)
+
+### Classes & Combat
+- Warlocks now keep a single soulstone on the group instead of handing one to nearly everyone. [#1564](https://github.com/Sagiroth/TortoiseBots/pull/1564)
+
+### Bots & Companions
+- Bots whose drink was interrupted now start drinking again instead of waiting for the next fight. [#1564](https://github.com/Sagiroth/TortoiseBots/pull/1564)
+- Servers using an older settings template now block the listed gear items, so hired bots no longer turn up wearing the Lucky Top Hat. [#1564](https://github.com/Sagiroth/TortoiseBots/pull/1564)
+
+---
+
+## v1.22.0 (2026-11-08)
+
+### Addon & Updates
+- If your TortoiseBots addon is too old for the server, you now get a clear warning instead of confusing errors. [#1563](https://github.com/Sagiroth/TortoiseBots/pull/1563)
+- The server also checks once at startup for newer releases, so you can be pointed to the latest download. [#1563](https://github.com/Sagiroth/TortoiseBots/pull/1563)
+
+---
+
+## v1.21.0 (2026-11-08)
+
+### Groups & Dungeons
+- Bots now roll Need on daggers for rogues, plus rings, necklaces, trinkets, shields and caster off-hands that suit their spec. [#1558](https://github.com/Sagiroth/TortoiseBots/pull/1558)
+- Cloaks no longer count as cloth, so plate and mail wearers can roll Need on a cloak upgrade. [#1558](https://github.com/Sagiroth/TortoiseBots/pull/1558)
+- A bot now rolls Greed on an upgrade when someone in the group plays the spec the item is made for. [#1559](https://github.com/Sagiroth/TortoiseBots/pull/1559)
+- That courtesy now also looks at bot groupmates, not just real players. [#1560](https://github.com/Sagiroth/TortoiseBots/pull/1560)
+- A bot that already owns a unique item no longer stops the rest of the group from rolling on it. [#1560](https://github.com/Sagiroth/TortoiseBots/pull/1560)
+- Upgrades are compared without enchant bonuses, so a strong enchant no longer hides a clearly better item. [#1560](https://github.com/Sagiroth/TortoiseBots/pull/1560)
+
+### Classes & Combat
+- Priests no longer shield a rage tank above 20% health, in combat or out of it. [#1557](https://github.com/Sagiroth/TortoiseBots/pull/1557)
+- The same rule now holds when the tank is a warrior levelling in Arms or Fury, or a druid without tank talents. [#1557](https://github.com/Sagiroth/TortoiseBots/pull/1557)
+
+### Behind the scenes
+- The startup log no longer fills with about twenty old database warnings. [#1562](https://github.com/Sagiroth/TortoiseBots/pull/1562)
+
+---
+
+## v1.20.4 (2026-11-07)
+
+### Guilds & Banks
+- Bots that join your guild now get the lowest rank instead of Officer. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- A rank you give a bot by hand now stays put, even after a server restart. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- `.bot order rank <n>` still moves all your bots to the same rank at once. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- Bank tab 1 now opens to the bots' rank so they can store and fetch order materials there. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- The bank tab change shows up after a server restart, so restart twice if you just updated. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+
+---
+
+## v1.20.3 (2026-11-07)
+
+### World & Bots
+- Bots no longer travel to Moonglade to level, so low-level bots stop piling up there with nothing to fight. [#1550](https://github.com/Sagiroth/TortoiseBots/pull/1550)
+- Bots that start playing on their own, or come back after dying, now head to proper levelling areas instead. [#1550](https://github.com/Sagiroth/TortoiseBots/pull/1550)
+
+### Characters & Settings
+- Alt characters you own keep their settings after you log out and back in. [#1552](https://github.com/Sagiroth/TortoiseBots/pull/1552)
+
+---
+
+## v1.20.2 (2026-11-07)
+
+### Dungeons & Groups
+- You can now lead your own bot party through a dungeon by default; bot-led runs work as before. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+- Every bot in a dungeon now uses boss tactics, interrupting key spells, killing adds first and staying out of frontal attacks. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+
+### Companions
+- An alt kicked from your party now stays your companion by default instead of playing on its own. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+- Server owners can bring back the old alt behaviour with the alt-bots setting. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+
+---
+
+## v1.20.1 (2026-11-07)
+
+### Groups & Dungeons
+- Bots in your dungeon group no longer turn it into a raid by mistake, so it stays a normal party. [#1546](https://github.com/Sagiroth/TortoiseBots/pull/1546)
+- Mage bots now only open portals for their own party or raid, and refuse requests from anyone else. [#1546](https://github.com/Sagiroth/TortoiseBots/pull/1546)
+
+### Quests & Levelling
+- Alt-bots playing alone now skip grey quests with no useful reward, so they no longer get stuck on city errands. [#1548](https://github.com/Sagiroth/TortoiseBots/pull/1548)
+- Quests already in an alt's log are never dropped, because that log belongs to your character. [#1548](https://github.com/Sagiroth/TortoiseBots/pull/1548)
+
+---
+
+## v1.20.0 (2026-11-07)
+
+### Raids & Dungeons
+- In Zul'Gurub, only bots carrying Delusions are sent to fight Jin'do's Shades, and tanks now leave them alone. [#1541](https://github.com/Sagiroth/TortoiseBots/pull/1541)
+- Sons of Hakkar that land on a non-tank are picked up by another tank, then released so damage dealers can finish them. [#1541](https://github.com/Sagiroth/TortoiseBots/pull/1541)
+- Bots re-plan their walk out of Hakkar's siphon and retry once per cycle instead of stalling. [#1541](https://github.com/Sagiroth/TortoiseBots/pull/1541)
+
+### Bots & Levelling
+- Alts playing on their own no longer wander into Stormwind or Ironforge for the auction house and get stuck there. [#1538](https://github.com/Sagiroth/TortoiseBots/pull/1538)
+- An alt deciding whether it needs a vendor now counts only what it may actually sell, so it stops waiting on errands it cannot finish. [#1538](https://github.com/Sagiroth/TortoiseBots/pull/1538)
+
+### Items & Gear
+- Bots no longer receive Game Master weapons, legendary gear or other items players cannot really obtain. [#1539](https://github.com/Sagiroth/TortoiseBots/pull/1539)
+- Automatic gearing now hands out only gear that can actually be found in the world. [#1539](https://github.com/Sagiroth/TortoiseBots/pull/1539)
+- Event hats and other blocked items are kept off bots by default. [#1539](https://github.com/Sagiroth/TortoiseBots/pull/1539)
+
+---
+
+## v1.19.0 (2026-11-06)
+
+### Groups & Dungeons
+- Bot raids can now kill Hakkar and Jin'do in Zul'Gurub, with fewer crashes and better class abilities. [#1534](https://github.com/Sagiroth/TortoiseBots/pull/1534)
+
+### Bots & Services
+- Mage and warlock bots now give their goods and services for free. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1533](https://github.com/Sagiroth/TortoiseBots/pull/1533)
+- You can now ask a mage bot for a portal. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1533](https://github.com/Sagiroth/TortoiseBots/pull/1533)
+- Bots following you now come through a party mage's portal instead of staying behind. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1533](https://github.com/Sagiroth/TortoiseBots/pull/1533)
+- Bots out in the world now buff players they pass, and priests or druids quickly heal nearby players who are low on health. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1532](https://github.com/Sagiroth/TortoiseBots/pull/1532)
+- Bots now visit a guild banker or mailbox for orders, so finished orders no longer stay stuck as delivering. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535)
+
+### Dashboard
+- After time away, you now get a summary of what your alt-bots did. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1531](https://github.com/Sagiroth/TortoiseBots/pull/1531)
+
+---
+
+## v1.18.0 (2026-11-06)
+
+### Classes & Combat
+- Raid bots now focus enemy totems and use a better warlock spell rotation. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Raid bots now cast their class spells more reliably. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Raid groups now fill healer seats more reliably. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Restoration shamans now keep their shields up better in raids. [#1524](https://github.com/Sagiroth/TortoiseBots/pull/1524)
+- Raids now counter Hakkar's Blood Siphon, so he heals far less. [#1524](https://github.com/Sagiroth/TortoiseBots/pull/1524)
+- Raids now keep Hakkar's melee off non-tanks by managing threat even when he cannot be taunted. [#1526](https://github.com/Sagiroth/TortoiseBots/pull/1526)
+- Raids now handle Hakkar's first Blood Siphon better, so fewer raiders are caught early. [#1526](https://github.com/Sagiroth/TortoiseBots/pull/1526)
+
+### Groups & Dungeons
+- Raid bots now recover when a run has nothing to do and end stalled runs cleanly. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Ruins of Ahn'Qiraj raid tactics are improved. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- The third tank now actually pulls Hakkar's Son instead of standing still. [#1526](https://github.com/Sagiroth/TortoiseBots/pull/1526)
+- Several raid hires can now run at the same time. [#1524](https://github.com/Sagiroth/TortoiseBots/pull/1524)
+
+### Quests & Levelling
+- A new opt-in setting, AiPlayerbot.AutoLearnQuestSpellsAlts, lets your alts learn class-quest spells on bot login, level-up and talent changes. [#1520](https://github.com/Sagiroth/TortoiseBots/pull/1520)
+- Hunter pets now train themselves on level-up and stay within the four-ability and training-point limits. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+- Pets no longer lose all their skills when they log in. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+- Hired companion pets and alt pets now learn new ranks, and alt warlock demons learn new Grimoire ranks. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+- Pets now fill gaps in their training as they level. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+
+### World & Economy
+- Bots now ride the lifts in Thunder Bluff, Freewind Post, Undercity and the Great Lift instead of walking long routes or teleporting. [#1523](https://github.com/Sagiroth/TortoiseBots/pull/1523)
+- Guild orders can now search every online guild bot for who can make a recipe or enchant, with skill and materials. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- Enchant choices in that search are sorted from weakest to strongest. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- When ordering a craft you can tick the materials you bring, so the bot does not buy or farm them. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- Guild enchanters now take enchant orders, teleport to the capital inn and gather materials from bags, guild bank and auction house. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- Guild enchanters now also take disenchant orders. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+
+### Dashboard
+- The Guild tab now shows each bot's professions. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+
+### Behind the scenes
+- Test timing checks can now be relaxed on busy build machines, while normal checks stay strict. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+
+---
+
 ## v1.17.0 (2026-11-04)
 
 ### Groups & Dungeons

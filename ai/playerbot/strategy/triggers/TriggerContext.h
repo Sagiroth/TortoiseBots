@@ -288,6 +288,7 @@ namespace ai
             creators["petition signed"] = [](PlayerbotAI* ai) { return new PetitionTurnInTrigger(ai); };
             creators["buy tabard"] = [](PlayerbotAI* ai) { return new BuyTabardTrigger(ai); };
             creators["leave large guild"] = [](PlayerbotAI* ai) { return new LeaveLargeGuildTrigger(ai); };
+            creators["guild craft step"] = [](PlayerbotAI* ai) { return new GuildCraftStepTrigger(ai); };
             creators["in pvp"] = [](PlayerbotAI* ai) { return new InPvpTrigger(ai); };
             creators["in pve"] = [](PlayerbotAI* ai) { return new InPveTrigger(ai); };
             creators["in raid fight"] = [](PlayerbotAI* ai) { return new InRaidFightTrigger(ai); };

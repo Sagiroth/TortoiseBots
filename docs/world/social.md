@@ -37,7 +37,7 @@ A pool bot passing a real player in the world casts a class buff on them and kee
 
 | What happens | Details | Setting |
 | :--- | :--- | :--- |
-| **Bots invite you** | Some pool bots (the ones that like to lead groups) invite a nearby player who is not in a group, is within two levels of them and stands within about spell range. Set `/dnd` and they stop inviting you. | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) (on) |
+| **Bots invite you** | Some pool bots (the ones that like to lead groups) invite a nearby player who is not in a group, is within two levels of them and stands within about spell range. Set `/dnd` and they stop inviting you. | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) (off) |
 | **Bots group with each other** | Off by default: pool bots quest alone, because bot leaders used to drag their followers around in useless follow chains. | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) (off) |
 | **Food and water** | A mage in your group conjures food and water and trades it to members who have none (water only to mana users). Sharing through the trade window is on by default; giving a conjured item needs the giver to have mana to spare. | On by default |
 

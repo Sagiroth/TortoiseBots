@@ -24,6 +24,7 @@
 #include "../commands/BotCommandQueue.h"
 #include "../commands/BotCommands.h"
 #include "../commands/BotCommandHandlers.h"
+#include "../runtime/UpdateCheck.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/BotActionLog.h"
 #include "Config/Config.h"
@@ -165,6 +166,8 @@ void BotHostAdapter::OnStartup()
 
     TB_LOG_BASIC("TortoiseBots %s (AI %s)", BuildVersion().c_str(), configured ? "enabled" : "disabled");
     TB_LOG_BASIC("%s", AttributionLine().c_str());
+    if (sPlayerbotAIConfig.updateCheck)
+        UpdateCheck::Instance().Start();
     ObservabilityEmitter::Instance().Initialize();
     // The dashboard's Commanders tab: the standing remote-commander bindings.
     ObservabilityEmitter::Instance().SetCommanderProvider(

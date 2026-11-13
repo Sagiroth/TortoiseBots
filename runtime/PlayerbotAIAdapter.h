@@ -39,6 +39,7 @@ public:
     void DetachMaster();
 
     // Called on bot logout/removal
+    void SavePlayerSnapshot();
     void Shutdown();
 
     PlayerbotAI* GetAI() const { return ai_; }

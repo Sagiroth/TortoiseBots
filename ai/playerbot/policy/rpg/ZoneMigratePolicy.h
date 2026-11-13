@@ -139,4 +139,13 @@ namespace ai
         std::int32_t const upper = botLevel + 5 > 60 ? 60 : botLevel + 5;
         return zoneLevel >= lower && zoneLevel <= upper;
     }
+
+    // Zones a bot never picks to level in (teleport, grind, roaming, gathering),
+    // whatever their level; quests, trainers and services there stay open.
+    // Moonglade (493): its sub-areas carry level 15 in the client data, but it
+    // has nothing to fight for a levelling bot.
+    inline bool IsNoLevellingZone(std::uint32_t zoneId)
+    {
+        return zoneId == 493;
+    }
 }

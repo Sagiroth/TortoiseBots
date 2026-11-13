@@ -68,6 +68,14 @@ inline std::string CoreRevisionDate()
 constexpr char const* kModuleAuthor = "Sagiroth";
 constexpr char const* kModuleSourceUrl = "https://github.com/Sagiroth/TortoiseBots";
 constexpr char const* kModuleLicence = "AGPL-3.0";
+constexpr char const* kAddonSourceUrl = "https://github.com/Sagiroth/TortoiseBotsManager";
+
+// Addon protocol levels sent as TBM:PROTO, separate from release numbers:
+// the level this module speaks and the lowest TortoiseBotsManager level it
+// works with. Raise them only when a change needs the addon updated too;
+// fields appended at the end of a line need no raise.
+constexpr unsigned kAddonProtocol = 1;
+constexpr unsigned kMinAddonProtocol = 1;
 
 inline std::string AttributionLine()
 {

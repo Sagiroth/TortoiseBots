@@ -232,7 +232,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunFightForward = config.GetBoolDefault("AiPlayerbot.DungeonRunFightForward", true);
     dungeonRunLightRest = config.GetBoolDefault("AiPlayerbot.DungeonRunLightRest", true);
     dungeonRunLootFfa = config.GetBoolDefault("AiPlayerbot.DungeonRunLootFfa", false);
-    dungeonRunPlayerLed = config.GetBoolDefault("AiPlayerbot.DungeonRunPlayerLed", false);
+    dungeonRunPlayerLed = config.GetBoolDefault("AiPlayerbot.DungeonRunPlayerLed", true);
     dungeonRunPlayerLedPullYd = std::min(100.0f, std::max(5.0f, config.GetFloatDefault("AiPlayerbot.DungeonRunPlayerLedPullYd", 40.0f)));
     dungeonRunPlayerLedAwayMinutes = static_cast<uint32>(std::min(60, std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunPlayerLedAwayMinutes", 10))));
     dungeonRunGiveItems = config.GetBoolDefault("AiPlayerbot.DungeonRunGiveItems", true);
@@ -590,7 +590,7 @@ bool PlayerbotAIConfig::Initialize()
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);
     fleeingEnabled = config.GetBoolDefault("AiPlayerbot.FleeingEnabled", true);
     poolMeleeHoldGround = config.GetBoolDefault("AiPlayerbot.PoolMeleeHoldGround", false);
-    altBots = config.GetBoolDefault("AiPlayerbot.AltBots", true);
+    altBots = config.GetBoolDefault("AiPlayerbot.AltBots", false);
     altBotsLogoutWithOwner = config.GetBoolDefault("AiPlayerbot.AltBotsLogoutWithOwner", false);
     bombRunoutDistance = config.GetFloatDefault("AiPlayerbot.BombRunoutDistance", 30.0f);
     hazardEvasionDistance = config.GetFloatDefault("AiPlayerbot.HazardEvasionDistance", 12.0f);
@@ -986,6 +986,7 @@ bool PlayerbotAIConfig::Initialize()
     raidBossDiagnostics = config.GetBoolDefault("AiPlayerbot.RaidBossDiagnostics", false);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", "bot_events.csv,deaths.csv"), allowedLogFiles);
     logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));
+    updateCheck = config.GetBoolDefault("AiPlayerbot.UpdateCheck", true);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.DebugFilter", "add gathering loot,check values,emote,check mount state,jump"), debugFilter);
 
     worldBuffs.clear();
@@ -1065,7 +1066,7 @@ bool PlayerbotAIConfig::Initialize()
     // values fail closed in ParsePoolBotTradeMode, never open.
     poolBotTradeMode = config.GetIntDefault("AiPlayerbot.PoolBotTradeMode", 0);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.TradeActionExcludedPrefixes", "RPLL_H_,DBMv4"), tradeActionExcludedPrefixes);
-    randomBotInvitePlayer = config.GetBoolDefault("AiPlayerbot.RandomBotInvitePlayer", true);
+    randomBotInvitePlayer = config.GetBoolDefault("AiPlayerbot.RandomBotInvitePlayer", false);
     randomBotGroupNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGroupNearby", false);
     randomBotRaidNearby = config.GetBoolDefault("AiPlayerbot.RandomBotRaidNearby", true);
     randomBotGuildNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGuildNearby", true);
@@ -1116,7 +1117,7 @@ bool PlayerbotAIConfig::Initialize()
     hunterCarveInReachOnly = config.GetBoolDefault("AiPlayerbot.HunterCarveInReachOnly", false);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
-    dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", false);
+    dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", true);
     // Startup-only on purpose (not in LoadDungeonRunKeys): the key shapes the reaction engine's trigger list, which
     // is built when an engine inits, so `.reload config` must not change it under live engines; a restart applies it.
     raidReactions = config.GetBoolDefault("AiPlayerbot.RaidReactions", false);

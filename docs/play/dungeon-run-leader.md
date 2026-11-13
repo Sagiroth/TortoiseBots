@@ -281,7 +281,7 @@ At a closed door the lead bot asks on say, and the run note and status show it t
 
 ### Player-led runs
 
-Opt-in player-led runs (`AiPlayerbot.DungeonRunPlayerLed = 1`, default `0`) sit on top of `AiPlayerbot.DungeonSelfClear = 1`.
+Player-led runs (`AiPlayerbot.DungeonRunPlayerLed = 1`, the default) sit on top of `AiPlayerbot.DungeonSelfClear = 1`.
 The party leader starts `.bot run start [plan] [from ...] player [tank <Bot>]` from his own party (not a raid, every bot controllable, up to 3 other players).
 The player walks and the run leader pulls near him (within `AiPlayerbot.DungeonRunPlayerLedPullYd`, default 40).
 Player orders never pause the run (only pause and stop do).

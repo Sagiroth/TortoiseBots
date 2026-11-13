@@ -37,7 +37,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotStallRelogMinutes`](#aiplayerbotrandombotstallrelogminutes) | `45` | Relogs sub-60 bots that fail to earn experience within this timeframe. |
 | [`AiPlayerbot.RandomBotMaxLevel`](#aiplayerbotrandombotmaxlevel) | `60` | Caps the gear and item level tables that random bots roll from. |
 | [`AiPlayerbot.minEnchantingBotLevel`](#aiplayerbotminenchantingbotlevel) | `10` | Minimum character level required for bots to receive gear enchantments. |
-| [`AiPlayerbot.RandomBotInvitePlayer`](#aiplayerbotrandombotinviteplayer) | `1` | Allows open-world random bots to invite nearby solo players to groups. |
+| [`AiPlayerbot.RandomBotInvitePlayer`](#aiplayerbotrandombotinviteplayer) | `0` | Allows open-world random bots to invite nearby solo players to groups. |
 | [`AiPlayerbot.RandomBotGroupNearby`](#aiplayerbotrandombotgroupnearby) | `0` | Allows masterless pool bots to form spontaneous questing groups together. |
 | [`AiPlayerbot.RandomBotRaidNearby`](#aiplayerbotrandombotraidnearby) | `1` | Lets a small share of pool bots roll raid-group types. |
 | [`AiPlayerbot.RandomBotGuildNearby`](#aiplayerbotrandombotguildnearby) | `1` | Allows masterless pool bots to invite nearby unguilded bots into their guild. |
@@ -365,14 +365,14 @@ Below this level, gear remains unenchanted. Setting this to `61` completely disa
 
 ### `AiPlayerbot.RandomBotInvitePlayer`
 Allows masterless pool bots in the open world to invite solo human players to questing groups.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
 When enabled, wandering random bots near a solo human player of similar level (within spell distance) will periodically send group invitations to form questing parties.
 
-Set to `0` to prevent unprompted group invitations from random bots.
+Off by default because the repeated invitations annoy players. Claimed guild bots never send these invitations, whatever this setting says.
 
 </details>
 
@@ -760,7 +760,7 @@ Scatters newly seeded random bots at level 10 and above to validated level-fitti
 
 When enabled, random bots at level 10 and above scatter to a validated level-fitting overworld spot upon initial login instead of lingering in their racial starting zone.
 
-Level appropriateness is validated via zone level tables and area data; capitals are never picked. Pinned bots and dead bots stay with their corpse and are skipped.
+Level appropriateness is validated via zone level tables and area data; capitals and Moonglade are never picked. Bots also never walk to Moonglade to grind, roam, gather or explore; a quest, trainer or service there still takes them. Pinned bots and dead bots stay with their corpse and are skipped.
 
 </details>
 

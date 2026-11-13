@@ -177,6 +177,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotAccountRegistry.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotPoolReset.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotService.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/UpdateCheck.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireCost.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireProvisionService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireGearCache.cpp"
