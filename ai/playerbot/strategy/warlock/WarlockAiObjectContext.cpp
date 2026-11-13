@@ -236,6 +236,7 @@ namespace ai
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new DeathCoilInterruptTHealerTrigger(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new DeathCoilSnareTrigger(ai); };
                 creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionSnareTrigger(ai); };
+                creators["curse of exhaustion"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["life tap top-up"] = [](PlayerbotAI* ai) { return new LifeTapTopUpTrigger(ai); };

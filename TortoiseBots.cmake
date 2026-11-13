@@ -212,6 +212,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/Party.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Totem.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Blessing.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/Choice.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Action.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Commander.cpp"
     "${TORTOISEBOTS_ROOT}/commands/ObservedRaids.cpp"

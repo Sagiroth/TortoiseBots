@@ -4,6 +4,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GroupMembers.h"
 #include "PaladinBlessingOrderPolicy.h"
+#include "../generic/ClassChoicePolicy.h"
 
 using namespace ai;
 
@@ -62,6 +63,13 @@ bool CastPaladinAuraAction::isUseful()
 
 bool CastPaladinAuraAction::Execute(Event& event)
 {
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty() && !ai->HasAura(ordered, bot))
+    {
+        if (ai->CastSpell(ordered, bot, nullptr, false))
+            SetDuration(1.0f);
+        return true;
+    }
     std::vector<std::string> altAuras;
     std::vector<std::string> haveAuras;
     altAuras.push_back("devotion aura");
@@ -101,6 +109,80 @@ bool CastPaladinAuraAction::Execute(Event& event)
 
     return false;
 }
+
+bool CastDevotionAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "devotion aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastRetributionAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "retribution aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastConcentrationAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "concentration aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastShadowResistanceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "shadow resistance aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastFrostResistanceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "frost resistance aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastFireResistanceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "fire resistance aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastCrusaderAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "crusader aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastSanctityAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (!ordered.empty())
+        return ordered == "sanctity aura";
+    return CastBuffSpellAction::isUseful();
+}
+
+std::string ai::OrderedAuraFor(PlayerbotAI* ai)
+{
+    std::string const spell = ChoiceSpell(0,
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ChoiceOrderKey(0))->Get());
+    if (spell.empty() || !ai->HasSpell(spell))
+        return std::string();
+    return spell;
+}
+
 
 std::string ai::OrderedBlessingFor(PlayerbotAI* ai, Unit* target)
 {

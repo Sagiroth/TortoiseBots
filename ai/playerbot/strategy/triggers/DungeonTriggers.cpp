@@ -566,8 +566,17 @@ namespace ai
 {
     // Any explicitly ordered aura beats automation: the trigger stays out
     // of the way however the player set it (combat or non-combat engine).
+    // Both the chat "aura <x>" strategy row and the saved `.bot choice`
+    // order count: neither the resist swap nor the restore may fight them.
+    static bool HasStoredAuraChoice(PlayerbotAI* ai)
+    {
+        std::string const stored = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", "choice aura")->Get();
+        return !stored.empty() && stored != "auto";
+    }
     bool HasManualPaladinAuraOverride(PlayerbotAI* ai)
     {
+        if (HasStoredAuraChoice(ai))
+            return true;
         static const char* const kManualAuras[] =
         {
             "aura devotion", "aura retribution", "aura concentration", "aura sanctity",

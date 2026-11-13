@@ -38,6 +38,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot service`](#bot-service) | `<Name> [portal <spellId>]` | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](#bot-totem) | `<scope> <slot\|mode\|drop> [...]` | Configures and drops shaman totem loadouts. |
 | [`.bot blessing`](#bot-blessing) | `<scope> <class> <blessing\|auto>` \| `status` | Assigns the blessing each class gets from a paladin bot. |
+| [`.bot choice`](#bot-choice) | `<scope> <aura\|aspect\|curse> <value\|auto>` \| `status` | Orders one paladin aura, hunter aspect, or warlock curse per bot. |
 
 ---
 
@@ -367,5 +368,28 @@ Assigns, per paladin bot, the blessing each class gets. Classes left on `auto` k
 - **Fixed Blessing Strategies:** The `blessing kings`, `blessing might` and similar strategies still give one blessing to everyone and win over the per-class orders.
 - **Replies:** An order answers one fresh `TBM:BLESSING` record per paladin changed, then `TBM:ACTION_ACK|blessing|<scope>|<n>|<class>=<blessing>`. `status` answers one record per paladin bot in scope (other classes produce none), then `TBM:ACTION_ACK|blessing status|<scope>|<n>|-`.
 - **`TBM:BLESSING` Record:** `TBM:BLESSING|<bot>|warrior=<b>,paladin=<b>,hunter=<b>,rogue=<b>,priest=<b>,shaman=<b>,mage=<b>,warlock=<b>,druid=<b>,known=<b>+<b>+...`. `<b>` is `auto` or a blessing word; `known` lists the blessings the paladin has trained and may be empty.
+
+</details>
+
+### `.bot choice` <a id="bot-choice"></a>
+
+Orders, per bot, one paladin aura, hunter aspect, or warlock curse. Kinds left on `auto` keep the automatic pick.
+
+```text
+.bot choice <bot|party|raid> <aura|aspect|curse> <value|auto>
+.bot choice <bot|party|raid> status
+```
+
+<details>
+<summary>Choice rules</summary>
+
+- **Values:** `aura`: `devotion`, `retribution`, `concentration`, `sanctity`, `shadow`, `fire`, `frost` (`shadow`/`fire`/`frost` mean the resistance auras). `aspect`: `hawk`, `monkey`, `cheetah`, `pack`, `wild`, `beast`, `wolf`, `viper`. `curse`: `agony`, `elements`, `shadow`, `recklessness`, `weakness`, `tongues`, `doom`, `exhaustion`. `auto` clears the order; anything else answers `TBM:ACTION_ERR|choice|invalid|<usage>` and changes nothing.
+- **One Per Bot:** The order is saved with the bot (a paladin holds an aura order, a hunter an aspect order, a warlock a curse order). Bots of another class in scope are skipped. An order the bot no longer knows after a respec is ignored (automatic pick) until it is trained again.
+- **Aura Wins:** The ordered aura replaces the spec upkeep (which otherwise keeps the spec aura up) and the single-aura fallback. The raid resist swap and its out-of-combat restore stand down while an order is set. Travel auras are not automated, so there is nothing to fight there.
+- **Aspect Wins:** The ordered aspect replaces the Hawk upkeep in and out of combat. The low-mana Viper switch (opt-in `AiPlayerbot.HunterViperOnLowMana`) stands down while an order is set, including a `viper` order itself. The Cheetah/Pack travel rows only fire from their own strategies and keep doing that under an order.
+- **Curse Wins:** The ordered curse replaces the automatic curse pick on the bot's targets (spec rows and the raid Recklessness/Shadow assignment stand down); the same row still fires when the chat `curse <x>` manual row for another curse is set, so mixed manual play keeps working. A target that already carries that curse from another warlock is left alone (the curse slot refuses the overwrite). `doom` keeps no extra sanity rules here: if ordered, it is cast.
+- **Untrained Choice:** A bot that has not trained the ordered spell answers `TBM:ACTION_ERR|choice|unknown-spell|<message>` and keeps its setting. A scope with no bot of the kind's class answers `TBM:ACTION_ERR|choice|no-bot|<message>`.
+- **Replies:** An order answers one fresh `TBM:CHOICE` record per bot changed, then `TBM:ACTION_ACK|choice|<scope>|<n>|<kind>=<value>`. `status` answers one record per bot in scope that has the kind, then `TBM:ACTION_ACK|choice status|<scope>|<n>|-`.
+- **`TBM:CHOICE` Record:** `TBM:CHOICE|<bot>|<kind>=<value|auto>,known=<v>+<v>+...`. `known` lists the values the bot has trained (short words, `+`-separated) and may be empty.
 
 </details>

@@ -171,6 +171,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot service`](bot-panel.md#bot-service) | Bot Panel | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](bot-panel.md#bot-totem) | Bot Panel | Configures and drops shaman totem loadouts. |
 | [`.bot blessing`](bot-panel.md#bot-blessing) | Bot Panel | Assigns the blessing each class gets from a paladin bot. |
+| [`.bot choice`](bot-panel.md#bot-choice) | Bot Panel | Orders one paladin aura, hunter aspect, or warlock curse per bot. |
 | [`/w <BotName> portal`](whispers.md#w--portal) | Whisper Command | Lists the mage's learned portals or casts one. |
 | [`.bot command`](whispers.md#command-delegation-proxy--permissions) | Whisper Command | Forwards any whisper command to a bot you control. |
 | [`/w <BotName> trainer`](whispers.md#w--trainer) | Whisper Command | Trains all available class spells at open trainer. |
