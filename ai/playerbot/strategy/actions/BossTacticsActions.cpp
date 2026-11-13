@@ -2086,12 +2086,15 @@ Spell* WalkoutCurrentCast(Player* bot, Unit* son, bool& onSon)
 {
     Spell* current = nullptr;
     onSon = false;
+    // The casts' cached unit-target pointers are refreshed only in the caster's next Spell::update, so compare the guids
+    // the casts hold: a target removed earlier in this tick reads as a different guid, never as freed memory.
+    ObjectGuid const sonGuid = son ? son->GetObjectGuid() : ObjectGuid();
     for (CurrentSpellTypes type : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
     {
         Spell* const spell = bot->GetCurrentSpell(type);
         if (spell && !current)
             current = spell;
-        if (son && spell && spell->m_targets.getUnitTarget() == son)
+        if (sonGuid && spell && spell->m_targets.getUnitTargetGuid() == sonGuid)
             onSon = true;
     }
     return current;
@@ -7444,8 +7447,10 @@ bool BossTacticsTankSwapHoldAction::Execute(Event& event)
     bot->AttackStop();
     Spell* generic = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     Spell* melee = bot->GetCurrentSpell(CURRENT_MELEE_SPELL);
-    if ((generic && generic->m_targets.getUnitTarget() == boss) ||
-        (melee && melee->m_targets.getUnitTarget() == boss))
+    // Compare the guids the casts hold: their cached unit-target pointer can point at a unit the map freed this tick.
+    ObjectGuid const bossGuid = boss->GetObjectGuid();
+    if ((generic && generic->m_targets.getUnitTargetGuid() == bossGuid) ||
+        (melee && melee->m_targets.getUnitTargetGuid() == bossGuid))
         bot->CastStop();
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<Unit*>("current target")->Set(nullptr);

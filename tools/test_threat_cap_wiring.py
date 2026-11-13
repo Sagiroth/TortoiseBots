@@ -117,7 +117,8 @@ class ThreatSuccessorStrict(unittest.TestCase):
         # t1106m: each attack mode stops on its own target, never both on either.
         self.assertIn("const bool meleeOnSuccessor = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;",
                       trigger)
-        self.assertIn("const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;",
+        self.assertIn("const bool autoRepeatOnSuccessor = repeating && "
+                      "autoRepeat->m_targets.getUnitTargetGuid() == target->GetObjectGuid();",
                       trigger)
         self.assertIn("meleeOnSuccessor, autoRepeatOnSuccessor);", trigger)
         self.assertIn("    if (stops.melee)\n        bot->AttackStop();\n", trigger)

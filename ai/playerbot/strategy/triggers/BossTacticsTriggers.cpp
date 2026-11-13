@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
 #include <string>
+#include "ObjectAccessor.h"
 #include "BossTacticsTriggers.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
@@ -130,7 +131,11 @@ void InterruptCarrierStrikeCast(PlayerbotAI* ai, Player* bot, uint32 shadeEntry)
     Spell* const current = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     if (!current || !current->m_spellInfo)
         return;
-    Unit* const target = current->m_targets.getUnitTarget();
+    // The cast's cached unit-target pointer is refreshed only in the bot's next Spell::update, and the map frees a unit
+    // removed in this tick (Jin'do's death despawns the Shades), so resolve the guid the cast holds: a target that left
+    // the world reads none.
+    ObjectGuid const targetGuid = current->m_targets.getUnitTargetGuid();
+    Unit* const target = targetGuid ? ObjectAccessor::GetUnit(*bot, targetGuid) : nullptr;
     if (!target || target->GetEntry() != shadeEntry)
         return;
     AiObjectContext* context = ai->GetAiObjectContext();
