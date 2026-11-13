@@ -156,6 +156,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics spread slot",
         NextAction::array(0, new NextAction("boss tactics spread slot", ACTION_EMERGENCY + 1), NULL)));
 
+    // A live spread row names the bot's protection potion (DungeonRunBossProtectionPotion): the drink goes out at the
+    // pull and again once the aura is gone, level with the listed bosses' own potion node.
+    triggers.push_back(new TriggerNode(
+        "boss row protection potion ready",
+        NextAction::array(0, new NextAction("boss protection potion", ACTION_HIGH), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics front",
         NextAction::array(0, new NextAction("boss tactics step behind", ACTION_HIGH), NULL)));

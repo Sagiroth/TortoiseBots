@@ -9786,6 +9786,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
                                                      // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
             fact.attackable = GroupCanAttack(anchor, attacker); // never picked up when it cannot be attacked
+            fact.selectable = !attacker->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
             if (inParty)
@@ -11852,6 +11853,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // ... only while the assigning row's own key reads that kind: until_tank is an aura tactic, tank_post its own.
         f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;
         f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;
+        // AiPlayerbot.DungeonRunGuardClockHittable: the assigned clock starts on the first hittable tick.
+        f.raid.guardClockHittable = sPlayerbotAIConfig.dungeonRunGuardClockHittable;
         // The slot order those rows' `priority` names, with the state the guard's assigned-tank grace reads: a charmed
         // tank cannot hold the unit. The order drops a dead tank, so the next tank inherits its slot.
         if (f.raid.guardLeavesAssigned)
@@ -13266,6 +13269,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
                 fact.victimTank = PlayerbotAI::IsTank(player);
             }
             fact.attackable = GroupCanAttack(anchor, attacker);
+            fact.selectable = !attacker->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
             f.partyAttackers.push_back(fact);

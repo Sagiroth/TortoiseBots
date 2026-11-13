@@ -28,6 +28,7 @@ For general matchmaking behavior, dungeon portal pathing, and battleground mecha
 | [`AiPlayerbot.RandomBotBgAutonomousMaxInstances`](#aiplayerbotrandombotbgautonomousmaxinstances) | `1` | Maximum concurrent bot-only battleground instances allowed per level bracket. |
 | [`AiPlayerbot.RandomBotBgQueueInterval`](#aiplayerbotrandombotbgqueueinterval) | `30000` | Milliseconds between autonomous battleground seeder queue evaluation passes. |
 | [`AiPlayerbot.RandomBotBgMaxQueuePerInterval`](#aiplayerbotrandombotbgmaxqueueperinterval) | `1` | Number of bots queued into autonomous battlegrounds per seeder check. |
+| [`AiPlayerbot.WsgFlagRoles`](#aiplayerbotwsgflagroles) | `0` | Opt-in: split each Warsong Gulch team into attackers, defenders and midfielders. |
 
 ## Settings
 
@@ -84,13 +85,26 @@ Enables automatic bot matchmaking for battleground PvP queues when players queue
 <details>
 <summary>How it works in detail</summary>
 
-Monitors PvP queues for Warsong Gulch (WSG), Arathi Basin (AB), and Alterac Valley (AV). When real human players queue, random bots of the matching level bracket queue on both factions toward the core's minimum player requirement plus one.
+Monitors PvP queues for Warsong Gulch (WSG), Arathi Basin (AB), Alterac Valley (AV), Sunnyglade Valley (SV) and the Blood Ring arena (BR); SV and BR are queued only for their own maps, and BR takes max-level bots only. When real human players queue, random bots of the matching level bracket queue on both factions toward the core's minimum player requirement plus one.
 
 This launches battleground matches within seconds even on low-population private servers. When a match concludes, bots leave rather than waiting for instance shutdown timers.
 
 Your own party bots can queue alongside you via "Join as Group" at battlemasters (supported for WSG and AB; AV needs solo queues in the core) and auto-accept match invites regardless of this toggle. Hired companions refuse battleground invites while `HireAllowPvP = 0`, and the service never queues a party that includes a hire then.
 
 </details>
+### `AiPlayerbot.WsgFlagRoles`
+Splits each Warsong Gulch team's bots into attackers, defenders and midfielders.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With the key off, bots keep the current WSG behaviour: guard or escort their own carrier, chase the enemy carrier, go for the enemy flag only when no real player is on their team, and otherwise patrol midfield.
+
+With the key on, each team's bots are re-split only when the match or the team roster changes: about 40% attack the enemy flag (or chase its carrier and escort the team's), about 30% hold their own flag room and chase an enemy carrier, and the rest hold midfield and escort. Real players are not counted in the split and keep their own play.
+
+</details>
+
 ### `AiPlayerbot.RandomBotBgAutonomous`
 Allows pool bots to initiate bot-only Warsong Gulch matches when no human players are queued.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed

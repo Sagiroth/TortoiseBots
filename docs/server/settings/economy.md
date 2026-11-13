@@ -45,6 +45,8 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 | [`AiPlayerbot.LowLevelVendorMaxDistance`](#aiplayerbotlowlevelvendormaxdistance) | `600` | Maximum yard radius sub-level 5 bots travel to reach camp vendors. |
 | [`AiPlayerbot.BotLootRateUncommon` / `BotLootRateRare`](#aiplayerbotbotlootrateuncommon--botlootraterare) | `1.0` / `1.0` (both built in; the keys are not in the template — add them to `aiplayerbot.conf` to change them) | Multipliers boosting green and blue item drop rates for pool bots. |
 | [`AiPlayerbot.MountBreakEvenFactor`](#aiplayerbotmountbreakevenfactor) | `1.5` | Safety factor applied to distance calculations before bots mount up. |
+| [`AiPlayerbot.PoolGearTopUpOnLevel`](#aiplayerbotpoolgeartopuponlevel) | `0` | Opt-in: fill a pool bot's empty or outdated gear slots when it levels up. |
+| [`AiPlayerbot.PoolMoneyTopUp`](#aiplayerbotpoolmoneytopup) | `0` | Opt-in: top a broke pool bot's purse up to its next trainer visit when it levels up. |
 
 ## Settings
 
@@ -346,5 +348,27 @@ Bots compare the remaining travel distance against the break-even distance for t
 This multiplier adds a safety buffer to the calculated break-even distance. With the default factor of `1.5`, bots mount up when travel exceeds approximately 350 yards on a turtle mount (9% speed), 50 yards on a standard mount (60% speed), and 30 yards on an epic mount (100% speed).
 
 Setting this to `0` removes the distance threshold, causing bots to mount for any movement.
+
+</details>
+
+### `AiPlayerbot.PoolGearTopUpOnLevel`
+Fills empty and clearly outdated equipment slots when a masterless pool bot reaches a new level.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With the key on, a pool bot at level 5 or higher gets its empty equipment slots, and grey/white items 6 or more item levels below its level, filled with level- and spec-appropriate gear from the same selection the fresh-bot seed uses. Green or better gear is never replaced; the shirt and tabard slots are left alone. The top-up runs once per level (after a restart, once at the current level) and only out of combat. Hired, guild-claimed and player-grouped bots are never touched.
+
+</details>
+
+### `AiPlayerbot.PoolMoneyTopUp`
+Tops a broke masterless pool bot's purse up to what its next class-trainer visit costs when it levels up.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With the key on, a pool bot that reaches a new level holding less than its next trainer visit costs (every trainable class rank plus the repair, ammo, auction-house and guild reserves the trainer trip keeps aside) is topped up to that amount, capped at 1 gold per bot level. A bot that already has the money gets nothing, and the top-up runs once per level. Hired, guild-claimed and player-grouped bots are never paid. Each top-up writes a `PoolMoneyTopUp` row to `bot_events.csv`.
 
 </details>

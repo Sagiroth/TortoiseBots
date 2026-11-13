@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "BossAnchorPolicy.h"
+#include "GuardGracePolicy.h"
 #include "policy/combat/RearFlankPolicy.h"
 #include "policy/heal/DispelTargetPolicy.h"
 
@@ -69,6 +70,8 @@ namespace ai
         SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
         GateHold = 26,        // DPS spare `boss_entry` at or below `param` % while more than `priority` blockers fight near
         TankPost = 27,        // a named tank waits at a spot for a unit that is not in the fight yet, then attacks it
+        AddCrew = 28,         // once `target_entry` is dead, the boss's add duty goes to a named crew
+        HealReserve = 29,     // healers keep the row's mana % back from top-ups outside the row's release window
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -206,6 +209,10 @@ namespace ai
             return BossTacticKind::GateHold;
         if (text == "tank_post")
             return BossTacticKind::TankPost;
+        if (text == "heal_reserve")
+            return BossTacticKind::HealReserve;
+        if (text == "add_crew")
+            return BossTacticKind::AddCrew;
         return BossTacticKind::None;
     }
 
@@ -454,6 +461,14 @@ namespace ai
         }
     };
 
+    // An add_crew row: the switch unit whose death hands the boss's adds over (`switchEntry`), and how many AoE
+    // ranged bots of the raid join the crew (`crewSize`, 0: melee and tanks only).
+    struct AddCrewRow
+    {
+        std::uint32_t switchEntry = 0;
+        std::uint8_t crewSize = 0;
+    };
+
     class BossTacticTable
     {
     public:
@@ -476,12 +491,13 @@ namespace ai
             // The health band is a percentage range, low to high.
             if (row.hpMin > row.hpMax || row.hpMax > 100)
                 return false;
-            // Only a row a fight scan answers can carry a gate. These five are read straight from the table (the dps
+            // Only a row a fight scan answers can carry a gate. These kinds are read straight from the table (the dps
             // and tank pickers, the linked_death scan, the threat reference), so a gate on one of them would never be
             // consulted.
             if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::TankHold ||
                     row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath ||
-                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore))
+                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore ||
+                    row.kind == BossTacticKind::AddCrew))
                 return false;
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
@@ -613,12 +629,28 @@ namespace ai
                     row.mode != TacticMode::Default))
                 return false;
             // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7), the wait spot, the arrival
-            // radius and the longest hold. A fight-scan kind, so its health band arms the post. No spell, no cycle
-            // columns; the only mode word is `hold_spot`.
+            // radius, 5-100 yd: a subject that lands and runs after a healer across the room, and the longest hold. A
+            // fight-scan kind, so its health band arms the post. No spell, no cycle columns; the only mode word is
+            // `hold_spot`.
             if (row.kind == BossTacticKind::TankPost &&
                 (row.targetEntry == 0 || row.priority < 1 || row.priority > 7 || !row.HasSpot() ||
-                    row.param < 5.0f || row.param > 40.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
+                    row.param < 5.0f || row.param > 100.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
                     row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
+                return false;
+            // heal_reserve: the boss itself (target_entry 0, no spell, priority 0), the reserve percent (`param`,
+            // 10-100) and the release lead in seconds (`window_s`, 0-120). A fight-scan kind, so its health band
+            // arms it. No mode word, no spot and no cycle columns.
+            if (row.kind == BossTacticKind::HealReserve &&
+                (row.targetEntry != 0 || row.spellId != 0 || row.priority != 0 || row.param < 10.0f ||
+                    row.param > 100.0f || row.windowSec < 0.0f || row.windowSec > 120.0f ||
+                    row.mode != TacticMode::Default))
+                return false;
+            // add_crew: the switch unit whose death hands the boss's adds over (`target_entry`, never the boss itself)
+            // and the crew size (`priority`, 0-5; the first `priority` AoE ranged bots of the crew class order join the
+            // melee and the tanks). No spell, no radius, no gate (see above) and no mode word.
+            if (row.kind == BossTacticKind::AddCrew &&
+                (row.targetEntry == 0 || row.targetEntry == row.bossEntry || row.spellId != 0 ||
+                    row.priority > 5 || row.param != 0.0f || RowGateSet(row) || row.mode != TacticMode::Default))
                 return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
             // the spot columns the seek_aura, anchor and tank_post kinds'.
@@ -673,10 +705,16 @@ namespace ai
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
                 spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::HealReserve)
+                healReserveMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Anchor)
                 anchorMaps_[row.map] = true;
             if (row.kind == BossTacticKind::TankPost)
                 tankPostMaps_[row.map] = true;
+            // The value's lookup is one row per boss: a second add_crew row of the same map and boss replaces the
+            // first here (the table holds one such row per boss in the data).
+            if (row.kind == BossTacticKind::AddCrew)
+                addCrew_[Key(row.map, row.bossEntry)] = AddCrewRow{row.targetEntry, row.priority};
             // A row that assigns the unit to a tank slot: the raid guard leaves the unit to that tank, so the table
             // keeps each kind's lowest slot for the unit (the guard uses the kind whose key is on).
             if (row.priority > 0 && row.kind == BossTacticKind::TankPost)
@@ -819,6 +857,12 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
         }
 
+        // Whether the map has a heal_reserve row (the healer top-up gates read it only there). False before the seal.
+        bool HasHealReserveMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && healReserveMaps_.find(map) != healReserveMaps_.end();
+        }
+
         // Whether the map has an anchor row (the movers' clamp looks for a live one only there). False before the seal.
         bool HasAnchorMap(std::uint32_t map) const
         {
@@ -829,6 +873,22 @@ namespace ai
         bool HasTankPostMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && tankPostMaps_.find(map) != tankPostMaps_.end();
+        }
+
+        // The map's add_crew row for a boss, keyed by (map, boss entry): the switch unit whose death hands the boss's
+        // adds over and the crew size (0-5). False before the seal, or when the boss has no such row: the "add crew"
+        // value then reads no crew and every bot keeps today's add duty. The outputs are untouched on false.
+        bool AddCrewOf(std::uint32_t map, std::uint32_t bossEntry, std::uint32_t& switchEntry,
+                       std::uint8_t& crewSize) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || addCrew_.empty())
+                return false;
+            auto const it = addCrew_.find(Key(map, bossEntry));
+            if (it == addCrew_.end())
+                return false;
+            switchEntry = it->second.switchEntry;
+            crewSize = it->second.crewSize;
+            return true;
         }
 
         // The tank slots (1-7) a unit of `entry` is assigned to by rows of its own, one per kind: a taunt_after_cast
@@ -1042,8 +1102,11 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, bool> healReserveMaps_;
         std::unordered_map<std::uint32_t, bool> anchorMaps_;
         std::unordered_map<std::uint32_t, bool> tankPostMaps_;
+        // add_crew: (map << 32 | boss entry) -> the switch unit and the crew size.
+        std::unordered_map<std::uint64_t, AddCrewRow> addCrew_;
         // map -> the unit -> the lowest raid tank slot a tank row (until_tank, tank_post) assigns it to, and which
         // kinds of row name it.
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, AssignedTankSlot>> assignedTankSlots_;
@@ -3563,7 +3626,7 @@ namespace ai
     // pull off it, walk 54: 19 of 114 Shade taunts, Jin'do on a damage dealer 5 s later in 3 of them). A cursed
     // off-tank that does not hold the boss may still taunt the Shade (the same rule as AttackerOfNonTankSkipsUnit,
     // which keeps the Shade in the scan for a carrier). Key off, every taunt passes as before.
-    enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune, HoldingBoss };
+    enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune, HoldingBoss, PostSubject };
 
     inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune,
                                   bool holdsBoss)
@@ -3587,14 +3650,134 @@ namespace ai
             case TauntGate::NeedsAura:   return "needs_aura";
             case TauntGate::TauntImmune: return "taunt_immune";
             case TauntGate::HoldingBoss: return "holding_boss";
+            case TauntGate::PostSubject: return "post_subject";
         }
         return "allow";
+    }
+
+    // AiPlayerbot.DungeonRunTankPostOwnsSubject: while another tank's post is live (its record read within
+    // kTankPostLiveMs) on this subject entry, in this instance, by a tank that can act, this tank does not taunt the
+    // subject: the post's own slot takes it (walk 2c a-1: slots 3, 0 and 2 taunted Cindarion before slot 1 arrived).
+    constexpr std::uint32_t kTankPostLiveMs = 3000;
+    inline bool TankPostSubjectReserved(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost)
+    {
+        return keyOn && otherPostLive && otherTankCanAct && !botOwnsPost;
+    }
+
+    // The post's reservation also needs its tank able to take the unit back: the tank within kTankPostReserveRangeYd
+    // of the subject (3D), and the subject still on it or loose (not its victim) for less than
+    // kTankPostReserveGraceMs. A tank stranded across the room, or one that lost the unit past the grace, reserves
+    // nothing, so the other tanks may taunt it.
+    //
+    // Walk 2c: the awaited unit landed 48-55 yd away from its post tank and the tank reached melee at about +13 s, so
+    // the reservation keeps the unit at 60 yd and through a 15 s loose spell. Both limits are the post's own; the
+    // guard's assignment clock keeps its kGuardAssignedGraceMs.
+    constexpr float kTankPostReserveRangeYd = 60.0f;
+    constexpr std::uint32_t kTankPostReserveGraceMs = 15000;
+    static_assert(kTankPostReserveGraceMs == kGuardPostGraceMs, "the guard's tank_post grace is the post's own");
+    inline bool TankPostReserves(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost,
+                                 bool ownerWithinRange, bool subjectOnOwner, std::uint32_t looseMs)
+    {
+        return TankPostSubjectReserved(keyOn, otherPostLive, otherTankCanAct, botOwnsPost) && ownerWithinRange &&
+            (subjectOnOwner || looseMs < kTankPostReserveGraceMs);
+    }
+
+    // Which limit lapsed a post's reservation this read: the range first, then the loose grace (the order the
+    // reservation reads them). `none` while the reservation holds, and with the key off (nothing is written then).
+    enum class TankPostLapse : std::uint8_t
+    {
+        None = 0,
+        Range = 1,
+        Grace = 2,
+    };
+    inline TankPostLapse TankPostLapseOf(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,
+                                         std::uint32_t looseMs)
+    {
+        if (!keyOn)
+            return TankPostLapse::None;
+        if (!ownerWithinRange)
+            return TankPostLapse::Range;
+        if (!subjectOnOwner && looseMs >= kTankPostReserveGraceMs)
+            return TankPostLapse::Grace;
+        return TankPostLapse::None;
+    }
+
+    // One lapse row per lapse event: `lapseLogged` is the record's flag. A read that still sees the lapse writes
+    // nothing; a read where the reservation holds again re-arms it for the next lapse.
+    inline bool TankPostLapseDue(TankPostLapse lapse, bool& lapseLogged)
+    {
+        if (lapse == TankPostLapse::None)
+        {
+            lapseLogged = false;
+            return false;
+        }
+        if (lapseLogged)
+            return false;
+        lapseLogged = true;
+        return true;
+    }
+
+    // The post owner's own record update re-arms the same flag: its tank back within kTankPostReserveRangeYd of the
+    // subject with the subject on it, or loose off it for less than the grace, is the reservation holding again, so a
+    // later lapse writes its own row even when no other tank reads the reservation in between. While a lapse is still
+    // active the flag stays, and a reader's later read of that lapse stays quiet.
+    inline bool TankPostLapseOwnerUpdate(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,
+                                         std::uint32_t looseMs, bool& lapseLogged)
+    {
+        lapseLogged = lapseLogged && TankPostLapseOf(keyOn, ownerWithinRange, subjectOnOwner, looseMs) !=
+            TankPostLapse::None;
+        return lapseLogged;
+    }
+
+    // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on its
+    // post tank, and while the subject cannot be hit before the clock has started (unselectable or not attackable: a
+    // boss still in the air, out of reach of every tank), so the grace is not spent before it lands. It starts on the
+    // first hittable tick with the subject off the tank. A running clock keeps its start through unhittable spells
+    // shorter than the grace (a shrug, a blink, a brief immunity). A spell of the grace length or more is a real
+    // lift-off: the clock clears, so the next hittable tick starts a new grace. `prior` is the record's clock (0: not
+    // started); `unhittableSince` is the start of the current unhittable spell (0: none).
+    struct TankPostLooseClockState
+    {
+        std::uint32_t looseSinceMs = 0;
+        std::uint32_t unhittableSinceMs = 0;
+    };
+    inline TankPostLooseClockState TankPostLooseClock(std::uint32_t prior, std::uint32_t unhittableSince,
+                                                      bool subjectOnOwner, bool subjectSelectable,
+                                                      bool subjectAttackable, std::uint32_t nowMs)
+    {
+        TankPostLooseClockState out;
+        if (subjectOnOwner)
+            return out;
+        if (subjectSelectable && subjectAttackable)
+        {
+            out.looseSinceMs = prior != 0 ? prior : nowMs;
+            return out;
+        }
+        out.unhittableSinceMs = unhittableSince != 0 ? unhittableSince : nowMs;
+        out.looseSinceMs = nowMs - out.unhittableSinceMs >= kTankPostReserveGraceMs ? 0 : prior;
+        return out;
+    }
+
+    // The area taunts (challenging shout, challenging roar) taunt every hostile within their radius of the caster, not
+    // only the selected target: one unit of the scan that another live post reserves refuses the cast.
+    constexpr float kAreaTauntRadiusYd = 10.0f;
+    struct AreaTauntUnit
+    {
+        float yd = 0.0f;
+        bool reservedByOther = false;
+    };
+    inline bool AreaTauntHitsReservedSubject(const std::vector<AreaTauntUnit>& units, float radius)
+    {
+        for (const AreaTauntUnit& unit : units)
+            if (unit.reservedByOther && unit.yd <= radius)
+                return true;
+        return false;
     }
 
     // The gate's refusal row is throttled per (bot, gate word), not per bot: the 495 taunt_immune rows at Jin'do (walk
     // 54) could hide a needs_aura row that fell in the same 5 s. `lastMs` is one bot's last-row time per word (indexed
     // by the TauntGate value; 0 = never). Returns whether a row for `gate` is due, and stamps `nowMs` when it is.
-    constexpr std::size_t kTauntGateWords = 4;
+    constexpr std::size_t kTauntGateWords = 5;
     using TauntGateLogTimes = std::array<std::uint32_t, kTauntGateWords>;
 
     inline bool TauntGateLogDueFor(TauntGateLogTimes& lastMs, TauntGate gate, std::uint32_t nowMs, std::uint32_t gapMs)
@@ -3774,6 +3957,7 @@ namespace ai
         bool subjectOnTank = false;       // the subject's victim is this tank
         bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
         bool leash = false;               // hold_spot and its leash key: walk back before the arrival
+        bool slotMoved = false;           // the post's row is still in the fight, for another slot index (read by the end word only)
         std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
     };
 
@@ -3880,11 +4064,151 @@ namespace ai
         return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
     }
 
+    // The end word of a post (the step's own order). `slotMoved`: the post's row is still in the fight, but for another
+    // slot index than this bot now holds (a tank died and GetRaidTankRoles renumbered): "slot", not "band".
+    inline const char* TankPostEndWord(bool live, bool slotMoved, bool tankCanAct, bool windowExpired,
+                                       bool subjectFound, bool subjectAlive, bool subjectEvading)
+    {
+        if (!live)
+            return slotMoved ? "slot" : "band";
+        if (!tankCanAct)
+            return "tank";
+        if (windowExpired)
+            return "window";
+        if (!subjectFound)
+            return "gone";
+        if (!subjectAlive)
+            return "dead";
+        if (subjectEvading)
+            return "evade";
+        return "band";
+    }
+
+    // The `slot` end word of a post whose row left this bot's slot: the row is still held (another row of the same
+    // slot) or the renumbering moved it while the owns-subject key is on. With the key off a renumbered end says
+    // `band`, the pre-feature word.
+    inline bool TankPostEndsAsSlot(bool rowStillHeld, bool slotMoved, bool ownsSubjectKeyOn)
+    {
+        return rowStillHeld || (slotMoved && ownsSubjectKeyOn);
+    }
+
     // A step row is written when the post enters Drag, Yield or Leash (not while it stays in it).
     inline bool TankPostStepEntered(std::uint8_t lastStep, TankPostDecision step)
     {
         return (step == TankPostDecision::Drag || step == TankPostDecision::Yield ||
                    step == TankPostDecision::Leash) &&
                lastStep != static_cast<std::uint8_t>(step);
+    }
+
+    // AiPlayerbot.DungeonRunTankPostTaunts: the Engage step takes the subject back whenever it is not on the post's tank,
+    // off a healer or a damage dealer, and off another tank only with AiPlayerbot.DungeonRunTankPostOwnsSubject (without
+    // the reservation that tank's own class taunt is not refused, so the subject flips between the two tanks; walk 2d: 3
+    // of 3 reservations lapsed on grace while slot 1 hit him without a taunt; slot 1's first taunt +108..+121 s). The
+    // gate still decides (needs_aura, taunt_immune); a warrior out of Defensive Stance takes it first; the area taunt
+    // only when the single taunt cannot go out, the subject is within kAreaTauntRadiusYd and on a non-tank, and no other
+    // post's subject is in its radius.
+    enum class TankPostTaunt : std::uint8_t { None, Taunt, Stance, AreaTaunt, Gate, NotReady };
+    struct TankPostTauntIn
+    {
+        bool keyOn = false; bool engage = false; bool subjectOnTank = false; bool subjectSelectable = false;
+        bool gateRefuses = false; bool tauntCastable = false; bool needsStance = false; bool stanceCastable = false;
+        bool areaCastable = false; bool areaInRange = false; bool areaGateRefuses = false; bool victimIsTank = false;
+        bool ownsSubjectOn = false;
+    };
+    // Whether any taunt path is open at all: the key on, the subject off this tank and selectable, and off another tank
+    // only with the reservation (its taunt passes, but the other tank's own class taunt would not be refused, so the
+    // subject would flip between the two). Read before the gate inputs, which write rows and advance the post clocks.
+    inline bool TankPostTauntAttemptable(const TankPostTauntIn& in)
+    {
+        if (!in.keyOn || !in.engage || in.subjectOnTank || !in.subjectSelectable) return false;
+        return !in.victimIsTank || in.ownsSubjectOn;
+    }
+    // Whether the area taunt's own gate has to be read at all: the step picks the area taunt only with a known spell,
+    // castable now, the subject in range and off a non-tank. In every other state the gate cannot change the verdict,
+    // and reading it scans the radius and advances the other posts' clocks.
+    inline bool TankPostAreaTauntGateNeeded(const TankPostTauntIn& in)
+    {
+        return in.areaCastable && in.areaInRange && !in.victimIsTank;
+    }
+    inline TankPostTaunt TankPostTauntStep(const TankPostTauntIn& in)
+    {
+        if (!TankPostTauntAttemptable(in)) return TankPostTaunt::None;
+        if (in.gateRefuses) return TankPostTaunt::Gate;
+        if (in.tauntCastable) return TankPostTaunt::Taunt;
+        if (in.needsStance && in.stanceCastable) return TankPostTaunt::Stance;
+        if (in.areaCastable && in.areaInRange && !in.areaGateRefuses && !in.victimIsTank) return TankPostTaunt::AreaTaunt;
+        return TankPostTaunt::NotReady;
+    }
+    inline const char* TankPostTauntWord(TankPostTaunt t)  // none, taunt, stance, area, gate, not_ready
+    {
+        switch (t)
+        {
+            case TankPostTaunt::Taunt:
+                return "taunt";
+            case TankPostTaunt::Stance:
+                return "stance";
+            case TankPostTaunt::AreaTaunt:
+                return "area";
+            case TankPostTaunt::Gate:
+                return "gate";
+            case TankPostTaunt::NotReady:
+                return "not_ready";
+            case TankPostTaunt::None:
+            default:
+                return "none";
+        }
+    }
+    // --- add_crew --------------------------------------------------------------------------------------------------
+    // AiPlayerbot.DungeonRunAddCrew: once the row's switch unit (`target_entry`) is dead, the boss's add duty goes to
+    // the melee, the tanks and the first `priority` AoE ranged bots of the raid; the other ranged damage dealers stay
+    // on the boss. Before the switch, and with the key or the row off, today's duty stands (the Onyxia whelp hunt for
+    // its own classes). The kind is generic: the caller supplies the roles and the raid order.
+    enum class AddCrewState : std::uint8_t { Waiting = 0, Crew = 1, NotCrew = 2 };
+
+    // AoE ranged classes in crew order (1.12 Classes): mage 0, warlock 1, hunter 2, shaman 3, druid 4; -1 none.
+    inline int AddCrewClassOrder(std::uint8_t classId)
+    {
+        switch (classId)
+        {
+            case 8: return 0;
+            case 9: return 1;
+            case 3: return 2;
+            case 7: return 3;
+            case 11: return 4;
+            default: return -1;
+        }
+    }
+
+    struct AddCrewCandidate
+    {
+        std::uint64_t guid = 0;
+        int order = -1;
+    };
+
+    // This bot's place among the raid's living AoE ranged damage dealers, sorted by (order, guid); -1 when not listed.
+    inline int AddCrewRank(std::vector<AddCrewCandidate> raid, std::uint64_t me)
+    {
+        std::sort(raid.begin(), raid.end(), [](const AddCrewCandidate& a, const AddCrewCandidate& b)
+        { return a.order != b.order ? a.order < b.order : a.guid < b.guid; });
+        for (std::size_t i = 0; i < raid.size(); ++i)
+            if (raid[i].guid == me)
+                return static_cast<int>(i);
+        return -1;
+    }
+
+    inline bool AddCrewMember(bool tank, bool healer, bool ranged, int aoeRank, std::uint8_t crewSize)
+    {
+        if (healer)
+            return false;
+        if (tank || !ranged)
+            return true;
+        return aoeRank >= 0 && aoeRank < crewSize;
+    }
+
+    inline AddCrewState AddCrewStateFor(bool keyOn, bool rowFound, bool switchAlive, bool member)
+    {
+        if (!keyOn || !rowFound || switchAlive)
+            return AddCrewState::Waiting;
+        return member ? AddCrewState::Crew : AddCrewState::NotCrew;
     }
 }

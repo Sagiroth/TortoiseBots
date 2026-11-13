@@ -653,9 +653,9 @@ private:
 
 private:
     void _fillGearScoreData(Player *player, Item* item, std::vector<uint32>* gearScore, uint32& twoHandScore);
-    bool IsTellAllowed(Player* player, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL);
 
 public:
+    bool IsTellAllowed(Player* player, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL);
 	Player* GetBot() { return bot; }
     Player* GetMaster() { return GetLiveMaster(); }
 

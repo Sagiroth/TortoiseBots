@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
@@ -30,6 +31,8 @@
 #include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
+#include "playerbot/policy/combat/AoeTauntPolicy.h"
+#include "playerbot/policy/combat/TauntHeldTargetPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
 #include "playerbot/policy/raid/TankSwapPolicy.h"
 #include "playerbot/policy/raid/BurnManaPolicy.h"
@@ -1252,6 +1255,15 @@ std::mutex g_spreadLogMutex;
 // The update tick is kept with the window so a failed move can correct the row its own tick's read wrote.
 struct SpreadLogWindow { std::uint32_t ms = 0; std::uint32_t tick = 0; };
 std::map<std::uint64_t, SpreadLogWindow> g_spreadLog;
+// The healer top-up reserve's row has its own throttle too: it counts the ticks on which a top-up was refused.
+std::mutex g_healReserveLogMutex;
+struct HealReserveLogWindow
+{
+    std::uint32_t ms = 0;
+    std::uint32_t refused = 0;
+    std::uint32_t refusedTick = 0xFFFFFFFFu; // the AI update the last counted refusal belongs to
+};
+std::unordered_map<std::uint64_t, HealReserveLogWindow> g_healReserveLog;
 // The pull rows' own throttle, so a pull that keeps walking does not swallow the seek rows' 5 s window.
 std::mutex g_seekPullLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekPullLog;
@@ -6769,21 +6781,36 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
 
 // The taunt gate (AiPlayerbot.DungeonRunTauntGate): a tank never taunts a needs_aura subject (the Shade of Jin'do,
 // which only a carrier can damage and which the core answers with a copy of the boss's threat list) or a creature the
-// core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). The gate sits
-// in the taunt actions, not in "attacker of non-tank target": that value also picks the warrior gap closer's Charge,
-// which is no taunt.
-//   info1 = "reason=<needs_aura|taunt_immune|holding_boss>"
+// core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). A live
+// tank_post on the subject refuses every other tank first, whatever the gate key says (AiPlayerbot.
+// DungeonRunTankPostOwnsSubject). The gate sits in the taunt actions, not in "attacker of non-tank target": that value
+// also picks the warrior gap closer's Charge, which is no taunt.
+//   info1 = "reason=<needs_aura|taunt_immune|holding_boss|post_subject>"
 //   info2 = "target=<entry>:<guid low>,spell=<spell>"
 constexpr uint32 kTauntGateLogGapMs = 5000;
 std::mutex g_tauntGateLogMutex;
 std::unordered_map<uint64, TauntGateLogTimes> g_tauntGateLog;
 
-// One row per (bot, gate word) per kTauntGateLogGapMs (TauntGateLogDueFor): a taunt_immune row must not hide a needs_aura one.
+// One refusal row per (bot, gate word) per kTauntGateLogGapMs (TauntGateLogDueFor): a taunt_immune row must not hide a needs_aura one.
 static bool TauntGateLogDue(Player* bot, TauntGate gate)
 {
     const uint32 nowMs = WorldTimer::getMSTime();
     std::lock_guard<std::mutex> lock(g_tauntGateLogMutex);
     return TauntGateLogDueFor(g_tauntGateLog[bot->GetObjectGuid().GetRawValue()], gate, nowMs, kTauntGateLogGapMs);
+}
+
+//   info1 = "reason=<gate word>"
+//   info2 = "target=<entry>:<guid low>,spell=<spell>"
+static void LogTauntGateRefusal(PlayerbotAI* ai, Player* bot, Unit* target, TauntGate gate, const char* spell)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !TauntGateLogDue(bot, gate))
+        return;
+    char info1[32];
+    snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));
+    char info2[64];
+    snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s", target->GetEntry(), target->GetGUIDLow(),
+             spell ? spell : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
 }
 
 // The bot is the current victim of a boss of the fight: a creature with tactic rows (or a world boss) that is not the
@@ -6805,6 +6832,12 @@ static bool BotHoldsBoss(PlayerbotAI* ai, Player* bot, Unit* exclude)
 
 bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell)
 {
+    // A live post on the subject keeps every other tank off it, whatever the taunt gate key says.
+    if (TankPostReservesSubject(ai, bot, target))
+    {
+        LogTauntGateRefusal(ai, bot, target, TauntGate::PostSubject, spell);
+        return true;
+    }
     if (!sPlayerbotAIConfig.dungeonRunTauntGate)
         return false;
     if (!ai || !bot || !target)
@@ -6817,18 +6850,70 @@ bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const ch
         TargetTauntImmune(target), holdsBoss);
     if (gate == TauntGate::Allow)
         return false;
-    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot, gate))
-    {
-        char info1[32];
-        snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));
-        char info2[64];
-        snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s", target->GetEntry(), target->GetGUIDLow(),
-                 spell ? spell : "none");
-        sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
-    }
+    LogTauntGateRefusal(ai, bot, target, gate, spell);
     return true;
 }
 
+bool ai::TauntTargetHeldByOtherTank(Player* bot, Unit* target)
+{
+    if (!bot || !target)
+        return false;
+    Unit* victim = target->GetVictim();
+    Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+    TauntHeldInputs in;
+    in.victimIsPlayer = victimPlayer != nullptr;
+    in.victimIsSelf = victimPlayer == bot;
+    in.victimIsTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+    return TauntStandsDownForTank(in);
+}
+
+bool ai::AoeTauntStillNeeded(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // The "attackers" value collapses to the focus RTI mark while a "focus
+    // rti targets" strategy runs, so a marked pack hides its own loose adds.
+    // Count group victims straight from the core instead: every group member
+    // (and the bot) reports the units attacking it, before any strategy
+    // filter runs. Players are not mobs (PvP: skip them).
+    std::set<ObjectGuid> seen;
+    std::vector<LooseAddCandidate> facts;
+    std::list<Unit*> members;
+    members.push_back(bot);
+    for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+    {
+        if (Player* member = sObjectMgr.GetPlayer(itr->guid))
+            members.push_back(member);
+    }
+    for (Unit* member : members)
+    {
+        if (!member || !member->IsInWorld())
+            continue;
+        for (Unit* attacker : member->GetAttackers())
+        {
+            if (!attacker || !attacker->IsAlive())
+                continue;
+            if (attacker->IsPlayer())
+                continue;
+            if (!seen.insert(attacker->getObjectGuid()).second)
+                continue;
+            if (!attacker->GetVictim())
+                continue;
+            Player* victimPlayer = attacker->GetVictim()->ToPlayer();
+            if (!victimPlayer || !group->IsMember(victimPlayer->GetObjectGuid()))
+                continue;
+            LooseAddCandidate in;
+            in.victimIsGroupPlayer = true;
+            in.victimIsTank = PlayerbotAI::IsTank(victimPlayer);
+            in.distanceToBot = bot->GetDistance(attacker);
+            facts.push_back(in);
+        }
+    }
+    return LooseAddsStillNeedAoeTaunt(facts);
+}
 // The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,
 // with the guard numbers behind the verdict. One row per bot whenever the verdict changes, and at most one every
 // kCarrierStrikeLogGapMs while it stays the same: the trigger evaluates it every second and a healer can sit under one
@@ -9308,6 +9393,179 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
     return WidestSpreadYd(params, fallback);
 }
 
+ProtectionPotion ai::BossRowProtectionPotion(PlayerbotAI* ai, Player* bot)
+{
+    // The key's own read: with it off there is nothing to ask, and no fight scan runs that today's callers did not.
+    if (!sPlayerbotAIConfig.dungeonRunBossProtectionPotion)
+        return kNoProtectionPotion;
+    if (!ai || !bot || !bot->IsInWorld() ||
+        !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasSpreadMap(bot->GetMapId()))
+        return kNoProtectionPotion;
+    // The row's own key (DungeonRunBossProtectionPotion) is handed to the pure rule, which answers nothing with it
+    // off, so no row read here needs DungeonRunBossSpread: that key owns the spacing, not the potion. The roles come
+    // from the same three tests the rest of the tactics use.
+    const std::uint8_t roleBit = PotionRoleBit(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    for (const BossTacticRow* row : ScanBossTactics(ai, bot).rows)
+    {
+        if (row->kind != BossTacticKind::Spread || row->spellId == 0)
+            continue;
+        // The splash spell's school is the damage the potion answers (spell_template's `school`: 2 fire, 3 nature,
+        // 5 shadow). A spell the core cannot resolve names no school, so it gives no potion.
+        const SpellEntry* const spell = sServerFacade.LookupSpellInfo(row->spellId);
+        const ProtectionPotion potion = SpreadRowPotion(sPlayerbotAIConfig.dungeonRunBossProtectionPotion,
+            spell ? spell->School : 0, row->priority, roleBit);
+        if (potion.itemId)
+            return potion;
+    }
+    return kNoProtectionPotion;
+}
+
+// One refusal per healer per AI update, however many targets the pick and the gates ask about: the row's `refused`
+// counts the updates on which a top-up was refused, not gate evaluations.
+static void CountHealReserveRefusal(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t tick = ai->UpdateTick();
+    std::lock_guard<std::mutex> lock(g_healReserveLogMutex);
+    HealReserveLogWindow& window = g_healReserveLog[bot->GetObjectGuid().GetRawValue()];
+    if (window.refusedTick == tick)
+        return;
+    window.refusedTick = tick;
+    ++window.refused;
+}
+
+// The boss's live `heal_reserve` rows of this bot's fight (HealReservePolicy.h): the highest reserve wins, with its
+// own release window and its boss. The clock is the seek_aura cycle's, so a fight without one is never released; the
+// boss itself comes from the row, never from that read. The key is the caller's: this read answers only what the
+// rows and the fight say.
+HealReserveRead ai::BossHealReserve(PlayerbotAI* ai, Player* bot, Unit*& boss)
+{
+    HealReserveRead out;
+    boss = nullptr;
+    if (!ai || !bot || !bot->IsInWorld() || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasHealReserveMap(bot->GetMapId()))
+        return out;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    std::vector<HealReserveRow> rows;
+    for (const BossTacticRow* row : fight.rows)
+        if (row->kind == BossTacticKind::HealReserve)
+            rows.push_back(HealReserveRow{row->param, row->windowSec, row->bossEntry});
+    if (rows.empty())
+        return out;
+    SeekFight state;
+    const bool clockKnown = ReadSeekFightCached(ai, bot, state) && state.dueMs != 0;
+    out = HealReservePick(rows, clockKnown, clockKnown ? state.dueInMs : 0);
+    if (out.live)
+    {
+        for (Unit* unit : fight.units)
+        {
+            if (unit && unit->GetEntry() == out.bossEntry && sServerFacade.IsAlive(unit))
+            {
+                boss = unit;
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+// A tank, or the boss's current victim, keeps today's rule whatever the reserve (D4). The boss is the live
+// `heal_reserve` row's own, so this works with the seek_aura key off.
+bool ai::HealReserveTargetExempt(Unit* target, Unit* boss)
+{
+    if (!target)
+        return false;
+    if (Player* targetPlayer = dynamic_cast<Player*>(target))
+    {
+        if (PlayerbotAI::IsTank(targetPlayer))
+            return true;
+    }
+    return boss && boss->GetVictim() == target;
+}
+
+// The healer top-up pick's skip (D2): with the key on and a live row, an almost-full candidate the reserve refuses
+// stays out of the pick, so it falls to a tank, the boss's victim or a lower tier instead of an idle healer.
+// `effectiveHealthPct` is the candidate's PredictedHealHealth, the same value triage and the priority read.
+bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target, float effectiveHealthPct)
+{
+    if (!ai || !bot || !target || !sPlayerbotAIConfig.dungeonRunHealReserve)
+        return false;
+    Unit* boss = nullptr;
+    const HealReserveRead read = BossHealReserve(ai, bot, boss);
+    if (!read.live)
+        return false;
+    const std::uint8_t mediumManaPct = static_cast<std::uint8_t>(
+        std::min<std::uint32_t>(100, sPlayerbotAIConfig.mediumMana));
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::uint8_t manaPct = AI_VALUE2(std::uint8_t, "mana", "self target");
+    const bool refused = HealReserveSkipsTopUp(true, read, manaPct, mediumManaPct, effectiveHealthPct,
+        float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth),
+        HealReserveTargetExempt(target, boss));
+    if (refused && ai->IsHeal(bot))
+        CountHealReserveRefusal(ai, bot);
+    return refused;
+}
+
+// The almost-full top-up tier's mana gate (PartyMemberAlmostFullHealthTrigger and the rejuvenation spread). With the
+// key off or no live row this is today's rule and nothing else is read. With a live row: tanks and the boss's current
+// victim keep today's rule, a top-up outside the row's release window needs the row's reserve, and the release window
+// restores today's rule. The tier is the pick's effective health (incoming heals credited, predicted damage applied),
+// so a member the damage takes below the tier is another tier's heal and is never refused. One
+// `BossTacticsHealReserve` row per healer per 5 s carries the numbers and the refusals.
+bool ai::HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!ai || !bot)
+        return true;
+    const std::uint8_t mediumManaPct = static_cast<std::uint8_t>(
+        std::min<std::uint32_t>(100, sPlayerbotAIConfig.mediumMana));
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::uint8_t manaPct = AI_VALUE2(std::uint8_t, "mana", "self target");
+    if (!sPlayerbotAIConfig.dungeonRunHealReserve)
+        return manaPct >= mediumManaPct;
+    Unit* boss = nullptr;
+    const HealReserveRead read = BossHealReserve(ai, bot, boss);
+    if (!read.live)
+        return manaPct >= mediumManaPct;
+    const bool exempt = HealReserveTargetExempt(target, boss);
+    const float effectiveHealthPct = target ? EffectiveHealHealthPct(ai, target) : 100.0f;
+    const bool refused = HealReserveSkipsTopUp(true, read, manaPct, mediumManaPct, effectiveHealthPct,
+        float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth), exempt);
+    const bool allowed = !refused && manaPct >= mediumManaPct;
+    // Only an almost-full top-up candidate is the reserve's decision to refuse: a 60 % member is another tier, and a
+    // non-healer hybrid that runs the spread writes no row and counts nothing.
+    if (refused && ai->IsHeal(bot))
+        CountHealReserveRefusal(ai, bot);
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && ai->IsHeal(bot))
+    {
+        const std::uint32_t nowMs = WorldTimer::getMSTime();
+        std::uint32_t refusedRows = 0;
+        bool rowDue = false;
+        {
+            std::lock_guard<std::mutex> lock(g_healReserveLogMutex);
+            HealReserveLogWindow& window = g_healReserveLog[bot->GetObjectGuid().GetRawValue()];
+            if (window.ms == 0 || nowMs - window.ms >= kSeekLogGapMs)
+            {
+                window.ms = nowMs;
+                refusedRows = window.refused;
+                window.refused = 0;
+                rowDue = true;
+            }
+        }
+        if (rowDue)
+        {
+            const int dueIn = read.clockKnown ? static_cast<int>(read.dueInMs / 1000) : -1;
+            char info1[128];
+            snprintf(info1, sizeof(info1), "mana=%d,reserve=%d,released=%d,refused=%d,due_in=%d",
+                     static_cast<int>(manaPct), static_cast<int>(read.reservePct + 0.5f), read.released ? 1 : 0,
+                     static_cast<int>(refusedRows), dueIn);
+            sPlayerbotAIConfig.logEvent(ai, "BossTacticsHealReserve", info1, "");
+        }
+    }
+    return allowed;
+}
+
 namespace
 {
 // D5: one slot point, clamped into the live anchor and standing on the centre's floor. False when the anchor refuses
@@ -11606,13 +11864,21 @@ struct TankPostRecord
     std::uint32_t lastReadMs = 0;
     bool arrivedLogged = false;
     std::uint64_t arrivedSubjectGuid = 0;
+    std::uint32_t looseSinceMs = 0;
+    std::uint32_t unhittableSinceMs = 0;
+    bool lapseLogged = false;
+    std::uint8_t priority = 0;
     std::uint8_t lastStep = 0;
+    // The taunt rows' throttle per word (TankPostTaunt, indexed by its value; 0 = never written), read under the lock.
+    std::array<std::uint32_t, 6> tauntLogMs{};
 };
 
 std::mutex g_tankPostMutex;
 std::map<std::uint64_t, TankPostRecord> g_tankPost;
 // A record nobody read for this long belongs to a fight that is over (the window is at most 120 s).
 constexpr std::uint32_t kTankPostIdleMs = 150000;
+// The taunt rows' throttle: a word that did not cast is written at most once per bot per five seconds.
+constexpr std::uint32_t kTankPostTauntLogGapMs = 5000;
 // The dead-tank sweep runs at most this often, whatever asks.
 constexpr std::uint32_t kTankPostSweepMs = 1000;
 std::atomic<std::uint32_t> g_tankPostSweepMs{0};
@@ -11699,24 +11965,164 @@ void LogTankPostStep(PlayerbotAI* ai, const BossTacticRow& row, TankPostDecision
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
+// One BossTacticsTankPost row for the Engage step's taunt (AiPlayerbot.DungeonRunTankPostTaunts). A cast is always
+// written; any other word that was not `none` at most once per bot and word in kTankPostTauntLogGapMs, so a taunt held
+// off by its stance or its radius does not fill the log at the action's tick rate.
+void LogTankPostTaunt(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, TankPostTaunt step, const char* spell,
+                      const char* victim, bool cast)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || step == TankPostTaunt::None)
+        return;
+    if (!cast)
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+        if (it != g_tankPost.end())
+        {
+            std::uint32_t& last = it->second.tauntLogMs[static_cast<std::size_t>(step)];
+            const std::uint32_t nowMs = WorldTimer::getMSTime();
+            if (last != 0 && nowMs - last < kTankPostTauntLogGapMs)
+                return;
+            last = nowMs;
+        }
+    }
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[96];
+    snprintf(info2, sizeof(info2), "event=taunt,step=%s,spell=%s,victim=%s,cast=%d", TankPostTauntWord(step),
+             spell ? spell : "none", victim, cast ? 1 : 0);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// One BossTacticsTankPost row when a post's reservation lapses (AiPlayerbot.DungeonRunTankPostOwnsSubject): its tank
+// left kTankPostReserveRangeYd, or the unit stayed loose off it past kTankPostReserveGraceMs. Written by the first
+// reservation read that sees the lapse, never again while it lasts.
+void LogTankPostLapse(PlayerbotAI* ai, std::uint32_t bossEntry, std::uint32_t targetEntry, std::uint8_t priority,
+                      float ownerYd, std::uint32_t looseMs, TankPostLapse lapse)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", bossEntry, targetEntry,
+             static_cast<int>(priority));
+    char info2[128];
+    snprintf(info2, sizeof(info2), "event=lapse,reason=post_lapsed,owner_yd=%.1f,loose_ms=%u,limit=%s", ownerYd,
+             looseMs, lapse == TankPostLapse::Range ? "range" : "grace");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
 // The end word of a post that the step closed: the first closed input in the step's own order.
 const char* TankPostEndReason(const TankPostIn& in)
 {
-    if (!in.live)
-        return "band";
-    if (!in.tankCanAct)
-        return "tank";
-    if (in.windowExpired)
-        return "window";
-    if (!in.subjectFound)
-        return "gone";
-    if (!in.subjectAlive)
-        return "dead";
-    if (in.subjectEvading)
-        return "evade";
-    return "band";
+    return TankPostEndWord(in.live, in.slotMoved, in.tankCanAct, in.windowExpired, in.subjectFound,
+        in.subjectAlive, in.subjectEvading);
 }
 }  // namespace
+
+// AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
+// a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again. The
+// reservation also ends while its tank is farther than kTankPostReserveRangeYd from the subject, or once the subject
+// has been loose off it for kTankPostReserveGraceMs from the first selectable tick it was off it, so a stranded tank
+// cannot hold the unit off the other tanks and a subject still in the air does not spend its grace before it lands; a
+// short unhittable blip keeps the original start, a lift-off of the grace length starts a new one at the next landing.
+bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
+        return false;
+    if (!ai || !bot || !target || !target->IsCreature() || !PlayerbotAI::IsTank(bot))
+        return false;
+    std::uint64_t const self = bot->GetObjectGuid().GetRawValue();
+    std::vector<std::uint64_t> others;
+    {
+        // Only the keys leave the lock: resolving a player does not happen under it.
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        std::uint32_t const nowMs = WorldTimer::getMSTime();
+        for (std::pair<std::uint64_t const, TankPostRecord>& entry : g_tankPost)
+        {
+            if (entry.first == self || entry.second.map != bot->GetMapId() ||
+                entry.second.targetEntry != target->GetEntry() ||
+                nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
+                continue;
+            others.push_back(entry.first);
+        }
+    }
+    for (std::uint64_t const key : others)
+    {
+        Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(key));
+        if (!tank || tank->GetInstanceId() != bot->GetInstanceId() || !TankPostTankCanAct(tank))
+            continue;
+        float const ownerYd = TankPostDistanceYd(tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ(),
+            target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        bool const onOwner = target->GetVictim() == tank;
+        bool const rangeOk = ownerYd <= kTankPostReserveRangeYd;
+        // The clock is advanced and persisted on every read, owner or not: a subject that came back to its tank clears
+        // it here even before the post's own update runs, so losing it again starts a fresh grace. The values that
+        // leave the lock are the clock age, the lapse and the row's identity.
+        std::uint32_t looseMs = 0;
+        TankPostLapse lapse = TankPostLapse::None;
+        bool logLapse = false;
+        std::uint32_t bossEntry = 0, targetEntry = 0;
+        std::uint8_t priority = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            auto const it = g_tankPost.find(key);
+            if (it == g_tankPost.end())
+                continue;
+            std::uint32_t const nowMs = WorldTimer::getMSTime();
+            TankPostLooseClockState const loose = TankPostLooseClock(it->second.looseSinceMs,
+                it->second.unhittableSinceMs, onOwner,
+                !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE), tank->IsValidAttackTarget(target),
+                nowMs);
+            it->second.looseSinceMs = loose.looseSinceMs;
+            it->second.unhittableSinceMs = loose.unhittableSinceMs;
+            looseMs = loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs;
+            lapse = TankPostLapseOf(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, rangeOk, onOwner, looseMs);
+            logLapse = TankPostLapseDue(lapse, it->second.lapseLogged);
+            bossEntry = it->second.bossEntry;
+            targetEntry = it->second.targetEntry;
+            priority = it->second.priority;
+        }
+        if (logLapse)
+            LogTankPostLapse(ai, bossEntry, targetEntry, priority, ownerYd, looseMs, lapse);
+        if (TankPostReserves(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, true, true, false, rangeOk, onOwner,
+                looseMs))
+            return true;
+    }
+    return false;
+}
+
+// AiPlayerbot.DungeonRunTankPostOwnsSubject for the two area taunts: challenging shout/roar taunts every hostile within
+// kAreaTauntRadiusYd of the caster, so a unit of that radius another live post reserves refuses the cast, whatever
+// the selected target is. The refusal row names that unit.
+bool ai::AreaTauntRefusedByPost(PlayerbotAI* ai, Player* bot, const char* spell)
+{
+    if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject || !ai || !bot || !PlayerbotAI::IsTank(bot))
+        return false;
+    std::list<Unit*> nearby;
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, kAreaTauntRadiusYd);
+    MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(nearby, check);
+    Cell::VisitAllObjects(bot, searcher, kAreaTauntRadiusYd);
+    std::vector<AreaTauntUnit> units;
+    Unit* reserved = nullptr;
+    for (Unit* unit : nearby)
+    {
+        if (!unit || !bot->IsHostileTo(unit))
+            continue;
+        AreaTauntUnit fact;
+        fact.yd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+        fact.reservedByOther = TankPostReservesSubject(ai, bot, unit);
+        if (fact.reservedByOther && !reserved)
+            reserved = unit;
+        units.push_back(fact);
+    }
+    if (!AreaTauntHitsReservedSubject(units, kAreaTauntRadiusYd))
+        return false;
+    if (reserved)
+        LogTauntGateRefusal(ai, bot, reserved, TauntGate::PostSubject, spell);
+    return true;
+}
 
 BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
@@ -11812,8 +12218,25 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
             endedRow.spotX = dead.second.spotX;
             endedRow.spotY = dead.second.spotY;
             endedRow.spotZ = dead.second.spotZ;
+            endedRow.priority = dead.second.priority;
             if (tankAi)
                 LogTankPost(tankAi, endedRow, "end", "tank");
+        }
+    }
+
+    // A renumbering keeps the record's row in the fight for another tank index: a tank died, the raid tank order moved
+    // this bot to another slot, and its post ended by the renumbering, not because the band closed.
+    bool slotMoved = false;
+    if (haveRecord && !row)
+    {
+        for (const BossTacticRow* candidate : fight.rows)
+        {
+            if (candidate->kind == BossTacticKind::TankPost && candidate->bossEntry == record.bossEntry &&
+                candidate->targetEntry == record.targetEntry && candidate->priority != roles.botIndex)
+            {
+                slotMoved = true;
+                break;
+            }
         }
     }
 
@@ -11836,7 +12259,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         closed.spotX = record.spotX;
         closed.spotY = record.spotY;
         closed.spotZ = record.spotZ;
-        LogTankPost(ai, closed, "end", row ? "slot" : "band");
+        closed.priority = record.priority;
+        LogTankPost(ai, closed, "end",
+            TankPostEndsAsSlot(row != nullptr, slotMoved, sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
+                ? "slot" : "band");
         return out;
     }
     if (!row || !boss)
@@ -11862,6 +12288,9 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     if (subjectUnit)
         in.subjectToSpotYd = TankPostDistanceYd(subjectUnit->x, subjectUnit->y, subjectUnit->z,
             row->spotX, row->spotY, row->spotZ);
+    bool const ownerWithinRange = sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject && subject &&
+        TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), subject->GetPositionX(),
+            subject->GetPositionY(), subject->GetPositionZ()) <= kTankPostReserveRangeYd;
     in.botToSpotYd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
         row->spotX, row->spotY, row->spotZ);
     Unit* const currentTarget = AI_VALUE(Unit*, "current target");
@@ -11874,6 +12303,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();
     in.seated = TankPostSeated(stand.valid, stand.stay);
     in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;
+    in.slotMoved = slotMoved;
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
     if (holdSpot && currentTarget == subject)
         in.holdingOtherHostile = false;
@@ -11891,6 +12321,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         record.map = row->map;
         record.bossEntry = row->bossEntry;
         record.targetEntry = row->targetEntry;
+        record.priority = row->priority;
         record.hpMin = row->hpMin;
         record.hpMax = row->hpMax;
         record.param = row->param;
@@ -11925,8 +12356,22 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     {
         std::lock_guard<std::mutex> lock(g_tankPostMutex);
         TankPostRecord& stored = g_tankPost[self];
+        std::uint32_t const priorLoose = stored.looseSinceMs;
+        std::uint32_t const priorUnhittable = stored.unhittableSinceMs;
+        std::array<std::uint32_t, 6> const priorTauntLog = stored.tauntLogMs;
+        bool lapseLogged = stored.lapseLogged;
         stored = record;
+        stored.tauntLogMs = priorTauntLog;
         stored.lastReadMs = nowMs;
+        TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, in.subjectOnTank,
+            in.subjectSelectable, subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);
+        stored.looseSinceMs = loose.looseSinceMs;
+        stored.unhittableSinceMs = loose.unhittableSinceMs;
+        // This is the only update a post gets while no other tank reads its reservation: a subject that came back
+        // must re-arm the row here, or the next lapse writes nothing.
+        TankPostLapseOwnerUpdate(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, ownerWithinRange, in.subjectOnTank,
+            loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs, lapseLogged);
+        stored.lapseLogged = lapseLogged;
         stepEntered = TankPostStepEntered(stored.lastStep, step);
         stored.lastStep = static_cast<std::uint8_t>(step);
         if (TankPostLatchesArrival(in, step))
@@ -11966,6 +12411,95 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     return out;
 }
 
+namespace
+{
+// The subject's current victim as the taunt row's word: tank, healer, any other damage dealer or none.
+const char* TankPostVictimWord(Unit* victim)
+{
+    if (!victim)
+        return "none";
+    if (victim->GetTypeId() == TYPEID_PLAYER)
+    {
+        Player* const player = static_cast<Player*>(victim);
+        if (PlayerbotAI::IsHeal(player))
+            return "healer";
+        if (PlayerbotAI::IsTank(player))
+            return "tank";
+    }
+    return "dps";
+}
+}  // namespace
+
+// AiPlayerbot.DungeonRunTankPostTaunts. Walk 2d: three of three reservations lapsed on grace while slot 1 hit Cindarion
+// without a taunt, and slot 1's own first taunt came at +108..+121 s. The Engage step therefore takes the subject back
+// whenever it is not on the post's tank, off a healer, a damage dealer, or another tank with
+// AiPlayerbot.DungeonRunTankPostOwnsSubject on. The taunt gate still decides (needs_aura, taunt_immune); a warrior away
+// from Defensive Stance takes the stance first; the area taunt only when the single taunt cannot go out, the subject is
+// within kAreaTauntRadiusYd, it is on a non-tank and neither gate refuses it.
+bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* current)
+{
+    Unit* const subject = task.subject;
+    Unit* const victim = subject->GetVictim();
+    TankPostTauntIn in;
+    in.keyOn = sPlayerbotAIConfig.dungeonRunTankPostTaunts;
+    in.engage = true;
+    in.subjectOnTank = victim == bot;
+    in.subjectSelectable = !subject->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+    in.victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
+        PlayerbotAI::IsTank(static_cast<Player*>(victim));
+    in.ownsSubjectOn = sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject;
+    // The gate reads below write rows and advance the other posts' clocks: read them only for a taunt that can go out.
+    if (!TankPostTauntAttemptable(in))
+        return false;
+    const char* const taunt = KnownTaunt(ai);
+    in.gateRefuses = taunt && TauntRefusedByGate(ai, bot, subject, taunt);
+    in.tauntCastable = taunt && ai->CanCastSpell(taunt, subject);
+    in.needsStance = taunt && std::strcmp(taunt, "taunt") == 0 && !ai->HasAura("defensive stance", bot);
+    in.stanceCastable = in.needsStance && ai->CanCastSpell("defensive stance", bot);
+    TankPostTaunt step = TankPostTauntStep(in);
+    const char* area = nullptr;
+    if (step == TankPostTaunt::NotReady)
+    {
+        if (bot->GetClass() == CLASS_WARRIOR && ai->HasSpell("challenging shout"))
+            area = "challenging shout";
+        else if (bot->GetClass() == CLASS_DRUID && ai->HasSpell("challenging roar"))
+            area = "challenging roar";
+        in.areaCastable = area && ai->CanCastSpell(area, bot);
+        in.areaInRange = area && bot->GetDistance(subject) <= kAreaTauntRadiusYd;
+        if (TankPostAreaTauntGateNeeded(in))
+            in.areaGateRefuses = AreaTauntRefusedByPost(ai, bot, area) ||
+                                     TauntRefusedByGate(ai, bot, subject, area);
+        step = TankPostTauntStep(in);
+    }
+    const char* spell = nullptr;
+    bool cast = false;
+    switch (step)
+    {
+        case TankPostTaunt::Taunt:
+            // The taunt only sets the selection: without the attack first the rotation keeps hitting the other target
+            // and the subject snaps back to whoever it was on (the taunt-after pattern).
+            if (current != subject)
+                Attack(bot, subject);
+            spell = taunt;
+            cast = ai->CastSpell(taunt, subject);
+            break;
+        case TankPostTaunt::Stance:
+            spell = "defensive stance";
+            cast = ai->CastSpell("defensive stance", bot);
+            break;
+        case TankPostTaunt::AreaTaunt:
+            spell = area;
+            cast = ai->CastSpell(area, bot);
+            break;
+        case TankPostTaunt::None:
+        case TankPostTaunt::Gate:
+        case TankPostTaunt::NotReady:
+            break;
+    }
+    LogTankPostTaunt(ai, bot, *task.row, step, spell, TankPostVictimWord(victim), cast);
+    return cast;
+}
+
 bool BossTacticsTankPostAction::Execute(Event& event)
 {
     (void)event;
@@ -12003,6 +12537,8 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     if (task.step == TankPostDecision::Engage)
     {
         hasLast = false;
+        if (sPlayerbotAIConfig.dungeonRunTankPostTaunts && TakeSubject(task, current))
+            return true;
         if (current == task.subject)
             return false;
         return Attack(bot, task.subject);

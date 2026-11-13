@@ -26554,6 +26554,169 @@ static void TestRaidGuardAssignedUnitTakenWithFlagOff()
     CHECK(order == "attack 45001 Offy");
     CHECK(r.note == "fighting: the off-tank Offy takes 50143 off the healer (20.0 yd)");
 }
+// Onyxia walk 2e (AiPlayerbot.DungeonRunGuardClockHittable): Cindarion hits healers from the air in P1, so the 8 s
+// grace was spent before touchdown. With the key on the assigned-unit clock starts on the first hittable tick
+// (attackable and selectable): a tank_post unit is loose and unhittable for 10 s, then hittable, and the guard leaves
+// it at 10 + 14 s and takes it at 10 + 15 s (the failure without the key: the guard takes it at 8 s).
+static Facts GuardClockHittableFacts()
+{
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    f.raid.tankPost = true;
+    f.raid.guardClockHittable = true;
+    AssignTankSlot(f, 1); // alive
+    return f;
+}
+
+// The post names the unit alone: the table answers tankPostSlot only, so the skip's fromPost is true and the 15 s
+// grace applies (an until_tank row would name untilTankSlot instead).
+static void AssignCindarionToTankPostSlotOne(DungeonPlan& plan, ai::BossTacticTable& table)
+{
+    plan.map = 249;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 10184;
+    row.kind = ai::BossTacticKind::TankPost;
+    row.targetEntry = 50143;
+    row.priority = 1;
+    row.param = 25.0f;
+    row.spotX = 8.0f;
+    row.spotY = -200.0f;
+    row.spotZ = -85.8f;
+    row.windowSec = 120.0f;
+    CHECK(table.Add(row));
+    table.Seal();
+}
+
+static void TestGuardAssignedClock_StartsWhenHittable()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankPostSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = GuardClockHittableFacts();
+    UnitFact loose = Hitter(45001, 50143, 20, true);
+    loose.selectable = false;
+    loose.attackable = false;
+    f.partyAttackers = {loose};
+    std::string order;
+    for (std::uint32_t t = 0; t < 10000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    Facts g = GuardClockHittableFacts();
+    g.partyAttackers = {Hitter(45001, 50143, 20, true)}; // hittable at 10 s: the clock starts here
+    for (std::uint32_t t = 10000; t < 24000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(!AssignedGuardTick(r, g, kTickMs, order)); // 10 + 14 s: still the post's 15 s
+    CHECK(order.empty());
+    CHECK(AssignedGuardTick(r, g, kTickMs, order)); // 10 + 15 s
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedClock_KeyOffUnchanged()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1); // alive
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedClock_ShortBlipKeepsStart()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankPostSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = GuardClockHittableFacts();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)}; // hittable at 0: the clock starts here
+    std::string order;
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order.empty());
+    Facts g = GuardClockHittableFacts();
+    UnitFact lift = Hitter(45001, 50143, 20, true);
+    lift.attackable = false;
+    g.partyAttackers = {lift};
+    for (std::uint32_t t = 1000; t < 4000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order)); // 3 s unhittable, under the grace: the start holds
+        CHECK(order.empty());
+    }
+    Facts h = GuardClockHittableFacts();
+    h.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    for (std::uint32_t t = 4000; t < 15000; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, h, kTickMs, order)); // the post's 15 s, kept through the blip
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, h, kTickMs, order)); // t = 15000 from the 0 s start, not a fresh clock
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedClock_LongLiftOffRestarts()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankPostSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = GuardClockHittableFacts();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)}; // hittable at 0: the clock starts here
+    std::string order;
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+    CHECK(order.empty());
+    Facts g = GuardClockHittableFacts();
+    UnitFact lift = Hitter(45001, 50143, 20, true);
+    lift.selectable = false;
+    g.partyAttackers = {lift};
+    for (std::uint32_t t = 1000; t <= 9000; t += kTickMs) // 9 unhittable ticks: banked at the first, so 8000 ms pass
+    {                                                      // on the ninth (clock 10000 - 2000) and the start clears
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(r.guardAssignedLooseSinceMs.empty()); // the long lift-off cleared the start
+    // The next hittable tick restarts the clock: 15 s more from the restart, and the take lands 15 s later.
+    Facts h = GuardClockHittableFacts();
+    h.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    CHECK(!AssignedGuardTick(r, h, kTickMs, order)); // restarted
+    CHECK(order.empty());
+    for (int k = 0; k < 14; ++k)
+    {
+        CHECK(!AssignedGuardTick(r, h, kTickMs, order)); // still the post's 15 s
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, h, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+}
+
+static void TestGuardAssignedGrace_PostRowUses15s()
+{
+    CHECK(ai::GuardAssignedGraceFor(true, true) == 15000);
+    CHECK(ai::GuardAssignedGraceFor(true, false) == 8000);
+    CHECK(ai::GuardAssignedGraceFor(false, true) == 8000);
+    CHECK(ai::GuardAssignedGraceFor(false, false) == 8000);
+}
 
 // The main tank on stay is still engaged on the mob on itself (the boss), first and at once; the whelp on the healer
 // goes to an off-tank after the order spacing, never to the main tank.
@@ -37857,6 +38020,11 @@ int main()
     TestRaidGuard_GraceRunsThroughLeadJoin();
     TestRaidGuard_ClockUntouchedWithKeyOff();
     TestRaidGuardAssignedUnitTakenWithFlagOff();
+    TestGuardAssignedClock_StartsWhenHittable();
+    TestGuardAssignedClock_KeyOffUnchanged();
+    TestGuardAssignedClock_ShortBlipKeepsStart();
+    TestGuardAssignedClock_LongLiftOffRestarts();
+    TestGuardAssignedGrace_PostRowUses15s();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();
     TestRaidBossGuardReadModes();

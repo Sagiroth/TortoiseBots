@@ -56,6 +56,7 @@
 
 #include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
+#include "../ai/playerbot/GuardGracePolicy.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "../ai/playerbot/policy/dungeon/ReturnHoldPolicy.h"
@@ -742,8 +743,8 @@ constexpr std::uint32_t kRaidGuardRearmMs = 20000;
 // (the until_tank window's own cast and walk, a tank_post waiting for the unit to land). Past it the unit is the
 // guard's like any loose add: a tank that lost it, never came, or cannot pick it up (taunt-immune, parked on a breath
 // seat, stuck) must not leave a healer unprotected. A unit already on its tank is the tank's through
-// UnitFact::victimTank, not through this clock.
-constexpr std::uint32_t kGuardAssignedGraceMs = 8000;
+// UnitFact::victimTank, not through this clock. Shared with the boss table's post reservation: GuardGracePolicy.h.
+using ai::kGuardAssignedGraceMs;
 // A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, RaidHealerGuard): with the main tank holding
 // the boss an add on a healer goes to that many ranged dps of the raid at most, nearest first, one order a tick; the
 // off-tanks take such an add only when none is free for it.
@@ -992,6 +993,9 @@ struct UnitFact
     // group cannot attack is never pulled, picked up, engaged, focused or crowd-controlled by the run, and a
     // fight with only such units left is no fight (UnattackableOnlyFight). Unread: true.
     bool attackable = true;
+    // No UNIT_FLAG_NOT_SELECTABLE on it: with attackable, the guard clock's hittable test (a boss still in the air
+    // is neither). Unread: true.
+    bool selectable = true;
     // Facts::engagedUnits only: its hit points now and its most (0: not read), and a party bot or pet has it as
     // its victim. HpHeldTick watches such a unit that stays at 1 hp (or 1 % or less, unchanged).
     std::uint32_t health = 0;
@@ -1486,6 +1490,9 @@ struct RaidFacts
     // nothing and guardLeavesAssigned must not skip the unit (a healer would go unprotected).
     bool auraTactics = false;
     bool tankPost = false;
+    // AiPlayerbot.DungeonRunGuardClockHittable: the assignment clock starts on the first hittable tick (attackable and
+    // selectable), and a tank_post unit gets the post's 15 s grace.
+    bool guardClockHittable = false;
     // With guardLeavesAssigned: the raid's tanks in the slot order an assigning row's `priority` names (the
     // GetRaidTankRoles order), with the state the guard's grace reads. Empty when the key is off.
     std::vector<RaidTankFact> tanks;
@@ -3173,6 +3180,9 @@ struct Run
     // the guard's reach (out of range, polymorphed, no free off-tank).
     std::unordered_map<std::uint64_t, std::uint64_t> guardAssignedLooseSinceMs;
     std::uint64_t guardAssignedClockMs = 0;
+    // AiPlayerbot.DungeonRunGuardClockHittable: each assigned unit's current unhittable spell start (ms on
+    // guardAssignedClockMs), cleared when it goes hittable. Key off: unused and empty.
+    std::unordered_map<std::uint64_t, std::uint64_t> guardAssignedUnhittableSinceMs;
     // A raid boss fight's healer guard (RaidHealerGuard): a ranged dps sent at an add on a healer, or a bot whose
     // order for it was refused, and when (`atMs`, on healerGuardClockMs).
     struct HealerGuardMark
@@ -3927,6 +3937,7 @@ inline void ResetStep(Run& r)
     r.raidGuardUnits.clear();
     r.guardAssignedLooseSinceMs.clear();
     r.guardAssignedClockMs = 0;
+    r.guardAssignedUnhittableSinceMs.clear();
     r.healerGuardDps.clear();
     r.healerGuardTried.clear();
     r.healerGuardClockMs = 0;
@@ -18195,6 +18206,9 @@ inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepte
 // off a tank keeps the time it first went loose, ahead of every filter the guard applies and whichever order path the
 // tick takes (a healer-guard order or a lead join must not pause it). Only a unit back on a tank, or one that left the
 // fight, is not loose any more. CheckGuard runs it once a fight tick.
+// With AiPlayerbot.DungeonRunGuardClockHittable (f.raid.guardClockHittable) the clock starts on the first hittable
+// tick (attackable and selectable): a running clock keeps its start through an unhittable spell shorter than
+// kGuardAssignedGraceMs, a longer one clears it.
 inline void UpdateGuardAssignedLoose(Run& r, const Facts& f, std::uint32_t dt)
 {
     r.guardAssignedClockMs += dt;
@@ -18204,9 +18218,43 @@ inline void UpdateGuardAssignedLoose(Run& r, const Facts& f, std::uint32_t dt)
             [&it](const UnitFact& u) { return u.guid == it->first && !u.victimTank; });
         it = loose ? std::next(it) : r.guardAssignedLooseSinceMs.erase(it);
     }
+    for (auto it = r.guardAssignedUnhittableSinceMs.begin(); it != r.guardAssignedUnhittableSinceMs.end();)
+    {
+        auto const seen = std::find_if(f.partyAttackers.begin(), f.partyAttackers.end(),
+            [&it](const UnitFact& u)
+            { return u.guid == it->first && !u.victimTank && !(u.attackable && u.selectable); });
+        if (seen == f.partyAttackers.end() || r.guardAssignedLooseSinceMs.count(it->first) == 0)
+            it = r.guardAssignedUnhittableSinceMs.erase(it);
+        else
+            it = std::next(it);
+    }
+    if (!f.raid.guardClockHittable)
+    {
+        r.guardAssignedUnhittableSinceMs.clear();
+        for (const UnitFact& u : f.partyAttackers)
+            if (!u.victimTank)
+                r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);
+        return;
+    }
     for (const UnitFact& u : f.partyAttackers)
-        if (!u.victimTank)
-            r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);
+    {
+        if (u.victimTank)
+            continue;
+        auto const loose = r.guardAssignedLooseSinceMs.find(u.guid);
+        std::uint64_t const prior = loose == r.guardAssignedLooseSinceMs.end() ? 0 : loose->second;
+        auto const unhit = r.guardAssignedUnhittableSinceMs.find(u.guid);
+        std::uint64_t const unh = unhit == r.guardAssignedUnhittableSinceMs.end() ? 0 : unhit->second;
+        ai::GuardLooseClock const c = ai::GuardAssignedLooseClock(prior, unh, u.attackable && u.selectable,
+            r.guardAssignedClockMs);
+        if (c.looseSinceMs != 0)
+            r.guardAssignedLooseSinceMs[u.guid] = c.looseSinceMs;
+        else
+            r.guardAssignedLooseSinceMs.erase(u.guid);
+        if (c.unhittableSinceMs != 0)
+            r.guardAssignedUnhittableSinceMs[u.guid] = c.unhittableSinceMs;
+        else
+            r.guardAssignedUnhittableSinceMs.erase(u.guid);
+    }
 }
 
 // One fight tick of the guard in a raid's boss fight (RaidBossRulesFight, CheckGuard): the main tank (the lead bot)
@@ -18293,9 +18341,13 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 {
                     bool const tankHolds = slot < f.raid.tanks.size() &&
                         f.raid.tanks[slot].alive && !f.raid.tanks[slot].charmed;
+                    bool const fromPost = f.raid.tankPost && assigned.tankPostSlot == slot;
+                    std::uint32_t const grace = ai::GuardAssignedGraceFor(f.raid.guardClockHittable, fromPost);
                     auto const had = r.guardAssignedLooseSinceMs.find(u.guid);
-                    std::uint64_t const looseSince = had == r.guardAssignedLooseSinceMs.end() ? 0 : had->second;
-                    if (tankHolds && r.guardAssignedClockMs - looseSince < kGuardAssignedGraceMs)
+                    bool const started = had != r.guardAssignedLooseSinceMs.end();
+                    std::uint64_t const looseSince = started ? had->second : 0;
+                    if (ai::GuardLeavesToAssignedTank(f.raid.guardClockHittable, tankHolds, started,
+                        r.guardAssignedClockMs, looseSince, grace))
                         continue;
                 }
             }
@@ -19066,6 +19118,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             {
                 r.guardAssignedClockMs = 0;
                 r.guardAssignedLooseSinceMs.clear();
+                r.guardAssignedUnhittableSinceMs.clear();
             }
             // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss an add on a healer goes to
             // the ranged dps first, with no off-tank in range too (RaidHealerGuard); the off-tanks take such an add
@@ -22395,6 +22448,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.raidGuardUnits.clear();
         r.guardAssignedLooseSinceMs.clear();
         r.guardAssignedClockMs = 0;
+        r.guardAssignedUnhittableSinceMs.clear();
         r.healerGuardDps.clear();
         r.healerGuardTried.clear();
         r.healerGuardClockMs = 0;

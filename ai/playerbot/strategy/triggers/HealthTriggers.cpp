@@ -4,6 +4,7 @@
 #include "playerbot/policy/heal/HealingCastPolicy.h"
 #include "playerbot/policy/heal/GroupHealPolicy.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 using namespace ai;
 
@@ -56,10 +57,13 @@ bool HealthInRangeTrigger::IsActive()
 // mana as the one that saves somebody at 20. Once the healer's own mana is no
 // longer comfortable, that trade stops being worth making: skip the tier and keep
 // what is left for the ones below it, which are deliberately untouched and will
-// still fire at any mana level.
+// still fire at any mana level. The mana rule itself is HealTopUpAllowedFor: today
+// it is `mediumMana`; a live `heal_reserve` boss row (DungeonRunHealReserve) raises
+// it to the row's percent outside the row's release window.
 bool PartyMemberAlmostFullHealthTrigger::IsActive()
 {
-    if (AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana)
+    Unit* target = GetTarget();
+    if (!HealTopUpAllowedFor(ai, bot, target))
         return false;
 
     return PartyMemberLowHealthTrigger::IsActive();

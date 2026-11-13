@@ -482,8 +482,11 @@ class SpreadKindWiring(unittest.TestCase):
         self.assertIn("BossSpreadYd(ai, bot, kSpreadSettledDistance)", trigger)
         self.assertNotIn("< 10.0f", trigger)
         act = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::Execute(Event& event)")
-        self.assertIn("BossSpreadYd(ai, bot, kSpreadSettledDistance)", act)
+        self.assertIn("SpreadRadiusYd()", act)
         self.assertNotIn("float radius = kSpreadSettledDistance;", act)
+        radius = body(DUNGEON_ACTIONS, "float RaidSpreadAction::SpreadRadiusYd()")
+        self.assertIn("BossSpreadYd(ai, bot, kSpreadSettledDistance)", radius)
+        self.assertIn("SpreadRadius(AI_VALUE(float, \"spread distance\"), ai->IsRanged(bot))", radius)
 
     def test_a_live_spread_row_drops_the_stay_exemption(self):
         for text in (body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()"),

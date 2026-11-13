@@ -282,6 +282,22 @@ bool CastCustomSpellAction::Execute(Event& event)
     {
         SetDuration(spellDuration);
 
+        // One Craft row per started profession craft (skill id + product
+        // item id), next to GatherLoot, so crafting shows in bot_events.csv.
+        if (pSpellInfo->Effect[0] == SPELL_EFFECT_CREATE_ITEM && pSpellInfo->EffectItemType[0])
+        {
+            SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spell);
+            for (SkillLineAbilityMap::const_iterator itr = bounds.first; itr != bounds.second; ++itr)
+            {
+                SkillLineEntry const* skillLine = sSkillLineStore.LookupEntry(itr->second->skillId);
+                if (skillLine && (skillLine->categoryId == SKILL_CATEGORY_PROFESSION || skillLine->categoryId == SKILL_CATEGORY_SECONDARY))
+                {
+                    sPlayerbotAIConfig.logEvent(ai, "Craft", std::to_string(skillLine->id), std::to_string(pSpellInfo->EffectItemType[0]));
+                    break;
+                }
+            }
+        }
+
         if (castCount > 1)
         {
             std::ostringstream cmd;

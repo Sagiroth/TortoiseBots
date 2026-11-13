@@ -23,12 +23,17 @@ def body(path, start, end="\n}\n"):
 
 
 class PriestLesserHealWiringTest(unittest.TestCase):
-    def test_macros_back_without_isuseful_override(self):
+    def test_no_bespoke_isuseful_override(self):
+        # The only isUseful on a heal is the shared form gate; suppressing
+        # Lesser Heal stays the multiplier's job, never an action gate.
         actions = (PRIEST / "PriestActions.h").read_text()
-        self.assertIn("HEAL_ACTION(CastLesserHealAction", actions)
-        self.assertIn("HEAL_PARTY_ACTION_E(CastLesserHealOnPartyAction", actions)
-        for cls in ("class CastLesserHealAction", "class CastLesserHealOnPartyAction"):
-            self.assertNotIn(cls, actions, cls)
+        for name, base in (("CastLesserHealAction", "CastLesserHealActionBase"),
+                           ("CastLesserHealOnPartyAction", "CastLesserHealOnPartyActionBase")):
+            start = "class %s : public PriestFormGatedHeal<%s>" % (name, base)
+            self.assertIn(start, actions, name)
+            klass = actions[actions.index(start):]
+            klass = klass[:klass.index("\n    };")]
+            self.assertNotIn("isUseful", klass, name)
 
     def test_multiplier_registered_on_both_engines(self):
         for function in ("void PriestStrategy::InitCombatMultipliers",

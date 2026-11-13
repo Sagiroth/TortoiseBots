@@ -100,7 +100,7 @@ void ElementalShamanPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 
     triggers.push_back(new TriggerNode(
         "chain lightning",
-        NextAction::array(0, new NextAction("chain lightning", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("chain lightning single", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "target of attacker close",

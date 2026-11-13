@@ -365,10 +365,29 @@ bool BossProtectionPotionReadyTrigger::IsActive()
         return false;
 
     uint32 buffSpellId = 0;
-    itemID = FindBossProtectionPotion(ai, &buffSpellId);
+    itemID = FindListedBossProtectionPotion(ai, &buffSpellId);
     if (!itemID || bot->HasAura(buffSpellId))
         return false;
 
+    return ItemReadyTrigger::IsActive();
+}
+
+bool BossRowProtectionPotionReadyTrigger::IsActive()
+{
+    // The key's own trigger: with it off there is nothing to ask, and the four listed raid strategies' node (the
+    // entry table) is untouched.
+    if (!sPlayerbotAIConfig.dungeonRunBossProtectionPotion)
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+
+    const ProtectionPotion potion = BossRowProtectionPotion(ai, bot);
+    if (!BossRowPotionDue(potion, potion.itemId && bot->HasAura(potion.buffSpellId),
+            static_cast<std::uint8_t>(bot->GetHealthPercent()),
+            static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth), bot->GetLevel()))
+        return false;
+
+    itemID = potion.itemId;
     return ItemReadyTrigger::IsActive();
 }
 

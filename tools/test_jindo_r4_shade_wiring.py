@@ -14,6 +14,17 @@ def read(path):
         return handle.read()
 
 
+def newest_release_block(text):
+    """The changelog from its top to the second release heading: the newest release's own entries.
+
+    The window is a search of that block, not a count of lines: every fix that adds a top line keeps it
+    inside, and a new release moves the block by itself.
+    """
+    lines = text.splitlines(keepends=True)
+    heads = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    return text if len(heads) < 2 else "".join(lines[:heads[1]])
+
+
 ACTIONS = read("ai/playerbot/strategy/actions/BossTacticsActions.cpp")
 ACTIONS_H = read("ai/playerbot/strategy/actions/BossTacticsActions.h")
 TRIGGERS = read("ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp")

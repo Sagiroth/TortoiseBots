@@ -27,13 +27,12 @@ void OnyxiasLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 
 void OnyxiaFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    // Phase 2 airborne: melee cannot reach; wands/shoot keep DPS on the
-    // boss while whelp packs are the valid melee targets. Ranged spread
-    // trims Fireball (18392) splash; universal flank keeps Deep Breath
-    // lane clear via the reaction engine.
+    // Phase 2 airborne: wand casters nuke under AiPlayerbot.AirborneWandYieldsToNukes (the "airborne shoot" row
+    // yields to their class nuke rows), everyone else keeps the wand; ranged spread trims Fireball splash;
+    // universal flank keeps Deep Breath lane clear via the reaction engine.
     triggers.push_back(new TriggerNode(
         "onyxia airborne",
-        NextAction::array(0, new NextAction("shoot", ACTION_HIGH),
+        NextAction::array(0, new NextAction("airborne shoot", ACTION_HIGH),
                              new NextAction("raid spread", ACTION_HIGH - 1), NULL)));
 
     // Toggle (AiPlayerbot.OnyxiaWhelpsAndEggs, on by default; the triggers
@@ -48,6 +47,12 @@ void OnyxiaFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "onyxia eggs near",
         NextAction::array(0, new NextAction("onyxia avoid eggs", ACTION_EMERGENCY), NULL)));
+
+    // AiPlayerbot.DungeonRunAddCrew: once the add crew has the whelps, a ranged damage dealer past the crew goes back
+    // to her while she hovers (the trigger stays silent with the key off).
+    triggers.push_back(new TriggerNode(
+        "onyxia boss duty",
+        NextAction::array(0, new NextAction("onyxia attack boss", ACTION_HIGH + 1), NULL)));
 }
 
 void OnyxiaFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)

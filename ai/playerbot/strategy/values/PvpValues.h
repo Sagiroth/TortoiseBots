@@ -18,6 +18,15 @@ namespace ai
         BgRoleValue(PlayerbotAI* ai) : ManualSetValue<uint32>(ai, 0, "bg role") {}
     };
 
+    // AiPlayerbot.WsgFlagRoles cache: hash of the instance id and the
+    // team's member GUIDs, low two bits cleared, | (role + 1); 0 = not
+    // assigned yet.
+    class WsgFlagRoleValue : public ManualSetValue<uint32>
+    {
+    public:
+        WsgFlagRoleValue(PlayerbotAI* ai) : ManualSetValue<uint32>(ai, 0, "wsg flag role") {}
+    };
+
     class BgMastersValue : public SingleCalculatedValue<std::list<CreatureDataPair const*>>, public Qualified
     {
     public:

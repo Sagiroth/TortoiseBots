@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // Pure policy for a ranged reach inside a dungeon.
@@ -284,5 +285,82 @@ namespace ai
             result.point = edge;
 
         return result;
+    }
+
+    // Only a hostile body is a hover reach target: "enemy out of spell range" judges with IsHostileTo, and
+    // !IsFriendlyTo also takes neutral units. An attack reach (melee, pull) also needs a target the core lets
+    // the bot attack; a spell reach may close on a hostile it cannot hit yet (a boss still unselectable in the
+    // air), which is why the walk runs before the plain path's gates.
+    inline bool HoverReachTargetEligible(bool hostile, bool attackReach, bool attackable)
+    {
+        return hostile && (!attackReach || attackable);
+    }
+
+    // AiPlayerbot.RangedReachHoverTarget: the walk under the boss is a ranged DPS position. The reach path is
+    // shared with melee, CC and pull reaches, so a tank or a melee damage dealer that reached it could be
+    // walked toward the boss and pulled off its post; healers keep today's path walk as well ("ranged damage
+    // dealers only; tanks, melee and healers are unchanged"). The roles are read at the call site, only once
+    // the walk would otherwise run.
+    inline bool HoverReachTakerIsRangedDps(bool tank, bool healer, bool ranged)
+    {
+        return !tank && !healer && ranged;
+    }
+
+    // AiPlayerbot.RangedReachHoverTarget: a hostile at least this high above the floor under it is "hovering"
+    // (Onyxia's P2 hover points stand 19-23 yd above the floor; a jumping or stair-stepping mob is never 8 yd up).
+    constexpr float kHoverTargetMinHeightYd = 8.0f;
+
+    inline bool HoverReachApplies(bool keyOn, bool inDungeon, bool hostile, float distance, float meleeReach,
+                                  bool groundValid, float targetZ, float groundZ)
+    {
+        return keyOn && inDungeon && hostile && distance > meleeReach && groundValid &&
+               targetZ - groundZ >= kHoverTargetMinHeightYd;
+    }
+    // AiPlayerbot.HoverCastHoldsSpread: a ranged damage dealer whose target hovers (HoverReachApplies) and stands in its
+    // spell range by the trigger's measure takes no spacing step: a cast-time nuke is refused while the bot moves
+    // (CastStartBlockedByMove), and walk 2d's casters on airborne Onyxia moved > 2 yd in 2 s in 48 % of their refused
+    // frames. A live `spread` row (the boss's data asks for spacing) still steps. A member inside the spread radius
+    // outranks the hold: a caster that stacked after a Deep Breath dodge steps out of the Fireball splash first.
+    inline bool HoverCastHoldsSpread(bool keyOn, bool rangedDps, bool targetHovering, bool inSpellRange,
+                                     bool spreadRowLive, float nearestAllyYd, float spreadRadius)
+    {
+        return keyOn && rangedDps && targetHovering && inSpellRange && !spreadRowLive && nearestAllyYd >= spreadRadius;
+    }
+
+    // The trigger ("enemy out of spell range") measures edge to edge with both combat reaches; the path walk measures
+    // centre to centre. A hovering boss's reach (Onyxia 22 yd in the air) makes the centre distance the trigger allows
+    // that much longer.
+    inline float HoverReachDistance(float chaseDist, float targetReach, float botReach)
+    {
+        return chaseDist + targetReach + botReach;
+    }
+
+    // The point on the path to the floor under the target where the centre distance reaches HoverReachDistance, in
+    // sight. `sightRequired` false is the second pass: geometry only (see the glue).
+    template <typename LosFn>
+    inline RangedApproachChoice SelectHoverApproachPoint(std::vector<ApproachPoint> const& pathToGround,
+        ApproachPoint const& target, float chaseDist, float targetReach, float botReach, bool sightRequired, LosFn hasLos)
+    {
+        float const distance = HoverReachDistance(chaseDist, targetReach, botReach);
+        if (sightRequired)
+            return SelectRangedApproachPoint(pathToGround, target, distance, hasLos);
+        return SelectRangedApproachPoint(pathToGround, target, distance, [](ApproachPoint const&) { return true; });
+    }
+
+    enum class HoverReachResult : std::uint8_t { NotHover, NoGround, NoPath, NoPoint, Hazard, MoveFailed, Moved, MovedNoLos };
+    inline const char* HoverReachWord(HoverReachResult r)
+    {
+        switch (r)
+        {
+            case HoverReachResult::NotHover:   return "not_hover";
+            case HoverReachResult::NoGround:   return "no_ground";
+            case HoverReachResult::NoPath:     return "no_path";
+            case HoverReachResult::NoPoint:    return "no_point";
+            case HoverReachResult::Hazard:     return "hazard";
+            case HoverReachResult::MoveFailed: return "move_failed";
+            case HoverReachResult::Moved:      return "moved";
+            case HoverReachResult::MovedNoLos: return "moved_nolos";
+        }
+        return "not_hover";
     }
 }

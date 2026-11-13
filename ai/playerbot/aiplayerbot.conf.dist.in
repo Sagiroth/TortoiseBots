@@ -241,6 +241,23 @@ AiPlayerbot.LevelUpMounts = 1
 # 1 = any mount, including shop and raid-drop mounts (old behaviour).
 # Player alts are never gated. Default 0.
 AiPlayerbot.RandomBotShopMounts = 0
+# Level-up gear top-up (opt-in): a masterless random pool bot that reaches a
+# new level (5 or higher) gets its empty equipment slots, and grey/white items
+# 6 or more item levels below it, filled with level- and spec-appropriate gear
+# from the same selection the fresh-bot seed uses. Green or better is never
+# replaced. Once per level (after a restart, once at the current level); out of
+# combat only. Hired, guild-claimed and player-grouped bots are never touched.
+# 1 = on; 0 = off (gear only from drops, quests and vendors). Default 0.
+AiPlayerbot.PoolGearTopUpOnLevel = 0
+# Level-up money top-up (opt-in): when a masterless random pool bot reaches a
+# new level holding less than its next class-trainer visit costs (every
+# trainable class rank plus the repair/ammo/AH/guild reserves the trainer trip
+# keeps aside), it is topped up to that amount, capped at 1 gold per bot level.
+# Once per level; a bot that already has the money gets nothing. Hired,
+# guild-claimed and player-grouped bots are never paid. Each top-up writes a
+# PoolMoneyTopUp row to bot_events.csv. 1 = on; 0 = off (money only from the
+# one-time seed, loot, quests and sales). Default 0.
+AiPlayerbot.PoolMoneyTopUp = 0
 # Safety factor on the mount break-even distance: bots mount for travel/RPG
 # trips only when the remaining distance exceeds
 # 7 y/s * mount cast time / (best mount speed % / 100) * this. 0 disables
@@ -656,7 +673,8 @@ AiPlayerbot.AhMarketBidMin = 75
 # AiPlayerbot.AhMarketBidMax = 90
 AiPlayerbot.AhMarketTimeMax = 24
 # AiPlayerbot.AhMarketTimeMin = 8
-# Demand-aware WSG/AB/AV queue participation for live Headless RNDBOTs. Default on.
+# Demand-aware WSG/AB/AV/SV/BR queue participation for live Headless RNDBOTs.
+# Default on. SV = Sunnyglade Valley, BR = Blood Ring arena (max-level bots only).
 # Uses the native BattleGroundJoinAction/WorldSession handler path and the
 # copy-only BattleGroundMgr queued-participant snapshot from core #416. No
 # human-waiting queue means no bot queueing; otherwise bots match the observed
@@ -668,8 +686,8 @@ AiPlayerbot.AhMarketTimeMax = 24
 # the autonomous seeder (budget 0 still turns both off). Candidates are
 # in-memory and checked for level, alive/idle/not queued/not in a BG, no deserter/taxi, and no
 # active human master. WSG/AB group joins require every member to be a
-# service-owned Headless bot; AV is always queued solo. Cadence is 5s..10m and
-# the per-interval budget is 0..10. No second queue/thread, DB scan, arena,
+# service-owned Headless bot; AV and BR are always queued solo. Cadence is
+# 5s..10m and the per-interval budget is 0..10. No second queue/thread, DB scan,
 # vehicle, or expansion BG behavior. Master-reclaim reconciliation only removes
 # queue entries owned by this service. Requires core #411 and #416.
 #AiPlayerbot.RandomBotBgEnabled = 1
@@ -685,6 +703,16 @@ AiPlayerbot.AhMarketTimeMax = 24
 #AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1
 # Note: the seeder runs inside the backfill tick, so it also requires
 # AiPlayerbot.RandomBotBgEnabled = 1 (Autonomous=1 + BgEnabled=0 seeds nothing).
+# Warsong Gulch team roles (default 0 = off). 0 keeps the current tactics:
+# bots guard/escort their own carrier or chase the enemy one, go for the
+# enemy flag only when no real player is on their team, and otherwise
+# patrol mid-field (owner request, 2026-07-27); nobody guards the own flag
+# room. 1 splits each team's bots by rank, re-split only when the match or
+# the team roster changes: ~40% attackers go for the enemy flag (or chase the
+# enemy carrier / escort ours), ~30% defenders hold the own flag room and
+# chase an enemy carrier, the rest hold mid-field and escort - also when a
+# human is on the team (humans are not counted in the split).
+#AiPlayerbot.WsgFlagRoles = 0
 
 # 1 = every bot's AI is always fully active (botActiveAlone is ignored).
 # 0 = activity priorities apply: bots near/visible to a player, in combat, in
@@ -1097,6 +1125,18 @@ AiPlayerbot.DungeonRunTankSwap = 0
 # 1 - on
 AiPlayerbot.DungeonRunTankPost = 0
 
+# The add_crew boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): once the row's switch
+# unit (target_entry) no longer stands alive, the boss's add duty goes to a named crew instead of the kind's default
+# hunt. The crew is the melee, the tanks and the first `priority` AoE ranged bots of the raid (mage, warlock, hunter,
+# shaman, druid; one per class order, the raid order inside it, crew 0-5); the other ranged damage dealers stay on the
+# boss and a ranged damage dealer off the crew on one of the boss's adds returns to the boss while it hovers. The switch
+# unit is read through the same 200 yd grid search as the tank_post (an empty list counts as dead: a corpse that
+# despawned). Healers are never crew; before the switch, and with this key off, the boss's own add rule stands.
+# `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: add_crew rows are ignored (Default)
+# 1 - on
+AiPlayerbot.DungeonRunAddCrew = 0
+
 # The raid guard leaves a unit to the tank its boss tactic row assigns it to (only read with
 # AiPlayerbot.DungeonRunRaid = 1 and AiPlayerbot.DungeonRunRaidBossRules = 1): in a raid's boss fight the off-tanks
 # never take a unit a `taunt_after_cast` row in mode `until_tank` names with a tank slot (priority 1-7), nor one a
@@ -1118,6 +1158,15 @@ AiPlayerbot.DungeonRunTankPost = 0
 # 1 - on (recommended on where a tank row assigns a second boss to a tank slot)
 AiPlayerbot.DungeonRunGuardLeavesAssignedTank = 0
 
+# The raid guard's assignment clock starts on the first hittable tick (the unit the group can attack and selectable,
+# so a boss still in the air does not spend the grace), and a tank_post unit gets the post's 15 s grace instead of
+# 8 s. Needs AiPlayerbot.DungeonRunRaid, AiPlayerbot.DungeonRunRaidBossRules and
+# AiPlayerbot.DungeonRunGuardLeavesAssignedTank.
+# `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: the clock starts on the first loose tick and every unit gets 8 s (Default)
+# 1 - on
+AiPlayerbot.DungeonRunGuardClockHittable = 0
+
 # The `hold_spot` mode of a tank_post row (needs DungeonRunTankPost): on, the post starts while the tank still holds
 # another hostile, its arrival latches (it stays arrived while the unit is alive and selectable, wherever it walks),
 # the arrived unit outranks any other hostile, the tank drags it back to the spot once it is more than 8 yd away with
@@ -1135,6 +1184,35 @@ AiPlayerbot.DungeonRunTankPostHoldSpot = 0
 # 0 - off: the tank holds the other hostile and the post waits (Default)
 # 1 - on (recommended on for a fight whose second boss lands later)
 AiPlayerbot.DungeonRunTankPostLeash = 0
+
+# A live tank_post owns the unit it waits for (needs DungeonRunTankPost): while another tank's post is live on it, a
+# tank does not taunt it, and the post's own slot takes it. The taunt gate and both area taunts (Challenging Shout,
+# Challenging Roar, whose whole 10 yd radius is checked) refuse the subject of a post whose tank is alive, whose record
+# was read in the last 3 s and that stands within 60 yd of the unit; the unit stays reserved only while it is on that
+# tank or loose off it for less than 15 s from the first selectable tick it was off that tank (a boss still in the air
+# cannot be hit and does not start the clock; a lift-off of 15 s or more starts a new grace at the next landing, shorter
+# blips keep the original start). A tank farther than 60 yd, or one that lost the unit past 15 s, reserves nothing, so
+# another tank may taunt it again, and the read that sees the lapse writes one row (reason post_lapsed, with the tank's
+# distance, the loose time and the limit that lapsed). The row re-arms once the reservation holds again, the post tank's
+# own update included, so each lapse writes its own row. The refusal does not need AiPlayerbot.DungeonRunTauntGate. Off,
+# every tank may taunt the subject as before.
+# 0 - off: every tank may taunt the post's subject (Default)
+# 1 - on (recommended on for a fight whose second boss lands later)
+AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
+
+# A tank_post row's Engage step taunts the awaited unit back whenever it is not on the post's tank, off a healer, a
+# damage dealer or another tank. Taunting the subject off another tank also needs AiPlayerbot.DungeonRunTankPostOwnsSubject
+# (without that reservation the other tank's own class taunt is not refused, so the subject would flip between the two
+# tanks). The taunt gate still decides (needs_aura, taunt_immune), a warrior away from
+# Defensive Stance takes the stance first, and the area taunt (Challenging Shout for a warrior, Challenging Roar for a
+# druid) only goes out when the single taunt cannot, the unit stands within 10 yd and on a non-tank, and neither the
+# post reservation nor the taunt gate refuses it. Off, the step attacks the unit and waits for its `taunt_after_cast`
+# row as before. Needs AiPlayerbot.DungeonRunTankPost. The cast writes one BossTacticsTankPost row (event taunt, with
+# the step, the spell, the victim and the cast flag); a word that did not cast is written once per bot and word per 5 s,
+# and the gate rows only for a taunt the step would actually cast.
+# 0 - off: the Engage step only attacks the unit (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTankPostTaunts = 0
 
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
@@ -1440,8 +1518,9 @@ AiPlayerbot.DungeonRunFactJudgeCharmedLead = 0
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed
 # off-tank may. The warrior taunts are gated
-# (Taunt, Mocking Blow, the off-target taunt); Challenging Shout is an area taunt with no single target and is not
-# covered. Each refusal logs BossTacticsTauntGate once per bot and reason per 5 s. `.reload config` reads it again with the other
+# (Taunt, Mocking Blow, the off-target taunt); the area taunts, Challenging Shout and Challenging Roar, are not cast at
+# a current target this gate refuses, and a live tank_post's subject is refused under TankPostOwnsSubject whatever this
+# key says. Each refusal logs BossTacticsTauntGate once per bot and reason per 5 s. `.reload config` reads it again with the other
 # AiPlayerbot.DungeonRun* keys.
 # 0 - off: every taunt goes out as before (Default)
 # 1 - on (recommended on)
@@ -1455,6 +1534,19 @@ AiPlayerbot.DungeonRunBossSpread = 0
 # need it; it walks to the gather for the dose and back. Off keeps the step-away. The BossTacticsSpread row is
 # written either way.
 AiPlayerbot.DungeonRunBossSpreadSlots = 0
+
+# Protection potions from a boss's spread row: the row's spell names the school (fire, nature or shadow) and its
+# priority the roles that drink (1 tanks, 2 melee damage, 4 ranged damage, 8 healers). It works only for bots that
+# run the boss tactics: `AiPlayerbot.DungeonTactics = 1` or a commander-bound run group. A bot of a listed role
+# drinks the Greater Protection Potion of that school when it has none up and its health is not low. Off: only the
+# bosses of the built-in list use one.
+AiPlayerbot.DungeonRunBossProtectionPotion = 0
+# The healer top-up reserve (needs a heal_reserve row for the boss): outside the row's release window a healer tops
+# up members above the medium-health line only while its mana is at or above the row's percent; tanks and the boss's
+# victim are exempt, and every lower heal tier is unchanged. Off keeps the MediumMana rule.
+# Keep off: walk 75 showed more early deaths (deaths by 90 s 1.3 to 3.1 per fight) even though healer mana at 60 s
+# rose 12 points. The reserve waits for a redesign (no reserve in the opening, released when raid health drops).
+AiPlayerbot.DungeonRunHealReserve = 0
 
 # An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
 # tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).
@@ -1483,6 +1575,31 @@ AiPlayerbot.DungeonRunBurnMana = 0
 # 0 - off: ranged_only rows are ignored (Default)
 # 1 - on
 AiPlayerbot.DungeonRunRangedOnly = 0
+
+# A ranged reach at a hostile that hovers at least 8 yd above the floor under it inside a dungeon (Onyxia's P2 hover
+# points stand 19-23 yd up): the bot walks the navmesh path to the floor under the target and stops where the
+# `enemy out of spell range` trigger's own measure (the centre distance plus both combat reaches) is met, instead of
+# walking under the body, where no floor point is in range and the core chase stands still. With the key off the reach
+# behaves exactly as before. Every step writes a BossReachHover row (bot_events.csv) naming the reason it stopped or
+# moved. Recommended on. `.reload config` reads it again.
+# 0 - off: the plain ranged path walk and chase (Default)
+# 1 - on
+AiPlayerbot.RangedReachHoverTarget = 0
+
+# The airborne-boss wand row (Onyxia P2 "onyxia airborne" -> shoot): with the key on the row is not useful for a
+# damage-dealing wand caster (mage, warlock, non-healer priest), so their class nuke rows cast instead; their class
+# rows already wand only when the nuke cannot go out ("no mana", "unaffordable", "wand blocks nuke"). Hunters, melee,
+# tanks and healers keep the row. `.reload config` reads it again.
+# 0 - off: every bot wands on the airborne row (Default)
+# 1 - on
+AiPlayerbot.AirborneWandYieldsToNukes = 0
+
+# A ranged damage dealer whose hovering target (Onyxia P2) stands in spell range by the trigger's own measure takes no
+# `raid spread` spacing step; a cast-time nuke is refused while the bot moves. A live boss `spread` row still steps.
+# `.reload config` reads it again.
+# 0 - off: the spread steps as before (Default)
+# 1 - on
+AiPlayerbot.HoverCastHoldsSpread = 0
 
 # The gate_hold boss tactic of the boss tactics rows (recommended on; ai_boss_tactic, docs/play/boss-tactics.md):
 # damage dealers leave the row's boss alone once its health is at or below the row's gate percent (param, 1-99) while

@@ -632,8 +632,13 @@ namespace ai
     };
 
     // Greater Protection Potion for the listed raid boss among the bot's
-    // attackers (ProtectionPotionPolicy.h); 0 when none is in the fight.
-    uint32 FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId = nullptr);
+    // attackers (ProtectionPotionPolicy.h); 0 when none is in the fight. The
+    // entry table only, so the legacy trigger never sees a spread row's potion.
+    uint32 FindListedBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId = nullptr);
+
+    // The listed boss's potion, else the one a live spread row names; `fromRow`
+    // reports that a row, not the entry table, named it.
+    uint32 FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId = nullptr, bool* fromRow = nullptr);
 
     class UseBossProtectionPotionAction : public UseItemIdAction
     {

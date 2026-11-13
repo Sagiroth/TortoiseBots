@@ -147,10 +147,15 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
     dungeonRunTankSwap = config.GetBoolDefault("AiPlayerbot.DungeonRunTankSwap", false);
     dungeonRunTankPost = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPost", false);
+    dungeonRunAddCrew = config.GetBoolDefault("AiPlayerbot.DungeonRunAddCrew", false);
     dungeonRunGuardLeavesAssignedTank =
         config.GetBoolDefault("AiPlayerbot.DungeonRunGuardLeavesAssignedTank", false);
+    dungeonRunGuardClockHittable = config.GetBoolDefault("AiPlayerbot.DungeonRunGuardClockHittable", false);
     dungeonRunTankPostHoldSpot = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostHoldSpot", false);
     dungeonRunTankPostLeash = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostLeash", false);
+    dungeonRunTankPostOwnsSubject =
+        config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostOwnsSubject", false);
+    dungeonRunTankPostTaunts = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostTaunts", false);
     dungeonRunSeekAura = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekAura", false);
     dungeonRunSeekPullCycle = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekPullCycle", false);
     dungeonRunSeekSonMeet = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekSonMeet", false);
@@ -177,6 +182,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
     dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);
     dungeonRunBossSpreadSlots = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpreadSlots", false);
+    dungeonRunBossProtectionPotion = config.GetBoolDefault("AiPlayerbot.DungeonRunBossProtectionPotion", false);
+    dungeonRunHealReserve = config.GetBoolDefault("AiPlayerbot.DungeonRunHealReserve", false);
     dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);
     dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);
     bossStandOutranksBreathDodge = config.GetBoolDefault("AiPlayerbot.BossStandOutranksBreathDodge", false);
@@ -184,6 +191,9 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     bossStandWholeRaid = config.GetBoolDefault("AiPlayerbot.BossStandWholeRaid", false);
     bossTacticsKeepsEngagedBoss = config.GetBoolDefault("AiPlayerbot.BossTacticsKeepsEngagedBoss", false);
     dungeonRunRangedOnly = config.GetBoolDefault("AiPlayerbot.DungeonRunRangedOnly", false);
+    rangedReachHoverTarget = config.GetBoolDefault("AiPlayerbot.RangedReachHoverTarget", false);
+    airborneWandYieldsToNukes = config.GetBoolDefault("AiPlayerbot.AirborneWandYieldsToNukes", false);
+    hoverCastHoldsSpread = config.GetBoolDefault("AiPlayerbot.HoverCastHoldsSpread", false);
     dungeonRunGateHold = config.GetBoolDefault("AiPlayerbot.DungeonRunGateHold", false);
     dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);
     dungeonRunImmuneBossVictimEscape = config.GetBoolDefault("AiPlayerbot.DungeonRunImmuneBossVictimEscape", false);
@@ -630,6 +640,8 @@ bool PlayerbotAIConfig::Initialize()
     turtleMountAtLevel = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.TurtleMountAtLevel", 18));
     levelUpMounts = config.GetBoolDefault("AiPlayerbot.LevelUpMounts", true);
     randomBotShopMounts = config.GetBoolDefault("AiPlayerbot.RandomBotShopMounts", false);
+    poolGearTopUpOnLevel = config.GetBoolDefault("AiPlayerbot.PoolGearTopUpOnLevel", false);
+    poolMoneyTopUp = config.GetBoolDefault("AiPlayerbot.PoolMoneyTopUp", false);
     mountBreakEvenFactor = config.GetFloatDefault("AiPlayerbot.MountBreakEvenFactor", 1.5f);
     avoidHostileTowns = config.GetBoolDefault("AiPlayerbot.AvoidHostileTowns", true);
     unstuckHearthLevelFit = config.GetBoolDefault("AiPlayerbot.UnstuckHearthLevelFit", true);
@@ -866,6 +878,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotBgMaxQueuePerInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgMaxQueuePerInterval", 1);
     randomBotBgAutonomous = config.GetBoolDefault("AiPlayerbot.RandomBotBgAutonomous", true);
     randomBotBgAutonomousMaxInstances = config.GetIntDefault("AiPlayerbot.RandomBotBgAutonomousMaxInstances", 1);
+    wsgFlagRoles = config.GetBoolDefault("AiPlayerbot.WsgFlagRoles", false);
 
     sLog.outString("Loading Race/Class probabilities");
 

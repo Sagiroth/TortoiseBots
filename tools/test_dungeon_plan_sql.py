@@ -5372,7 +5372,16 @@ class DungeonPlanSql(unittest.TestCase):
         # carries the walk-29 unit lists: the mages Polymorph the Venombroods (14532, beasts and not immune) and the
         # kill_first order names the Thekal zealots and the four Razzashi Cobras. 9 legs, 754 steps, 149 pulls, the
         # eight bosses in the guide's order; leg 2 is the r2 Mar'li route (below).
-        # 20261106030100 (turtle-agent f200b00b, plan/zg-hakkar-anchor, 2026-11-06): the newest zul_gurub migration, the t1105e
+        # 20261111100000 (turtle-agent 9a9ac8f0, fix/zg-hakkar-fast-attempt, 2026-11-10): the newest zul_gurub migration, the walk-71
+        # fast first fix (TortoiseBots-audit tests/raid-zg-walk71-aux/FAST-ATTEMPT.md section 5a): leg 8's entry doubled back. Its
+        # `to` was the walk-29 quiet point -11754.643 -1494.6427 37.76537 and a second via -11776.531 -1502.4786 29.24619 walked
+        # the party north-east to it before the approach path turned south again, so a run that starts at the leg's first row
+        # walked leg 7's last row -> first pull 239.3 yd (149.8 yd now), and the plan chain placement -> via -> to -> boss approach
+        # -> boss read 371.1 yd against 91.4 yd straight (290.1 yd now). `to` is the row a placed Hakkar run already starts on,
+        # -11786.999 -1564.2667 20.562721 (58.0 yd from the nearest forward pack spawn), and the first via stays the connection
+        # from leg 7's end; the pull groups and the boss step are untouched. Leg 8: 80 -> 77 rows, 694 -> 691 steps, pulls
+        # unchanged at 148. The placed walk is identical (its start point is the same map position, three rows earlier).
+        # 20261106030100 (turtle-agent f200b00b, plan/zg-hakkar-anchor, 2026-11-06): the t1105e
         # Hakkar fix (TortoiseBots-audit research/zg-bosses/HAKKAR-RESETS.md, spec hakkar-anchor-t1105e Part B). He evades below
         # z 45.8 (boss_hakkar.cpp:140-145) and the plan stood the raid 34-50 yd south-west of him on the slope that crosses that
         # line: 100 of walk 41's 130 Hakkar ends and 15 of walk 42's 16 were his own reset. The boss approach is the ramp's top
@@ -5413,8 +5422,8 @@ class DungeonPlanSql(unittest.TestCase):
         # carries kill_first 15112,14987 (Brain Wash Totem, Powerful Healing Ward) ahead of the old order; 9 legs, 750 steps,
         # 148 pulls. Only leg 6 (jindo_the_hexxer) differs from 20261104160000: 90 -> 87 steps, 19 -> 18 pulls.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261106030100_world.sql")
-        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent f200b00b54c8c7bf3eeea864aad1b455fa41d464 dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
+        self.assertEqual(name, "20261111100000_world.sql")
+        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent 9a9ac8f00b661a8d76159fbdbbef2c1f476788f8 dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
         zg_cc = re.search(r"\('zul_gurub', 309, '([^']*)'", text)
         self.assertIsNotNone(zg_cc, "the zul_gurub plan row is missing")
         self.assertEqual(len(zg_cc.group(1).split(",")), 16,
@@ -5424,19 +5433,20 @@ class DungeonPlanSql(unittest.TestCase):
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
                           "jindo_the_hexxer", "hakkar_outer", "hakkar"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
-        self.assertEqual(len(rows), 694)
+        self.assertEqual(len(rows), 691)
         self.assertEqual([len(leg_steps(rows, leg)) for leg in range(9)],
-                         [49, 124, 28, 54, 95, 79, 89, 96, 80])
+                         [49, 124, 28, 54, 95, 79, 89, 96, 77])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
                          [16, 23, 6, 8, 26, 20, 18, 23, 8])
         # t1105c: the Jin'do ward leads kill_first (14987 before 15112) and Jeklik's boss approach is the walked floor point.
         self.assertIn("'14987,15112,14750,15146,11830,14883'", text)
         self.assertIn("('zul_gurub', 0, 47, 'move', 0, -12269.3, -1389.4, 131.5, 0, 0, 0, 0, 0, '', 'boss approach')", text)
         # t1105e: Hakkar's approach is two plan points on his platform, the ramp's lip and the stand, and his boss row is the
-        # last of the plan (79, not 80) because the lip replaces the path row the 20261106010000 cut added there.
-        self.assertIn("('zul_gurub', 8, 77, 'move', 0, -11807.651, -1691.3049, 52.111286, 0, 0, 0, 0, 0, '', 'boss approach')", text)
-        self.assertIn("('zul_gurub', 8, 78, 'move', 0, -11790, -1662, 53.11, 0, 0, 0, 0, 0, '', 'boss approach')", text)
-        self.assertIn("('zul_gurub', 8, 79, 'boss', 14834, -11787.4, -1649.34, 54.1, 0, 0, 0, 0, 0, '', 'boss');", text)
+        # last of the plan because the lip replaces the path row the 20261106010000 cut added there. Walk 71 fast drops the
+        # leg's second via and three rows, so they number 74, 75 and 76 now.
+        self.assertIn("('zul_gurub', 8, 74, 'move', 0, -11807.651, -1691.3049, 52.111286, 0, 0, 0, 0, 0, '', 'boss approach')", text)
+        self.assertIn("('zul_gurub', 8, 75, 'move', 0, -11790, -1662, 53.11, 0, 0, 0, 0, 0, '', 'boss approach')", text)
+        self.assertIn("('zul_gurub', 8, 76, 'boss', 14834, -11787.4, -1649.34, 54.1, 0, 0, 0, 0, 0, '', 'boss');", text)
         # Leg 1 (high_priest_venoxis), walk 20: the Mad Servant packs (15111) are pulled from stands out of the
         # others' aggro, in the order E, C, then D+A as one row (walk 18 moved D in from leg 7 group 37; walk 20
         # merged it with A). Each is a stand pull (flag 8192) run from the move row right before it (its stand):
@@ -5670,6 +5680,52 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_dungeon_step` WHERE `plan` = 'zul_gurub';", text)
         self.assertNotIn("`ai_dungeon_boss`", text)
         self.assertNotIn("`ai_boss_tactic`", text)
+
+    def test_zul_gurub_walk71_fast_entry_is_the_placement_point(self):
+        # Walk 71 fast (2026-11-10, t1106k; TortoiseBots-audit tests/raid-zg-walk71-aux/FAST-ATTEMPT.md section 2): leg 8's
+        # entry doubled back. Its `to` was the walk-29 quiet point -11754.643 -1494.6427 37.76537 and a second via
+        # -11776.531 -1502.4786 29.24619 walked the party north-east to it before the approach path turned south, so a run
+        # from the leg's first row walked leg 7's last row -> its first pull 239.3 yd. `to` is now the row a placed Hakkar
+        # run already starts on (-11786.999 -1564.2667 20.562721, 58.0 yd from the nearest forward pack spawn), and the first
+        # via keeps the connection from leg 7's end. The same map position is why a placed walk is unchanged.
+        name, text = newest_plan_text("zul_gurub")
+        self.assertEqual(name, "20261111100000_world.sql")
+        rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
+        leg8 = leg_steps(rows, 8)
+        self.assertEqual(len(leg8), 77)
+        # The entry: the remaining via from leg 7's end, then the placement point as `to`.
+        self.assertEqual((leg8[0]["kind"], leg8[0]["comment"], leg8[0]["x"], leg8[0]["y"], leg8[0]["z"]),
+                         ("move", "via", "-11812.322", "-1515.2914", "17.711304"))
+        self.assertEqual((leg8[1]["kind"], leg8[1]["comment"], leg8[1]["x"], leg8[1]["y"], leg8[1]["z"]),
+                         ("move", "to", "-11786.999", "-1564.2667", "20.562721"))
+        # The doubled-back points are gone from the whole plan.
+        moves = [(r["x"], r["y"]) for r in rows if r["kind"] == "move"]
+        self.assertNotIn(("-11776.531", "-1502.4786"), moves)
+        self.assertNotIn(("-11754.643", "-1494.6427"), moves)
+        # Three approach rows and pull group 0 follow the `to`: the placed walk's own rows, unchanged.
+        self.assertEqual([(r["kind"], r["comment"]) for r in leg8[2:5]], [("move", "approach path")] * 3)
+        self.assertEqual((leg8[5]["kind"], leg8[5]["x"], leg8[5]["y"], leg8[5]["radius"], leg8[5]["entries"]),
+                         ("pull", "-11736.1", "-1586.92", "2.4", "11357,11359"))
+        # The eight pull groups and the boss step are untouched: only the entry and its row count moved.
+        self.assertEqual([(r["x"], r["y"], r["radius"], r["entries"]) for r in leg8 if r["kind"] == "pull"],
+                         [("-11736.1", "-1586.92", "2.4", "11357,11359"),
+                          ("-11738.2", "-1590.79", "1", "11357"),
+                          ("-11787.17", "-1675.21", "1.4", "11359,11830,11340,11356"),
+                          ("-11787.53", "-1672.35", "1", "11359,11356,11830,11340"),
+                          ("-11840.07", "-1705.59", "2.1", "11357,11359"),
+                          ("-11842.9", "-1594.18", "1", "11357"),
+                          ("-11660.87", "-1544.73", "6.8", "11351,14821,11830"),
+                          ("-11817.2", "-1805.43", "10.6", "11361,11350")])
+        self.assertEqual((leg8[-1]["kind"], leg8[-1]["x"], leg8[-1]["y"], leg8[-1]["z"]),
+                         ("boss", "-11787.4", "-1649.34", "54.1"))
+        # Leg 7's last row -> the first pull through the leg's own rows: 239.3 yd on the removed entry, 149.8 yd now.
+        first = leg_steps(rows, 7)[-1]
+        walked = 0.0
+        for r in leg8[:6]:
+            walked += math.dist([float(first[k]) for k in ("x", "y", "z")],
+                                [float(r[k]) for k in ("x", "y", "z")])
+            first = r
+        self.assertAlmostEqual(walked, 149.8, delta=0.2)
 
 
     # Batch-8's walk-36 pins (20261105140000, 761 steps). The export's 20261105170000 zul_gurub is the newer
@@ -6277,8 +6333,8 @@ class DungeonPlanSql(unittest.TestCase):
         # radii, the raid ring and margin). Walk 1's five resumed plain pulls of pack 0 killed it in about a minute
         # with 0-3 deaths; the stand's sight line is a vmap question the offline navmesh cannot answer.
         name, text = newest_plan_text("onyxias_lair")
-        self.assertEqual(name, "20261110120100_world.sql")
-        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent f752900f", text)
+        self.assertEqual(name, "20261111090100_world.sql")
+        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent 143052b9", text)
         self.assertEqual([v[0] for v in leg_rows(text, "onyxias_lair").values()], ["tunnel", "onyxia"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "onyxias_lair"]
         leg0 = leg_steps(rows, 0)
@@ -6287,7 +6343,7 @@ class DungeonPlanSql(unittest.TestCase):
         pulls = [r for r in rows if r["kind"] == "pull"]
         self.assertEqual(len(pulls), 7)
         self.assertEqual([(r["entries"], r["radius"]) for r in pulls],
-                         [("12129", "1"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
+                         [("12129", "28"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
                           ("12129,49016", "10"), ("49017", "3"), ("49016,49017,12129", "8")])
         # Pulls 2, 4, 5 and 6 carry the stand-pull flag with param 0; pack 0 and the rest carry no flag.
         flagged = {int(r["seq"]) for r in leg0 if r["kind"] == "pull" and int(r["flags"]) & 8192}
@@ -6297,9 +6353,9 @@ class DungeonPlanSql(unittest.TestCase):
                 self.assertEqual(r["param"], "0", r["seq"])
             else:
                 self.assertEqual(r["flags"], "0", r["seq"])
-        # Pack 0 is the plain pull: same spot and radius, no stand-pull flag or comment.
+        # Pack 0 is the plain pull: same spot, radius 28, no stand-pull flag or comment.
         pack0 = [r for r in pulls if r["entries"] == "12129"][0]
-        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "1"))
+        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "28"))
         self.assertEqual(pack0["comment"], "pull group 0")
         # The boss leg: the corridor-junction `to`, the two floor approach points, the stand, then Onyxia.
         self.assertEqual([(r["kind"], r["comment"]) for r in leg1],
@@ -6313,6 +6369,21 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertGreaterEqual(dist3(stand, 0.69628, -211.972, -86.075), 75.0)
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["onyxias_lair"])
 
-
+    def test_onyxias_lair_walk2d_pack0_radius28(self):
+        # 20261111090100 (walk 2d, TA 143052b9): pack 0 radius 1 -> 28. Only its pull row (seq 2, radius 28) and
+        # the plan row's source rev differ from 20261110120100; the cut used the same flags and mmaps state (no
+        # approach-path re-cut), so every other row is byte-identical. This pins the new file's own rows.
+        text = open("data/sql/world/20261111090100_world.sql").read()
+        self.assertIn("'turtle-agent 143052b9 ", text)
+        rows = [r for r in self.step_rows(text) if r["plan"] == "onyxias_lair"]
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 7)
+        pack0 = [r for r in pulls if r["entries"] == "12129"][0]
+        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "28"))
+        self.assertEqual(pack0["comment"], "pull group 0")
+        self.assertEqual(pack0["flags"], "0")
+        self.assertEqual([(r["entries"], r["radius"]) for r in pulls],
+                         [("12129", "28"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
+                          ("12129,49016", "10"), ("49017", "3"), ("49016,49017,12129", "8")])
 if __name__ == "__main__":
     unittest.main()

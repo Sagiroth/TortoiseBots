@@ -361,7 +361,9 @@ class BossStandWiring(unittest.TestCase):
                 # The seat refusal comes after the stay exemption; the spread action's slot verdict row logs the
                 # stand on the way, and it still answers false for a seated bot.
                 self.assertIn("if (FindBossStand(ai, bot).valid)", fn)
-                self.assertIn("\n        return false;\n    }\n    return true;", fn)
+                # The hover cast hold (AiPlayerbot.HoverCastHoldsSpread) runs after the seat refusal, so the seat's
+                # block closes into that read instead of straight into the final true.
+                self.assertIn("\n        return false;\n    }\n    if (sPlayerbotAIConfig.hoverCastHoldsSpread)", fn)
                 self.assertLess(flat.index("if (!sPlayerbotAIConfig.raidReactions) return false;"),
                                 flat.index("if (FindBossStand(ai, bot).valid)"))
             else:
@@ -371,7 +373,8 @@ class BossStandWiring(unittest.TestCase):
                       body(DUNGEON_ACTIONS, "bool DragonFlankAction::isUseful()"))
         spread = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")
         self.assertIn("if (FindBossStand(ai, bot).valid)", spread)
-        self.assertIn("\n        return false;\n    }\n    return true;", spread)
+        self.assertIn("if (hold == HoverCastHold::Held)\n            return false;", spread)
+        self.assertIn("\n            return false;\n    }\n    return true;", spread)
 
     def test_stand_episode_rows_are_gated_by_their_key(self):
         # AiPlayerbot.BossStandEvents: one BossStand row per bot's episode, nothing read, written or logged without it.

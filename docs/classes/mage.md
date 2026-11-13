@@ -29,7 +29,7 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 - If enemies close within 8 yards and attack the mage, turns away and casts *Blink* to reset distance. With `.bot behavior <bot> noblink on` it never casts *Blink* inside a dungeon or raid and keeps fighting instead.
 - Roots attackers with *Frost Nova* — only when a mob within reach is attacking the mage itself, skipping targets already frozen or immune.
 - Casts *Arcane Explosion* when 3 or more enemies cluster inside 10 yards and none of them is loose on the party.
-- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone (6-second window).
+- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone (6-second window). A Frost mage withholds *Flamestrike* for the first 10 seconds of a fight, the same opener gate *Blizzard* has, so it does not open a fresh pack before the tank holds it.
 - Weaves *Cone of Cold* against 2 or more enemies at ranged scan, cast only inside 10 yards while facing the target.
 - Activates *Cold Snap* when any Frost cooldown (*Frost Nova*, *Cone of Cold*, *Ice Barrier*, *Ice Block*, *Frost Ward*) is spent.
 - Area spells (*Blizzard*, *Flamestrike*, *Cone of Cold*) pause during [party threat back-off](overview.md#shared-bot-behaviors) if holding 50% or more tank threat.

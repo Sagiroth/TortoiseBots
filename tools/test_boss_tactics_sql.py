@@ -22,10 +22,12 @@ DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold", "tank_post"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold", "tank_post",
+         "add_crew", "heal_reserve"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
-TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore"}
+TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore",
+                    "add_crew"}
 # The mode word each kind takes (`tactic_mode`); an empty word is the kind's own behaviour.
 MODE_WORDS = {
     "dispel_priority": {"now", "clear", "never"},
@@ -261,7 +263,7 @@ def new_kind_problem(row):
     if row["tactic_mode"] not in MODE_WORDS.get(kind, set()) | {""}:
         return "a mode word the kind does not take"
     if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor",
-                "tank_ignore", "seek_pull", "gate_hold") and (
+                "tank_ignore", "seek_pull", "gate_hold", "add_crew") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
     if kind == "gate_hold":
@@ -352,6 +354,23 @@ def new_kind_problem(row):
         if row["cycle_spell"] or row["cycle_s"] or has_spot:
             return "cycle or spot columns on another kind"
         return None
+    if kind == "heal_reserve":
+        # The boss itself (target_entry 0, no spell, priority 0); `param` the reserve percent 10-100 and `window_s`
+        # the release lead 0-120 s. A fight-scan kind, so a health band may arm it; no mode word, spot or cycle
+        # columns.
+        if row["target_entry"] or row["spell_id"]:
+            return "heal_reserve with a target or a spell"
+        if row["priority"]:
+            return "heal_reserve with a priority"
+        if not 10.0 <= row["param"] <= 100.0:
+            return "heal_reserve reserve outside [10, 100]"
+        if not 0.0 <= row["window_s"] <= 120.0:
+            return "heal_reserve release lead outside [0, 120]"
+        if row["tactic_mode"]:
+            return "a mode word on heal_reserve"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
+        return None
     if kind == "tank_ignore":
         # The entry the tanks leave to the damage dealers while the boss fights, and nothing else (read straight from
         # the table by the tank pickers and the run guard).
@@ -381,7 +400,7 @@ def new_kind_problem(row):
             return "cycle columns on another kind"
         return None
     if kind == "tank_post":
-        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-40 yd)
+        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-100 yd)
         # and the longest hold (window_s 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
         if not row["target_entry"]:
             return "tank_post without its awaited unit"
@@ -391,12 +410,30 @@ def new_kind_problem(row):
             return "tank_post tank slot outside 1-7"
         if not has_spot:
             return "tank_post without its spot"
-        if not 5.0 <= row["param"] <= 40.0:
-            return "tank_post arrival radius outside [5, 40]"
+        if not 5.0 <= row["param"] <= 100.0:
+            return "tank_post arrival radius outside [5, 100]"
         if not 10.0 <= row["window_s"] <= 120.0:
             return "tank_post window outside [10, 120]"
         if row["cycle_spell"] or row["cycle_s"]:
             return "cycle columns on another kind"
+        return None
+    if kind == "add_crew":
+        # The switch unit whose death hands the boss's adds over (target_entry, never the boss itself) and the crew
+        # size (priority 0-5): no spell, no radius, no gate (see above), no mode word and no cycle or spot columns.
+        if not row["target_entry"]:
+            return "add_crew without its switch unit"
+        if row["target_entry"] == row["boss_entry"]:
+            return "add_crew switch unit is its own boss"
+        if row["spell_id"]:
+            return "add_crew with a spell"
+        if row["priority"] > 5:
+            return "add_crew crew size above 5"
+        if row["param"] != 0.0:
+            return "add_crew with a radius"
+        if row["tactic_mode"]:
+            return "a mode word on add_crew"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
         return None
     if kind == "needs_aura":
         # The aura is the row's gate: it names the entry and the aura a bot must carry, and nothing else.
@@ -639,7 +676,7 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
         # The spell-less until_tank hold of Mandokir 11382 is gone: a spell-less hold fires only its engage edge, once
         # per fight, so "until_tank" never recurred. Hakkar's opening hold is back in mode `engage`, where that single
-        # edge is the whole rule (the 5 s opening threat hold of 20261107120000); Mandokir's would still need a trigger
+        # edge is the whole rule (the 12 s opening threat hold of 20261111120000); Mandokir's would still need a trigger
         # that recurs. Their triggers are auras on players (or an instant cast, Cause Insanity 24327,
         # castingTimeIndex 1), which the hold's cast/aura edge cannot see on the boss.
         hold = live.get((309, 14834, "dps_hold_after", 0, 0))
@@ -700,7 +737,7 @@ class BossTacticsSql(unittest.TestCase):
         # 20261107200000_world.sql deleted Hakkar's taunt_after_cast row: like Jin'do he is taunt-immune
         # (creature_template 14834 immunity_flags 6), so Cause Insanity's threat reset is answered by the
         # threat_successor cap instead. The four rows of 20261104020000_world.sql minus that row, plus the
-        # opening hold of 20261107120000_world.sql. The core ids are pinned in BossTacticsCoreData below;
+        # opening hold of 20261111120000_world.sql (12 s, was 5 s). The core ids are pinned in BossTacticsCoreData below;
         # here the live table shape is, so a wrong number or a delete that reaches too far fails.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         seek = live.get((309, 14834, "seek_aura", 11357, 24321))
@@ -716,25 +753,29 @@ class BossTacticsSql(unittest.TestCase):
                          "the Hakkar pull_gate row drifted")
         spread = live.get((309, 14834, "spread", 0, 24328))
         self.assertIsNotNone(spread, "the Hakkar spread row is missing")
-        self.assertEqual(12.0, spread["param"], "the Hakkar spread row drifted")
+        # r11-4: `priority` is the role mask of who drinks the row's protection potion (1 tank, 2 melee, 4 ranged,
+        # 8 healer): 7 = tanks and both damage roles, no healer. `param` stays the 12 yd spacing.
+        self.assertEqual((7, 12.0), (spread["priority"], spread["param"]),
+                         "the Hakkar spread row drifted")
+        self.assertEqual("20261111120100_world.sql", spread["file"],
+                         "the r11-4 migration owns the Hakkar spread row")
         self.assertNotIn((309, 14834, "taunt_after_cast", 0, 0), live,
                          "the Hakkar taunt_after_cast row is back: Hakkar is taunt-immune")
-        # The opening hold: 5 s from the first engagement, no spell, mode engage. A spell-less row fires only that
-        # edge, which is exactly a pull hold (it never recurs). Hakkar is taunt-immune and the batch's
+        # The opening hold: 12 s from the first engagement (was 5 s), no spell, mode engage. A spell-less row fires
+        # only that edge, which is exactly a pull hold (it never recurs). Hakkar is taunt-immune and the batch's
         # threat_successor cap keeps damage dealers under the off-tank, so this hold answers the pull only.
         hold = live.get((309, 14834, "dps_hold_after", 0, 0))
         self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
-        self.assertEqual((0, 5.0, 0, "engage"),
+        self.assertEqual((0, 12.0, 0, "engage"),
                          (hold["priority"], hold["param"], hold["bot_aura"], hold["tactic_mode"]),
                          "the Hakkar opening dps_hold_after row drifted")
-        self.assertEqual("20261107120000_world.sql", live[(309, 14834, "dps_hold_after", 0, 0)]["file"],
+        self.assertEqual("20261111120000_world.sql", live[(309, 14834, "dps_hold_after", 0, 0)]["file"],
                          "the Hakkar D1 migration owns the opening hold")
         for row in (seek, gate, spread, hold):
             self.assertIsNone(new_kind_problem(row))
         # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
-
     def test_hakkar_seek_pull_row(self):
         # 20261107230000_world.sql: the seek walk-out gets one Son per cycle's rules (walk 51). target_entry the
         # source, priority 3 walk-outs a cycle, window_s the 60 s last start; 20261108100000_world.sql replaces the
@@ -755,6 +796,29 @@ class BossTacticsSql(unittest.TestCase):
             text = handle.read()
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
                       "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+
+    def test_hakkar_heal_reserve_row(self):
+        # 20261111140000_world.sql: r11-3, the healer top-up reserve. 85 % of mana, released 60 s before each Blood
+        # Siphon (the gather); tanks and the boss's victim are exempt in the code, not in the row.
+        name = "20261111140000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the heal_reserve migration is missing")
+        self.assertGreater(name, "20261110120300_world.sql")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        row = live.get((309, 14834, "heal_reserve", 0, 0))
+        self.assertIsNotNone(row, "the Hakkar heal_reserve row is missing")
+        self.assertEqual(name, row["file"], "the heal_reserve migration owns the row")
+        self.assertEqual((0, 85.0, 60.0, 0, "", 0, 0.0, 0, 100),
+                         (row["priority"], row["param"], row["window_s"], row["bot_aura"], row["tactic_mode"],
+                          row["cycle_spell"], row["cycle_s"], row["hp_min"], row["hp_max"]),
+                         "the Hakkar heal_reserve row drifted")
+        self.assertIsNone(new_kind_problem(row))
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'heal_reserve' AND `target_entry` = 0 AND `spell_id` = 0 "
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
 
@@ -847,6 +911,40 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
 
+    def test_hakkar_opening_hold_is_12s(self):
+        # 20261111120000_world.sql: Hakkar's opening damage hold 5 s to 12 s (r11-2 D1). The first Cause Insanity
+        # 24327 comes at 17 s, so 12 s leaves the damage dealers about 5-7 s and ends before the first
+        # Corrupted Blood (15 s). The rollback file tools/sql/rollback/20261111120000_world.rollback.sql puts 5 s
+        # back by hand.
+        name = "20261111120000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the 12 s opening hold migration is missing")
+        self.assertGreater(name, "20261110120300_world.sql")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        hold = live.get((309, 14834, "dps_hold_after", 0, 0))
+        self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
+        self.assertEqual((0, 12.0, 0, "engage"),
+                         (hold["priority"], hold["param"], hold["bot_aura"], hold["tactic_mode"]),
+                         "the Hakkar opening dps_hold_after row drifted")
+        self.assertEqual(name, hold["file"], "the 12 s migration owns the opening hold")
+        self.assertLess(hold["param"], 15.0, "the hold reaches into the first Corrupted Blood (15 s)")
+        self.assertLessEqual(hold["param"], 30.0, "the loader refuses a hold over 30 s")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 12, 'engage', 0, 0, 0, 0, 0, 0, ", text)
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261111120000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the r11-2 rollback file is missing")
+        with open(rollback, encoding="utf-8") as handle:
+            rollback_text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", rollback_text)
+        self.assertIn("'dps_hold_after', 0, 0, 0, 5, 'engage'", rollback_text)
+
     def test_onyxia_walk2a_rows_are_live(self):
         # 20261110120000_world.sql: damage holds off Onyxia 10184 at 42 % while Cindarion 50143
         # fights, and the room-centre anchor keeps the raid out of the respawned room-mouth
@@ -884,6 +982,56 @@ class BossTacticsSql(unittest.TestCase):
                     (249, 50144, "kill_first", 50144, 0), (249, 50144, "taunt_after_cast", 0, 0),
                     (249, 50144, "behind", 0, 33441)):
             self.assertIn(key, live, "the Cindarion/Hatcher rows must stay: %s" % (key,))
+
+    def test_onyxia_walk2d_opening_hold(self):
+        # 20261111090000_world.sql: walk 2d the 8 s opening threat hold on Onyxia 10184.
+        # Walk 2c b-2/b-3/b-4 opened with a damage dealer passing the tanks in the first 8 s
+        # (b-2: Ironmane 1,561 threat at +8 s), so she walked into the raid at (-55, -210) and
+        # Flame Breath 13 plus Cleave 12 kills wiped the pull at 67 %. The hold answers the pull
+        # only (mode engage); it is the Hakkar row's shape (pinned in
+        # test_hakkar_opening_hold_migration), so the loader's own checks pin it here too.
+        name = "20261111090000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2d opening hold migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'dps_hold_after';", text)
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(1, text.count("(249, 10184, 'dps_hold_after'"))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        hold = live.get((249, 10184, "dps_hold_after", 0, 0))
+        self.assertIsNotNone(hold, "the Onyxia opening dps_hold_after row is missing")
+        self.assertEqual(name, hold["file"], "the walk 2d migration owns the opening hold")
+        self.assertEqual((0, 8.0, 0, 100, 0, "engage"),
+                         (hold["priority"], hold["param"], hold["hp_min"], hold["hp_max"],
+                          hold["bot_aura"], hold["tactic_mode"]),
+                         "the Onyxia opening dps_hold_after row drifted")
+        self.assertIsNone(new_kind_problem(hold))
+
+    def test_onyxia_walk2e_add_crew(self):
+        # 20261111160000_world.sql: walk 2e, the add crew. Walk 2d a-1 put at least 79 % of the P2 damage on the
+        # whelps and the ranged bots stood on a whelp for 37 % of their frames, so once Cindarion 50143 is dead the
+        # melee, the tanks and two AoE ranged bots take the whelps and the other ranged bots stay on her (needs
+        # AiPlayerbot.DungeonRunAddCrew = 1).
+        name = "20261111160000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2e add_crew migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'add_crew';", text)
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(1, text.count("(249, 10184, 'add_crew'"))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        crew = live.get((249, 10184, "add_crew", 50143, 0))
+        self.assertIsNotNone(crew, "the Onyxia add_crew row is missing")
+        self.assertEqual(name, crew["file"], "the walk 2e migration owns the add_crew row")
+        self.assertEqual((50143, 0, 2, 0.0, "", 0, 100, 0),
+                         (crew["target_entry"], crew["spell_id"], crew["priority"], crew["param"],
+                          crew["tactic_mode"], crew["hp_min"], crew["hp_max"], crew["bot_aura"]),
+                         "the Onyxia add_crew row drifted")
+        self.assertIsNone(new_kind_problem(crew))
 
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
@@ -945,12 +1093,12 @@ class BossTacticsSql(unittest.TestCase):
                                      "anchor %d side %d role %s" % (anchor, side, role))
 
     def test_onyxia_walk2c_rows(self):
-        # 20261110130000_world.sql: the arrival radius goes 25 -> 40 (the latch only decides
-        # the first arrival; walk 2b Cindarion landed 21-26 yd from T, so 25 latched 44-104 s
-        # late), and a ranged_only row (gap 10 yd, needs AiPlayerbot.DungeonRunRangedOnly = 1)
-        # sends melee and tanks to Cindarion and the whelps while she hovers. The DELETE pin is
-        # the gate: without the migration the tank_post row still carries param 25 and no
-        # (249, 10184) ranged_only row is live.
+        # 20261110130000_world.sql: the arrival radius goes 25 -> 40 (walk 2b Cindarion landed
+        # 21-26 yd from T, so 25 latched 44-104 s late), and a ranged_only row (gap 10 yd, needs
+        # AiPlayerbot.DungeonRunRangedOnly = 1) sends melee and tanks to Cindarion and the whelps
+        # while she hovers. The DELETE pin is the gate for both rows. The live tank_post row moved
+        # to 20261111160100_world.sql (radius 90, pinned in test_onyxia_walk2e_post_radius); only
+        # this file's content pins stay here.
         name = "20261110130000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Onyxia walk 2c migration is missing")
@@ -962,15 +1110,6 @@ class BossTacticsSql(unittest.TestCase):
                       "AND `kind` = 'ranged_only';", text)
         self.assertEqual(2, len(re.findall(r"(?m)^\(249, 10184, '", text)))
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
-        post = live.get((249, 10184, "tank_post", 50143, 0))
-        self.assertIsNotNone(post, "the Onyxia tank_post row is missing")
-        self.assertEqual(name, post["file"], "the walk 2c migration owns the tank_post row")
-        self.assertEqual("hold_spot", post["tactic_mode"], "the Onyxia tank_post row is not hold_spot")
-        self.assertEqual((1, 40.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
-                         (post["priority"], post["param"], post["hp_min"], post["hp_max"], post["window_s"],
-                          post["spot_x"], post["spot_y"], post["spot_z"]),
-                         "the Onyxia tank_post row drifted")
-        self.assertIsNone(new_kind_problem(post))
         hold = live.get((249, 10184, "ranged_only", 0, 0))
         self.assertIsNotNone(hold, "the Onyxia ranged_only row is missing")
         self.assertEqual(name, hold["file"], "the walk 2c migration owns the ranged_only row")
@@ -979,12 +1118,37 @@ class BossTacticsSql(unittest.TestCase):
                          "the Onyxia ranged_only row drifted")
         self.assertIsNone(new_kind_problem(hold))
 
+    def test_onyxia_walk2e_post_radius(self):
+        # 20261111160100_world.sql: the post's arrival radius goes 40 -> 90, the whole floor the
+        # `anchor` row allows (walk 2d a-2: Cindarion stood 41-60 yd from T, 8 leash walks, the
+        # latch came at +107 s). One (249, 10184) tank_post row, mode hold_spot, the walk 2c band,
+        # window and spot; the loader's cap (5-100 yd) accepts 90.
+        name = "20261111160100_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2e post radius migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post';", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(249, 10184, '", text)))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        posts = [key for key in live if key[:3] == (249, 10184, "tank_post")]
+        self.assertEqual(1, len(posts), "the Onyxia tank_post rows are not exactly one")
+        post = live[posts[0]]
+        self.assertEqual(name, post["file"], "the walk 2e migration owns the tank_post row")
+        self.assertEqual((50143, 0, 1, 90.0, 41, 65, 120.0, 8.0, -200.0, -85.8, "hold_spot"),
+                         (post["target_entry"], post["spell_id"], post["priority"], post["param"],
+                          post["hp_min"], post["hp_max"], post["window_s"],
+                          post["spot_x"], post["spot_y"], post["spot_z"], post["tactic_mode"]),
+                         "the Onyxia tank_post row drifted")
+        self.assertIsNone(new_kind_problem(post), "the loader rules refuse the Onyxia tank_post row")
+
     def test_onyxia_walk2b_post_is_hold_spot(self):
         # 20261110120200_world.sql: the walk 2a tank_post row becomes hold_spot (needs
         # AiPlayerbot.DungeonRunTankPostHoldSpot = 1): same slot, spot, band and window,
         # so the post starts off a whelp, drags Cindarion back to T and yields to a seat.
-        # The live row moved to 20261110130000_world.sql (radius 40, pinned in
-        # test_onyxia_walk2c_rows); only this file's content pins stay here.
+        # The live row moved on to 20261111160100_world.sql (radius 90, pinned in
+        # test_onyxia_walk2e_post_radius); only this file's content pins stay here.
         name = "20261110120200_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Onyxia walk 2b post migration is missing")

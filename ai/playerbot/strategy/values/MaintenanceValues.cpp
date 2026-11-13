@@ -7,6 +7,8 @@
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
 #include "runtime/GuildOrderStore.h"
+#include "playerbot/strategy/values/GuildValues.h"
+#include "TrainerValues.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
@@ -21,8 +23,9 @@
 using namespace ai;
 
 
-//Cheapest green class rank the bot has not learned yet, 0 when the trainer has
-//nothing left to teach.
+//Cheapest green class rank the bot has not learned yet and the trainer would
+//teach at its level, 0 when the trainer has nothing left to teach. Same rows
+//and price as the "trainer class" trip and the visit (TrainerValues.h).
 static uint32 MinTrainableSpellCost(PlayerbotAI* ai)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -32,15 +35,16 @@ static uint32 MinTrainableSpellCost(PlayerbotAI* ai)
 
     uint32 minSpellCost = UINT32_MAX;
     for (TrainerSpell const* trainable : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", TRAINER_TYPE_CLASS))
-        if (trainable && trainable->spellCost < minSpellCost)
-            minSpellCost = trainable->spellCost;
+        if (trainable && TrainerSpellPrice(trainable, 1.0f) < minSpellCost)
+            minSpellCost = TrainerSpellPrice(trainable, 1.0f);
 
     return minSpellCost == UINT32_MAX ? 0 : minSpellCost;
 }
 
-//Mirrors the partial-purse rule in RequestNamedTravelTargetAction ("trainer
-//class"): the cheapest green class rank must fit free money for spells. What
-//the purse is missing for that rank, 0 when nothing is missing.
+//Mirrors the partial-purse rule in ShouldTravelNamedValue ("trainer class"):
+//the cheapest class rank must fit what the visit may spend
+//(TrainerSpendableMoney). What the purse is missing for that rank, 0 when
+//nothing is missing.
 static uint32 SpellMoneyMissing(PlayerbotAI* ai)
 {
     uint32 minSpellCost = MinTrainableSpellCost(ai);
@@ -48,8 +52,7 @@ static uint32 SpellMoneyMissing(PlayerbotAI* ai)
     if (!minSpellCost)
         return 0;
 
-    AiObjectContext* context = ai->GetAiObjectContext();
-    uint32 freeMoney = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells);
+    uint32 const freeMoney = TrainerSpendableMoney(ai, TRAINER_TYPE_CLASS);
 
     return freeMoney < minSpellCost ? minSpellCost - freeMoney : 0;
 }
@@ -68,9 +71,7 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
     if (!minSpellCost)
         return false;
 
-    AiObjectContext* context = ai->GetAiObjectContext();
-
-    return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minSpellCost;
+    return TrainerSpendableMoney(ai, TRAINER_TYPE_CLASS) >= minSpellCost;
 }
 // Organic AH buyer trip (issue #405 rework, review 2): a masterless pool
 // bot, never a hire, walking to an auction house on its own continent on its
@@ -213,33 +214,17 @@ bool CanBuyValue::CanAffordVendorWeaponUpgrade(PlayerbotAI* ai)
     return VendorWeaponUpgradeAffordable(1, bot->GetMoney(), spellReserve);
 }
 
-static bool VendorNeedCountsItem(bool isAutonomous, Item* item, ItemPrototype const* proto)
-{
-    return TortoiseBots::AltBotItemCountsForVendorNeed(isAutonomous, proto->Quality, item->IsSoulBound(), item->IsEquipped());
-}
-
 bool CanSellValue::Calculate()
 {
     if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    AiObjectContext* context = ai->GetAiObjectContext();
-
     // The usage classifier can label an item VENDOR while its SellPrice is 0
     // (a nonzero expected-AH-price manual value opens the VENDOR/AH branch),
-    // and the sell errand then finds nothing to sell. Require at least one
-    // held item a vendor actually buys: one bag walk per 2 s cache window, the
-    // same walk SellableStockWorthAVendorTrip already does below.
-    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid());
-    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
-    {
-        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
-
-        if (proto && proto->SellPrice > 0 && VendorNeedCountsItem(isAltBot, item, proto))
-            return true;
-    }
-
-    return false;
+    // and the sell errand then finds nothing to sell. So "can sell" is the
+    // sale's own list (SellAction::VendorSaleStock): one bag walk per 2 s
+    // cache window, the same walk SellableStockWorthAVendorTrip does below.
+    return !SellAction::VendorSaleStock(ai).empty();
 }
 
 //Sellable stock plus either the bag-pressure valve or the existing "should
@@ -640,15 +625,15 @@ bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
 
     AiObjectContext* context = ai->GetAiObjectContext();
 
+    //Count exactly what the sale will sell (SellAction::VendorSaleStock). The
+    //trip used to count VENDOR-usage items while the sale walked its own
+    //filter, and a quarter of the vendor errands on the live pool arrived with
+    //nothing to sell.
     uint32 sellValue = 0;
     uint32 sellableCount = 0;
-    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(ai->GetBot()->GetObjectGuid());
-    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    for (Item* item : SellAction::VendorSaleStock(ai))
     {
         ItemPrototype const* proto = item->GetProto();
-
-        if (!proto || !proto->SellPrice || !VendorNeedCountsItem(isAltBot, item, proto))
-            continue;
 
         sellValue += proto->SellPrice * item->GetCount();
         sellableCount += item->GetCount();
@@ -700,48 +685,50 @@ bool ShouldSellValue::GroupMemberLeavingForVendor(PlayerbotAI* ai)
     return false;
 }
 
+//"Should ah sell" means AH stock worth a trip of its own, nothing else. It used
+//to inherit "should sell", which is also true for a broke bot whose VENDOR
+//stock covers a missing spell rank (SellableStockWorthAVendorTrip): that is a
+//reason to walk to a vendor, not to an auction house, and it sent broke bots
+//on most auction-house trips, many with no listing at all. Two reasons remain,
+//both about AH
+//stock: the bags are under pressure (the same line "should sell" uses) while
+//the bot holds stock worth listing (the "can ah sell" count), or an AH item is
+//damaged enough that repairing it would cost real money. The city trip reads
+//this value on its own, so the stock test cannot be left to "can ah sell".
 bool ShouldAHSellValue::Calculate()
 {
-    if (ShouldSellValue::Calculate()) //We need space so we want to try to AH items anyway.
+    if (AI_VALUE(uint8, "bag space") > 80 && //We need space so we want to try to AH items anyway.
+        AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)) > 1)
         return true;
 
     std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", "inventory");
 
     for (auto& item : items)
     {
-        if (!item->GetUInt32Value(ITEM_FIELD_DURABILITY)) //Does the item need to be repaired?
+        if (!item->GetUInt32Value(ITEM_FIELD_DURABILITY)) //Fully broken or no durability: skipped, as before.
             continue;
 
-        uint32 maxDurability = item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY);
+        //What repairing it would cost now: the damage only, 0 when nothing is
+        //damaged. The old rule priced the full durability, so an undamaged
+        //piece (every piece under the repair cheat) looked expensive to a poor bot.
+        uint32 const costs = RepairCostValue::RepairCost(item);
 
-        ItemPrototype const* ditemProto = item->GetProto();
-
-        DurabilityCostsEntry const* dcost = sDurabilityCostsStore.LookupEntry(ditemProto->ItemLevel);
-        if (!dcost)
+        if (!costs)
             continue;
-
-        uint32 dQualitymodEntryId = (ditemProto->Quality + 1) * 2;
-        DurabilityQualityEntry const* dQualitymodEntry = sDurabilityQualityStore.LookupEntry(dQualitymodEntryId);
-        if (!dQualitymodEntry)
-            continue;
-
-        uint32 dmultiplier = dcost->multiplier[ItemSubClassToDurabilityMultiplierId(ditemProto->Class, ditemProto->SubClass)];
-        uint32 costs = uint32(maxDurability * dmultiplier * double(dQualitymodEntry->quality_mod));
 
         if (bot->GetMoney() && (costs * 100) / bot->GetMoney() <= 1) //Would repairing this item use more than 1% of our current gold?
             continue;
 
-        if (!WorldPosition(bot).HasAreaFlag(AREA_FLAG_CAPITAL)) //We are not in a city so not easy to repair now.
-
-        if (bot->GetMoney() && (costs * 100) / bot->GetMoney() <= 10) //Would repairing this item use more than 10% of our current gold?
-                continue;
+        if (!WorldPosition(bot).HasAreaFlag(AREA_FLAG_CAPITAL) && //We are not in a city so not easy to repair now.
+            bot->GetMoney() && (costs * 100) / bot->GetMoney() <= 10) //Would repairing this item use more than 10% of our current gold?
+            continue;
 
         ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
 
         if (usage != ItemUsage::ITEM_USAGE_AH && usage != ItemUsage::ITEM_USAGE_BROKEN_AH) //Do we want to AH this item?
             continue;
 
-        return true; //We have an item that can be damaged (and gives significant repair cost) that we want to auction. We should auction it now!
+        return true; //We have a damaged item (with a significant repair cost) that we want to auction. We should auction it now!
     }
 
     return false;

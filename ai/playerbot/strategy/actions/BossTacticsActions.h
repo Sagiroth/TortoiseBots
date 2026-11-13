@@ -3,6 +3,8 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/ProtectionPotionPolicy.h"
+#include "playerbot/HealReservePolicy.h"
 #include "Objects/DynamicObject.h"
 #include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
@@ -176,6 +178,35 @@ namespace ai
     // needs_aura subject (a Shade of Jin'do, which only a carrier may damage) or a taunt-immune creature. Logs one
     // BossTacticsTauntGate row per bot per 5 s while it refuses. `spell` is the taunt being tried, for the row.
     bool TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell);
+
+    // A generic taunt's cast-time check (TauntHeldTargetPolicy.h): true when `target`'s current victim is a player other
+    // than `bot` that PlayerbotAI::IsTank reads as a tank. Builds the victim facts in call order (TauntHeldInputs) and
+    // answers through TauntStandsDownForTank. Only the class taunt actions call it; TauntRefusedByGate and
+    // the boss-tactics taunts never do, so a planned tank swap still taunts off another tank.
+    bool TauntTargetHeldByOtherTank(Player* bot, Unit* target);
+
+    // An area taunt's cast-time check (AoeTauntPolicy.h): true while 3+ mobs
+    // inside the shout radius are still hitting non-tank group members. Walks
+    // the group victims' attackers and their victims now, uncached: a shout
+    // queued while loose adds were on a non-tank stands down once the pack
+    // settles, even inside the "trigger active" value's one-second cache.
+    // The "loose adds near" trigger calls it too, so both agree on the count.
+    bool AoeTauntStillNeeded(PlayerbotAI* ai, Player* bot);
+
+    // AiPlayerbot.DungeonRunTankPostOwnsSubject: whether another tank's live `tank_post` on `target` reserves it, so
+    // this tank does not taunt it (the post's own slot takes it). False unless the key is on, the bot is a tank and the
+    // target a creature; the other tank must be in the bot's instance, able to act, within kTankPostReserveRangeYd of
+    // the target, and its record read within kTankPostLiveMs. The reservation lapses once the target has been loose off
+    // that tank for kTankPostReserveGraceMs from the first selectable tick it was off it (a lift-off of the grace
+    // length or more starts a new grace at the next landing; shorter blips keep the original start), and the read
+    // that sees the lapse writes one `reason=post_lapsed` row. The two area taunts read it directly; every
+    // single-target taunt reads it through the gate above.
+    bool TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target);
+
+    // The area taunts' own scan: whether any hostile within kAreaTauntRadiusYd of the bot is another live post's
+    // reserved subject, so Challenging Shout or Challenging Roar must not cast (the selected target alone is the gate's
+    // read). Logs the refusal row for the first such unit.
+    bool AreaTauntRefusedByPost(PlayerbotAI* ai, Player* bot, const char* spell);
 
     // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
     // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").
@@ -686,6 +717,32 @@ namespace ai
     // `fallback`. BossSpreadLive says whether any live spread row widened it (the stay exemption drops then).
     float BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback);
     bool BossSpreadLive(PlayerbotAI* ai, Player* bot);
+    // The Greater Protection Potion a live `spread` row names for this bot (DungeonRunBossProtectionPotion): the row's
+    // spell is the damage the raid spreads for, so its school picks the potion, and its `priority` is the mask of the
+    // roles that drink it. Nothing unless the bot is in the world, runs the `boss tactics` combat strategy and the map
+    // has a spread row; the row read does not need DungeonRunBossSpread.
+    ProtectionPotion BossRowProtectionPotion(PlayerbotAI* ai, Player* bot);
+
+    // The boss's live `heal_reserve` rows of this bot's fight (HealReservePolicy.h): the highest reserve wins, with its
+    // own release window and its boss. `boss` is that row's boss unit (null when no row is live), so the current-victim
+    // exemption never depends on the seek_aura row or its key. The clock is the seek_aura cycle's: without that key
+    // there is no clock and the reserve is never released. Not live unless the bot is in the world, runs the "boss
+    // tactics" combat strategy, and its map has a row. Does not read the key: the caller decides what to do with it.
+    HealReserveRead BossHealReserve(PlayerbotAI* ai, Player* bot, Unit*& boss);
+    // The reserve's target exemption: a tank, or the boss's current victim. Either keeps today's rule at all times.
+    bool HealReserveTargetExempt(Unit* target, Unit* boss);
+    // Whether the reserve refuses `target`'s top-up right now (the healer top-up pick reads it to skip a refused
+    // candidate), classified on `effectiveHealthPct` — the same effective health triage used (the pick passes
+    // PredictedHealHealth(candidate), the gate EffectiveHealHealthPct), never raw health. False with the key off, no
+    // live row, the window released, an exempt target, mana at the row's line, or effective health outside the
+    // almost-full top-up tier. Counts the refusal for the `BossTacticsHealReserve` row once per healer per tick.
+    bool HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target, float effectiveHealthPct);
+    // Whether a healer may top up `target` above the medium-health line right now (the almost-full tier and the
+    // rejuvenation spread read it): with AiPlayerbot.DungeonRunHealReserve off or no live row, today's
+    // `mana >= MediumMana` rule; else the row's reserve, outside its release window, with tanks and the boss's
+    // current victim always on today's rule. Writes the `BossTacticsHealReserve` row once per 5 s while it runs, for
+    // healers only.
+    bool HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target);
 
     // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
     // around the boss anchor, the verdict that decides what it does with it, and the point itself. `slotBot` is false
@@ -880,6 +937,10 @@ namespace ai
         bool Execute(Event& event) override;
 
     private:
+        // The Engage step's taunt (AiPlayerbot.DungeonRunTankPostTaunts): takes the subject back off a healer, a damage
+        // dealer or another tank through the gate, in Defensive Stance first for a warrior, and by area taunt only when
+        // the single taunt cannot go out. True when it acted this tick.
+        bool TakeSubject(const BossTankPost& task, Unit* current);
         // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
         float lastX = 0.0f;
         float lastY = 0.0f;

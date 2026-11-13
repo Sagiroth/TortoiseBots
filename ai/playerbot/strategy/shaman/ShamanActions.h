@@ -515,7 +515,7 @@ namespace ai
     // peels onto a non-tank member; the target check mirrors the warrior
     // CastTauntAction guard (victim exists and is not us).
     // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
-    // inherits this isUseful.
+    // inherits this isUseful. Stands down at cast time when the mob is already on another tank (TauntHeldTargetPolicy.h).
     class CastEarthshakerSlamAction : public CastMeleeSpellAction
     {
     public:
@@ -524,7 +524,8 @@ namespace ai
         virtual bool isUseful() override
         {
             return GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot &&
-                !TauntRefusedByGate(ai, bot, GetTarget(), "earthshaker slam");
+                !TauntRefusedByGate(ai, bot, GetTarget(), "earthshaker slam") &&
+                !TauntTargetHeldByOtherTank(bot, GetTarget());
         }
     };
 
@@ -678,6 +679,15 @@ namespace ai
 
             return CastSpellAction::isUseful();
         }
+    };
+
+    // Same spell used as the elemental single-target nuke: it keeps the
+    // CastSpellAction single-target threat type, so the AoE threat hold on
+    // CastChainLightningAction does not stop it.
+    class CastChainLightningSingleAction : public CastSpellAction
+    {
+    public:
+        CastChainLightningSingleAction(PlayerbotAI* ai) : CastSpellAction(ai, "chain lightning") {}
     };
 
     class CastLightningBoltAction : public CastSpellAction

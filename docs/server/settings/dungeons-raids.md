@@ -30,6 +30,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BotLfgGroupsPer100Bots`](#aiplayerbotbotlfggroupsper100bots) | `1` | How many groups exist at once per 100 bots online. |
 | [`AiPlayerbot.BotLfgMaxGroups`](#aiplayerbotbotlfgmaxgroups) | `5` | The most groups at once. |
 | [`AiPlayerbot.BotLfgOnlyWithPlayersOnline`](#aiplayerbotbotlfgonlywithplayersonline) | `1` | Groups form only while at least one real player is online. |
+| [`AiPlayerbot.DungeonRunAddCrew`](#aiplayerbotdungeonrunaddcrew) | `0` | `1`: the boss tactics keep their `add_crew` rows — once the row's switch unit is dead, the melee, the tanks and the first `priority` AoE ranged bots of the raid take the boss's adds, and the other ranged damage dealers stay on the boss (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling) | `6` | Joiners above which the run leader rests the party before a pull (needs the estimate on). |
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
@@ -40,9 +41,8 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.BossStandOutranksBreathDodge`](#aiplayerbotbossstandoutranksbreathdodge) | `0` | `1`: a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots (recommended on). |
 | [`AiPlayerbot.DungeonRunBossSpreadSlots`](#aiplayerbotdungeonrunbossspreadslots) | `0` | `1`: each ranged bot and healer of a live `spread` row owns a fixed ring slot and stands on it between the doses; off keeps the step-away (recommended on, needs `DungeonRunBossSpread`). |
-| [`AiPlayerbot.BossStandEvents`](#aiplayerbotbossstandevents) | `0` | `1`: one `BossStand` row per bot and window (assigned, arrived, unseated, released) into `bot_events.csv`. |
-| [`AiPlayerbot.BossStandWholeRaid`](#aiplayerbotbossstandwholeraid) | `0` | `1`: every bot in combat with the boss counts toward its stand seats (a threat wipe keeps its seat), a bot already clear of the lane stays put, and a seated bot does not flee (recommended on). |
-| [`AiPlayerbot.BossTacticsKeepsEngagedBoss`](#aiplayerbotbosstacticskeepsengagedboss) | `0` | `1`: a boss the raid fights stays in a bot's fight for 10 s after the last bot saw it, within 150 yd and while the bot is in combat (recommended on for Onyxia's Lair; not yet tested in other raids). |
+| [`AiPlayerbot.DungeonRunBossProtectionPotion`](#aiplayerbotdungeonrunbossprotectionpotion) | `0` | `1`: a `spread` row also names the protection potion its boss calls for (`spell_id`'s school) and who drinks it (`priority`'s role mask); off keeps only the built-in boss list (needs the boss tactics, `AiPlayerbot.DungeonTactics = 1` or a commander-bound run group, and the rows). |
+| [`AiPlayerbot.DungeonRunHealReserve`](#aiplayerbotdungeonrunhealreserve) | `0` | `0` (keep off: walk 75 showed more early deaths, 1.3 to 3.1 deaths by 90 s per fight, though healer mana at 60 s rose 12 points): a live `heal_reserve` row raises the top-up mana line to its percent outside the row's release window; off keeps the `MediumMana` rule. |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -65,7 +65,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunRaid`](#aiplayerbotdungeonrunraid) | `0` | Lets the run leader bind the commander's raid of 6 to 40 bots and runs it with the raid rules (needs `AiPlayerbot.DungeonSelfClear` and `AiPlayerbot.RemoteCommander`). |
 | [`AiPlayerbot.DungeonRunRaidBossRules`](#aiplayerbotdungeonrunraidbossrules) | `0` | `1`: a raid's boss fight runs up to 1200 s, survives its deaths while the boss still loses hp, and sends its adds to the off-tanks instead of the main tank. |
 | [`AiPlayerbot.DungeonRunRaidHealerGuard`](#aiplayerbotdungeonrunraidhealerguard) | `0` | `1`: in a raid boss fight with the main tank on the boss, and in a raid trash fight once the main tank held its current target (kept on for the fight), an add on a healer goes to the nearest ranged dps within 35 yd of it (up to two per add), and the off-tanks take only such an add when no ranged dps is free. |
-| [`AiPlayerbot.DungeonRunGuardLeavesAssignedTank`](#aiplayerbotdungeonrunguardleavesassignedtank) | `0` (recommended `1`) | `1`: the raid guard never sends an off-tank at a unit a boss-tactic row assigns to a tank slot (`taunt_after_cast` mode `until_tank` with a tank slot, or `tank_post`); the unit stays with that tank while it has been loose for less than 8 s from the tick it first went loose. An assignment counts only while the assigning kind's own key is on (`AiPlayerbot.DungeonRunAuraTactics` for `until_tank`, `AiPlayerbot.DungeonRunTankPost` for `tank_post`), which also picks that kind's own slot. Past the grace, or with a charmed tank, the guard takes the unit; a dead tank leaves the raid tank order and the next tank inherits the slot. |
+| [`AiPlayerbot.DungeonRunGuardClockHittable`](#aiplayerbotdungeonrunguardclockhittable) | `0` | `1`: the raid guard's assignment clock starts on the first hittable tick (attackable and selectable), and a `tank_post` unit gets the post's 15 s grace instead of 8 s. |
 | [`AiPlayerbot.FankrissSwapStacks`](#aiplayerbotfankrissswapstacks) | `5` | Mortal Wound stacks at which an opt-in `fankriss tank` taunts Fankriss off the current tank (1-9). |
 | [`AiPlayerbot.PatchwerkOpeningDelay`](#aiplayerbotpatchwerkopeningdelay) | `4` | Seconds the DPS hold Patchwerk after an opt-in `patchwerk main` engages him (`0` = off, else 3-5). |
 | [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left. |
@@ -111,6 +111,9 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunTauntGate`](#aiplayerbotdungeonruntauntgate) | `0` | `1` (recommended on): a tank does not taunt a Shade of Jin'do, a creature immune to taunts, or a `needs_aura` subject it lacks the aura for, across every single-target taunt. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
+| [`AiPlayerbot.RangedReachHoverTarget`](#aiplayerbotrangedreachhovertarget) | `0` | `1` (recommended on): a ranged reach at a hostile hovering 8 yd or more above the floor inside a dungeon closes to the trigger's own combat-reach distance from the floor under it instead of standing still out of range (Onyxia P2). |
+| [`AiPlayerbot.AirborneWandYieldsToNukes`](#aiplayerbotairbornewandyieldstonukes) | `0` | `1`: the airborne-boss wand row yields to the class nuke rows for mage, warlock and non-healer priest, so casters nuke airborne Onyxia instead of wanding (needs no rows). |
+| [`AiPlayerbot.HoverCastHoldsSpread`](#aiplayerbothovercastholdsspread) | `0` | `1`: a ranged damage dealer in spell range of a hovering target takes no `raid spread` step, so its cast-time nukes are not refused for moving (a live `spread` row still steps). |
 | [`AiPlayerbot.DungeonRunGateHold`](#aiplayerbotdungeonrungatehold) | `0` | `1` (recommended on): the boss tactics keep their `gate_hold` rows — damage dealers stop on a boss at or below the row's health gate while its second unit still fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
 | [`AiPlayerbot.DungeonRunDryWalk`](#aiplayerbotdungeonrundrywalk) | `0` | The run leader's route picks stay off deep water: a walk whose own way would swim goes in dry legs first, its approach hops and firing stand come from a ground-only navmesh path, and a walk-back shortcut's swim chord is refused. |
@@ -286,6 +289,21 @@ The waiting leader posts in LookingForGroup:
 - a short invite whisper (like "inv") from a fitting player gets an invite
 - other whispers: at most one answer per 10 s per sender (non-invite hints every 5 minutes)
 - answers: "inv sent", "already sent you an inv", "someone's joining atm", "sorry, we're full now", "sorry, can't group with hardcore chars", and short refusals (grouped, band, role, failed invite)
+
+</details>
+
+### `AiPlayerbot.DungeonRunAddCrew`
+Whether the boss tactics keep their `add_crew` rows: once the row's switch unit (`target_entry`) no longer stands alive, the boss's add duty goes to a named crew — the melee, the tanks and the first `priority` AoE ranged bots of the raid — and the other ranged damage dealers stay on the boss.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The row:** `boss_entry` is the boss whose adds change hands, `target_entry` the switch unit whose death hands them over (never the boss itself), and `priority` the crew size (0-5). No spell, no radius, no health band and no mode word.
+
+**The state:** while the key is off, the boss has no row, or a unit of the switch entry within 200 yd still lives (a grid search; an empty list counts as dead, as for a corpse that despawned), the boss's own add duty stands. Once the switch unit is dead, the melee, the tanks and the first `priority` AoE ranged bots of the raid (class order mage, warlock, hunter, shaman, druid, the lower guid first inside one class) are the crew; a ranged damage dealer past the crew is not, and healers never are.
+
+**The consumers:** the kind is generic. Onyxia's Lair is its first consumer: the whelp duty (the whelp trigger, the kill action and the whelp hold) follows the crew once Cindarion is dead, and every ranged damage dealer past the crew returns from a whelp to Onyxia while she hovers (`onyxia boss duty` → `onyxia attack boss`).
 
 </details>
 
@@ -744,6 +762,16 @@ Whether a live `spread` row gives each ranged bot and healer a fixed slot to sta
 **Fixed slots:** while the row's boss fights, each ranged bot and healer that is not a tank owns one point on rings around the boss anchor, the row's `param` yards apart: ring 1 has 6 points at `param`, ring 2 has 12 at `2 * param` (the largest ring that still fits 2 yd inside the anchor's circle, at most 3; two rings when no anchor is live and the seek spot is the centre). Points are ordered nearest the fight's seek spot first, and a bot owns the point at its index among the group's ranged non-tanks by raw guid (dead ones keep their place, so a death moves nobody). An unusable point (the anchor refuses it, the clamp moves it by more than 0.5 yd, or the floor is more than 4 yd off the centre) falls back to a spare point; if that one is unusable too the bot keeps the step-away. The bot stands within 2 yd and leaves only to seek (the `seek_aura` walk to the gather or a cloud, the same read that releases it), for a stand set, as the boss's victim or charmed, as the walk-out puller, when its point is more than 30 yd from its target (a healer measures from the boss's victim) or while a cast blocks the move: a healer's cast is never cut, a damage dealer's own is cut after 6 s of unbroken `cast` reads (a gap over 1.5 s restarts the clock). It walks back to the point the tick the seek lets go, and the landing also becomes its stay spot when it has the `stay` strategy. The `BossTacticsSpread` row has one writer per key state: with this key on the slot read writes the slot verdicts; with it off the read writes nothing and the old step-away writes only its gate words (see [`refusal-rows.md`](../../play/refusal-rows.md)).
 
 </details>
+### `AiPlayerbot.DungeonRunHealReserve`
+Whether a live `heal_reserve` boss-tactic row raises the healer's top-up mana line to the row's reserve percent. Keep off: walk 75 showed more early deaths.
+**Default:** `0` · **Values:** `0` off (the top-up tier keeps its `AiPlayerbot.MediumMana` rule), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Healer top-up reserve:** the AI boss tactics table's `heal_reserve` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)). The row names the boss itself (`target_entry` 0), the reserve percent (`param`, 10-100) and the release lead in seconds (`window_s`, 0-120, `0` = never released); its health band arms it. While such a row of the boss's fight is live, the two almost-full top-up gates — the "party member almost full health" trigger and the druid's rejuvenation spread — need `param` % of mana instead of `MediumMana`, and the heal pick skips a refused top-up candidate so the heal falls to a tank, the boss's current victim or a lower heal tier (empty when there is none). The release window opens when the fight's Blood Siphon clock (the `seek_aura` row's) is `window_s` seconds or less away: inside it the healer is back on today's rule, so the gather's expensive casts are not held back. Without `AiPlayerbot.DungeonRunSeekAura` there is no clock, so the reserve is never released: both keys are needed for walk 75. Tanks and the boss's current victim (from the `heal_reserve` row's own boss, not the seek key) always keep today's rule; the medium, low and critical heal tiers, self heals, dispels and tank heals never change, and both gates and the pick classify the tier on the pick's effective health (incoming heals credited, predicted incoming damage applied), never the raw health percent. Several live rows keep the highest `param` with its own window. `BossTacticsHealReserve` logs one row per healer per 5 s with the key on: `mana=`, `reserve=`, `released=`, `refused=` (AI updates on which an almost-full top-up candidate was refused, at most one per healer per update; non-healers and lower-tier targets count nothing) and `due_in=` (`-1` without the seek key).
+
+</details>
 ### `AiPlayerbot.DungeonRunAvoidCastAll`
 Whether an `avoid_cast` row in mode `all` also clears the tanks while its spell is cast.
 **Default:** `0` · **Values:** `0` off (the row holds like a default row: a tank the caster is on stays in the blast), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -772,6 +800,36 @@ Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subje
 <summary>How it works in detail</summary>
 
 **Ranged only:** a boss tactic row of the `ranged_only` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the subject (`target_entry`, `0` = the row's boss) and the vertical gap in yards (`param`, 3 to 40). A melee bot (melee damage or a tank) standing `param` yd or more below the subject skips it in the free-damage and tank picks and drops it if it already holds it, then takes a `kill_first` pick or the nearest attacker that is not held; a ranged bot and a healer are never held. An explicit attack order beats the hold: an ordered bot keeps the subject until the order is cleared (as for `hold_kill`). The heights are the two units' own z, never the navmesh. When the subject lands the gap closes and the hold ends by itself. The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`) goes to `bot_events.csv` at most once per 5 s per bot. Ayamiss climbs 20 yd for her air phase (boss_ayamiss.cpp:193-205).
+
+</details>
+### `AiPlayerbot.RangedReachHoverTarget`
+Whether a ranged reach at a hostile hovering in a dungeon walks to the floor under it and stops at the spell trigger's own combat-reach distance, instead of standing still out of range.
+**Default:** `0` (recommended on) · **Values:** `0` off (the plain ranged path walk and chase), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Hover reach:** the `enemy out of spell range` trigger measures edge to edge with both combat reaches, but the ranged path walk measures centre to centre at 75 % of the spell range less the contact distance (~19 yd for a 26 yd spell). Onyxia in P2 hovers 19-23 yd above her floor point with a 22 yd combat reach, so no floor point is within the walk's distance of her body, the walk gives up under her, and the core chase (which refuses a destination that is not melee-reachable from the target inside a dungeon) stands still. With the key on, a hostile at least 8 yd above the floor under it, in a dungeon, beyond melee reach and with a known floor is approached instead along the navmesh path to that floor point: the bot stops where the centre distance is the trigger's own measure, `chaseDist + target reach + bot reach` (42.5 yd for the 26 yd spell and Onyxia's 22 yd reach, about 37 yd 2D from the hover point). A point in sight is preferred; when none is in sight the walk moves anyway (`moved_nolos`) and the next tick re-plans, because standing still is no damage. The boss stand seat still wins over the walk, and the pull's own reach and melee are unchanged. One `BossReachHover` row per bot per 5 s names the step (`result=` one of `not_hover`, `no_ground`, `no_path`, `no_point`, `hazard`, `move_failed`, `moved`, `moved_nolos`) with `yd2d=`, `height=`, `dist=` (the trigger's measure) and `path=` (path points), so a walk can tell which step failed. Needs `bot_events.csv` for the rows. The key is off by default; on other hovering bosses (Sapphiron) it applies the same rule.
+
+</details>
+### `AiPlayerbot.AirborneWandYieldsToNukes`
+Whether the airborne-boss wand row yields to the class nuke rows for damage-dealing wand casters.
+**Default:** `0` · **Values:** `0` off (every bot wands on the airborne row), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Airborne wand yield:** Onyxia's P2 `onyxia airborne` row sits at `ACTION_HIGH`, above the class `wand blocks nuke` stops (`ACTION_NORMAL + 5`); each Turtle wand shot renews the GCD, so the row kept every mage, warlock and priest nuke `not ready` (walk 2d: 0 of 120 Shadow Bolt / Arcane Missiles on her, 193 wand shots). With the key on, the row's `airborne shoot` action is not useful for a mage, warlock or non-healer priest, so their class nuke rows cast instead; hunters, melee, tanks and healers keep the wand as before. The class rows already wand only when the nuke cannot go out (`no mana`, `unaffordable`, `wand blocks nuke`), so flag off keeps today's behaviour exactly.
+
+</details>
+### `AiPlayerbot.HoverCastHoldsSpread`
+Whether a ranged damage dealer in spell range of a hovering target skips its `raid spread` spacing step.
+**Default:** `0` · **Values:** `0` off (the spread steps as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Hover cast hold:** a cast-time nuke is refused while the bot moves, and walk 2d's casters on airborne Onyxia moved more than 2 yd in 2 s in 48 % of their refused frames. With the key on, a ranged damage dealer whose hovering target stands in spell range by the `enemy out of spell range` trigger's own measure takes no spacing step (`RaidSpreadAction` reports `hover_cast` the same throttled way the stand row does), unless another living group member stands inside the spread distance the step itself uses: the caster then steps out of the stack and reports `hover_cast_spread` instead. A live boss `spread` row (the boss's data asks for spacing) still steps. Both hover rows are written even on a fight without a spread row (Onyxia has none).
 
 </details>
 ### `AiPlayerbot.DungeonRunGateHold`
@@ -821,6 +879,17 @@ Whether a boss the raid is fighting stays in every raid bot's fight after that b
 <summary>How it works in detail</summary>
 
 **Kept boss:** a melee bot that cannot reach an airborne boss gives up on it, and she vanishes from that bot's attacker list: its boss-tactic rows and its stand seat went dark for that bot, and a tank post ended with `band` mid-band because the post could not find her. With the key on, a bot whose attacker list shows a boss in combat with stand rows, or with a `tank_post` row, notes it in one registry per map instance and entry (at most one write per boss per half second); a bot that lost it reads it back after its own attacker list, and an entry of an instance that no longer exists is swept at most once a minute. The entry is used while it is less than 10 s old, the boss is alive, in combat and not evading, the bot itself is in combat, and the boss is within 150 yd (3D); an entry no bot refreshed for 30 s is dropped. The kept unit is appended to the fight like the walked-out puller's kept boss, so its rows and seats are read with the same health gate, and the boss stand lookup reads it too.
+
+</details>
+
+### `AiPlayerbot.DungeonRunBossProtectionPotion`
+Whether a `spread` row also gives its boss's roles a Greater Protection Potion.
+**Default:** `0` · **Values:** `0` off (only the built-in boss list of `ProtectionPotionPolicy.h` uses one), `1` on (needs the boss tactics — `AiPlayerbot.DungeonTactics = 1` or a commander-bound run group — and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+It works only for bots that run the boss tactics: `AiPlayerbot.DungeonTactics = 1` or a commander-bound run group. **Protection potion from a row:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) already names the spell the raid spreads for. With this key on, that spell's `school` picks the potion (2 fire 13457/17543, 3 nature 13458/17546, 5 shadow 13459/17548, anything else none) and the row's `priority` is a role mask of who drinks it (1 tanks, 2 melee damage, 4 ranged damage, 8 healers; `0`, every row before this key, is nobody). A bot of a listed role drinks at the pull and again once the aura has fallen, when it is alive, level 48 or more, its health is at or above `AiPlayerbot.LowHealth` (a healing potion goes first below it) and the potion is off cooldown (or the item cheat is on). Hakkar's row is `priority` 7, so healers keep the potion cooldown for mana potions. The built-in entry table still answers first for its listed bosses, and no other consumable changes.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`
@@ -1416,19 +1485,23 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 <details>
 <summary>How it works in detail</summary>
 
-**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-40 yd) and `window_s` the longest hold (10-120 s). No spell; `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`). The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
+**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-100 yd) and `window_s` the longest hold (10-120 s). No spell; `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`). The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
 
 **The wait:** while the row is live and a unit of `target_entry` within 200 yd (a grid search, like the hold-kill blocker count) is alive and has not arrived, the named tank walks to the spot and stays within 3 yd of it. It drops its current target only when that target is the row's `boss_entry` (an airborne boss it cannot reach) or nothing; another hostile that attacks a group member is kept and the post waits. A unit has arrived when it stands within `param` of the spot alive and selectable (no `UNIT_FLAG_NOT_SELECTABLE`); combat is not asked. An unselectable unit circling overhead is not arrived however close it is. On arrival the tank attacks it, and a `taunt_after_cast` row then works as it does today.
 
 **The end:** the post ends on the awaited unit's death or evade, `window_s` after it started, the tank's death or a creature charm, or the band closing. The record is one per bot, so a successor in the same slot starts its own post after its predecessor dies.
 
-**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row.
+**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row; `AiPlayerbot.DungeonRunTankPostOwnsSubject` adds one `event=lapse,reason=post_lapsed` row per reservation lapse.
 
 </details>
 
 ### `AiPlayerbot.DungeonRunGuardLeavesAssignedTank`
 Whether the raid guard leaves a unit to the tank a boss-tactic row assigns it to. It is recommended on where a tank row assigns a second boss to a tank slot.
 **Default:** `0` · **Values:** `0` off (the off-tanks take such a unit as before), `1` on (needs `AiPlayerbot.DungeonRunRaid` and `AiPlayerbot.DungeonRunRaidBossRules`; an `until_tank` assignment counts only with `AiPlayerbot.DungeonRunAuraTactics` on, a `tank_post` assignment only with `AiPlayerbot.DungeonRunTankPost` on) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+### `AiPlayerbot.DungeonRunGuardClockHittable`
+Whether the raid guard's assignment clock starts on the first hittable tick.
+**Default:** `0` · **Values:** `0` off (the clock starts on the first loose tick and every unit gets 8 s, as before), `1` on (needs `AiPlayerbot.DungeonRunRaid`, `AiPlayerbot.DungeonRunRaidBossRules` and `AiPlayerbot.DungeonRunGuardLeavesAssignedTank`; an unhittable spell shorter than 8 s keeps the running clock's start, a longer one clears it so the next hittable tick restarts it; a `tank_post` unit gets 15 s) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 ### `AiPlayerbot.DungeonRunTankPostHoldSpot`
 Whether a `tank_post` row in mode `hold_spot` runs the hold-the-spot rules: the post starts while the tank still holds another hostile, its arrival latches, the arrived unit outranks every other hostile, the tank drags it back to the spot, the window no longer ends an arrived post, and a boss stand seat yields the post. It is recommended on for a fight whose second boss lands later.
@@ -1499,6 +1572,40 @@ Whether a Delusions carrier whose attackers list never showed a Shade finds it b
 **Why it stays off:** `AiPlayerbot.DungeonRunKillFirstGrid` reads the same kill-first units, and the Shade's `kill_first` row has priority 0, which beats the ward and the totem (walk 54: every `no_unit` row was an honest "no Shade within 40 yd"). The scan stays in the code for a run without the grid; run it off.
 
 **Rows:** the `BossTacticsKillFirst` no-switch row names the check that kept every grid hit out of the pick and carries `codes=<word>:<n>...`, `grid=<hits>` and `pickable=<0|1>`; when the scan's Shade replaces an ordinary pick, one row per bot per 5 s says `reason=scan_over`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostOwnsSubject`
+Whether a live `tank_post` owns the unit it waits for: while another tank's post is live on it, no tank taunts it, so the post's own slot takes it. It is recommended on for a fight whose second boss lands later.
+**Default:** `0` · **Values:** `0` off (every tank may taunt the subject as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost`; does not need `AiPlayerbot.DungeonRunTauntGate`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The reservation:** a post record read within the last 3 s, in the bot's instance, on the target's creature entry, by a tank that is alive and not creature-charmed, reserves that unit to the post's tank while that tank stands within 60 yd of the unit (3D) and the unit is on it or has been loose off it for less than 15 s from the first selectable tick it was off it (the post's own grace; a subject still in the air cannot be hit and does not start the clock; a lift-off of 15 s or more starts a new grace at the next landing, while shorter blips keep the original start). The 60 yd and the 15 s come from walk 2c, where the unit landed 48-55 yd from its post tank and the tank reached melee at about +13 s. Any other tank's taunt is refused: every single-target taunt through the taunt gate (`BossTacticsTauntGate` with `reason=post_subject`), and the two area taunts, the warrior's Challenging Shout and the druid's Challenging Roar, which scan every hostile within their 10 yd radius and refuse the cast while any of them is reserved. The refusal is throttled like the gate's other words, once per bot per 5 s. The post's own tank is never refused.
+
+**Why:** walk 2c a-1 lost the second boss to the healers: Cindarion landed on a healer, slot 3's Challenging Shout at +1 s, slot 0's Taunt at +13 s and slot 2's Taunt at +58 s took him first, and slot 1's `taunt_after_cast` row stays quiet while he stands on any tank, so the post tank only got him at +21 s, after the mages passed every tank.
+
+**Diagnostics:** the first read that sees a lapse writes one `BossTacticsTankPost` row with `event=lapse`, `reason=post_lapsed`, `owner_yd`, `loose_ms` and `limit=range|grace`; the reads after it stay quiet until the reservation holds again, and the post tank's own record update re-arms it, so a recovery no other tank read does not swallow the next lapse's row.
+
+**The end:** the reservation ends by itself when the post ends (the unit dies, evades or leaves the band), when its tank dies or is charmed, when the record goes stale (no read for 3 s), when the post tank is farther than 60 yd from the unit, or when the unit has been loose off that tank for 15 s from the first selectable tick it was off it (a short unhittable blip inside those 15 s does not restart it). A post tank that stands still on its spot keeps the subject reserved for the post's whole window, so the `taunt_after_cast` row of its slot is what takes the unit; a tank stranded across the room no longer keeps every other tank from rescuing it.
+
+**The end word:** a post that ends because the raid tank order renumbered after a tank death (its row is still in the fight, for another slot index) logs `reason=slot` with `AiPlayerbot.DungeonRunTankPostOwnsSubject` on; with the key off, and for a band that really closes, it stays `reason=band`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostTaunts`
+Whether a `tank_post` row's Engage step taunts the awaited unit back off whoever holds it. Off by default: the step only attacks the unit, so walk 2d's three reservations lapsed on grace while slot 1 hit Cindarion without a taunt and its own first taunt came at +108..+121 s.
+**Default:** `0` · **Values:** `0` off (the Engage step attacks the unit as before, and the row's `taunt_after_cast` row takes it), `1` on (needs `AiPlayerbot.DungeonRunTankPost`; does not need `AiPlayerbot.DungeonRunTauntGate`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The step:** on the Engage decision, while the awaited unit is alive, selectable and not on this tank's victim list (`GetVictim() != bot`), the post tank takes it back. Taunting the subject off another tank also needs `AiPlayerbot.DungeonRunTankPostOwnsSubject`: without the reservation that tank's own class taunt is not refused, so the subject would flip between the two tanks on every taunt cooldown; off a healer or a damage dealer the taunt needs no reservation. The order is: the taunt gate (a refusal logs its own `BossTacticsTauntGate` row), the single taunt (`Taunt`, `Growl` or `Hand of Reckoning`, the first the tank knows and can cast on the unit; the attack goes first so the selection follows), Defensive Stance when the warrior's taunt cannot go out without it, then the area taunt (`Challenging Shout` for a warrior, `Challenging Roar` for a druid) only when the single taunt is not castable, the unit stands within 10 yd, its victim is not a tank, and neither `AreaTauntRefusedByPost` (another live post's subject in the radius) nor the taunt gate refuses it. It runs every tick the post is engaged: a unit pulled off the tank is taken back until the post ends.
+
+**The gate:** the post tank's own reservation is skipped (`TankPostReservesSubject` ignores its own record), so `AiPlayerbot.DungeonRunTankPostOwnsSubject` never refuses the post's own taunt; every other tank stays refused while the reservation holds.
+
+**Diagnostics:** one `BossTacticsTankPost` row per cast (`event=taunt,step=taunt|stance|area,spell=<spell>,victim=<tank|healer|dps|none>,cast=1`), and for a word that did not cast (`gate`, `not_ready`) at most one per bot and word per 5 s; `step=none` writes nothing. The gates are read only for a taunt that can go out: a subject already on the post, in the air, or off another tank without the reservation writes no `BossTacticsTauntGate` row, and the area taunt's gates and radius scan run only once the single taunt cannot go out and the area taunt itself can (a known spell, castable now, the unit in range and off a non-tank).
 
 </details>
 

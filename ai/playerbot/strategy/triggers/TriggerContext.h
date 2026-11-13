@@ -406,6 +406,7 @@ namespace ai
             creators["onyxia deep breath"] = [](PlayerbotAI* ai) { return new OnyxiaDeepBreathTrigger(ai); };
             creators["onyxia whelps"] = [](PlayerbotAI* ai) { return new OnyxiaWhelpsTrigger(ai); };
             creators["onyxia eggs near"] = [](PlayerbotAI* ai) { return new OnyxiaEggsNearTrigger(ai); };
+            creators["onyxia boss duty"] = [](PlayerbotAI* ai) { return new OnyxiaBossDutyTrigger(ai); };
 
             // Dungeon Boss Triggers
 
@@ -431,6 +432,7 @@ namespace ai
 
             creators["fire protection potion ready"] = [](PlayerbotAI* ai) { return new FireProtectionPotionReadyTrigger(ai); };
             creators["boss protection potion ready"] = [](PlayerbotAI* ai) { return new BossProtectionPotionReadyTrigger(ai); };
+            creators["boss row protection potion ready"] = [](PlayerbotAI* ai) { return new BossRowProtectionPotionReadyTrigger(ai); };
 
             creators["mc rune in sight"] = [](PlayerbotAI* ai) { return new MCRuneInSightTrigger(ai); };
             creators["mc rune close"] = [](PlayerbotAI* ai) { return new MCRuneCloseTrigger(ai); };
@@ -453,6 +455,7 @@ namespace ai
             creators["start nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianStartFightTrigger(ai); };
             creators["end nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianEndFightTrigger(ai); };
             creators["nefarian wild magic"] = [](PlayerbotAI* ai) { return new NefarianWildMagicTrigger(ai); };
+            creators["nefarian class call add"] = [](PlayerbotAI* ai) { return new NefarianClassCallAddTrigger(ai); };
             creators["start vael fight"] = [](PlayerbotAI* ai) { return new VaelStartFightTrigger(ai); };
             creators["end vael fight"] = [](PlayerbotAI* ai) { return new VaelEndFightTrigger(ai); };
 

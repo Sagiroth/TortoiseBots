@@ -3,7 +3,7 @@
 // Gate for the tank AoE taunts (Challenging Shout 1161, Challenging Roar
 // 5209): 10-min cooldowns, so they fire only for real loose-add emergencies,
 // never for a pack the tank already holds. Pure rule, no engine types: the
-// caller (LooseAddsNearTrigger) translates game state into plain inputs.
+// callers (LooseAddsNearTrigger, both area-taunt cast-time checks) translate game state into plain inputs.
 
 #include <vector>
 
@@ -18,6 +18,7 @@ namespace ai
         bool victimIsTank = false;        // victim holds it already: no taunt needed
         float distanceToBot = 0.0f;       // 2D distance from the bot
     };
+    inline bool ShouldAoeTaunt(unsigned looseInReach) { return looseInReach >= kAoeTauntMinLooseAdds; }
 
     // A candidate counts when a group member (never a tank) is hit and the
     // mob is inside the shout radius.
@@ -35,5 +36,14 @@ namespace ai
         return loose;
     }
 
-    inline bool ShouldAoeTaunt(unsigned looseInReach) { return looseInReach >= kAoeTauntMinLooseAdds; }
+    // The cast-time verdict behind the "loose adds near" count: true while 3+
+    // mobs inside the shout radius are hitting non-tank group members. The
+    // trigger and both area-taunt actions share it through AoeTauntStillNeeded
+    // (BossTacticsActions), which walks the attackers and their victims now,
+    // uncached: a shout queued for loose adds stands down once the pack
+    // settles, without waiting for the "trigger active" value's one-second cache.
+    inline bool LooseAddsStillNeedAoeTaunt(std::vector<LooseAddCandidate> const& candidates)
+    {
+        return ShouldAoeTaunt(CountLooseAddsInReach(candidates));
+    }
 } // namespace ai

@@ -298,6 +298,18 @@ public:
     // (any race can use them, except the Swift Riding Turtle) are granted and
     // chosen only when this is on. Player-owned alts are never gated. Default false.
     bool randomBotShopMounts = false;
+    // Level-up gear top-up: a masterless pool bot that dings (5+) gets its
+    // empty slots and clearly outdated grey/white items (6+ item levels below
+    // it) filled by the fresh-seed item selection, once per level. Never
+    // replaces green or better; never hired, claimed or player-led bots.
+    // Default false (opt-in).
+    bool poolGearTopUpOnLevel = false;
+    // Level-up money top-up: a masterless pool bot that dings holding less
+    // than its next class-trainer visit costs (with the reserves the trip
+    // gate keeps aside, capped at 1 g per level) is topped up to that floor,
+    // once per level. Never hired, claimed or player-led bots. Default false
+    // (opt-in).
+    bool poolMoneyTopUp = false;
     // Safety factor on the mount break-even distance: bots mount for travel
     // only when the remaining trip exceeds
     // 7 y/s * castTime / (mountSpeed/100) * this. 0 disables the threshold
@@ -673,10 +685,20 @@ public:
     // attacks it on arrival): on, the rows are read (its own key on top of the tactics gate). Off, the rows are ignored,
     // so the table behaves exactly as before the kind (default off).
     bool dungeonRunTankPost = false;
+    // The add_crew boss-tactic kind (once the row's switch unit `target_entry` is dead, the boss's add duty goes to the
+    // melee, the tanks and the first `priority` AoE ranged bots of the raid, the other ranged staying on the boss): on,
+    // the rows are read (its own key on top of the tactics gate). Off, the rows are ignored, so the table behaves
+    // exactly as before the kind (default off).
+    bool dungeonRunAddCrew = false;
     // The raid guard leaves a unit to the tank a boss-tactic row assigns it to (an until_tank row with a tank slot, or
     // a tank_post row): on, the off-tank pick-ups never send another tank at it; off, the raid's off-tanks take it as
     // before (its own key on top of the raid and boss rules; default off).
     bool dungeonRunGuardLeavesAssignedTank = false;
+    // The raid guard's assignment clock starts on the first hittable tick (the unit attackable and selectable: a boss
+    // still in the air does not spend the grace), and a tank_post unit gets the post's 15 s grace instead of 8 s: on,
+    // those rules; off, the clock starts on the first loose tick and every unit gets 8 s, as before (its own key on top
+    // of the raid and boss rules; default off).
+    bool dungeonRunGuardClockHittable = false;
     // The tank_post `hold_spot` mode (the post starts while the tank holds another hostile, its arrival latches and
     // outlives the window, it drags the subject back to the spot, and it yields to a boss stand seat): on, the rows'
     // mode runs; off, every tank_post row is a plain post as before the mode (default off).
@@ -685,6 +707,16 @@ public:
     // current target, so it fights what comes to the spot instead of following a whelp): on, it runs with the mode;
     // off, the tank keeps the other hostile and the post waits as before (default off).
     bool dungeonRunTankPostLeash = false;
+    // A live tank_post owns its subject (no other tank taunts the subject the post is waiting for, the post's own slot
+    // takes it; Challenging Shout and Challenging Roar included): on, the taunt gate and the two area taunts refuse a
+    // post tank's subject while that tank is alive, stands within 60 yd of the unit, and the unit is on it or loose off
+    // it for less than 15 s; off, every tank may taunt the subject as before (default off).
+    bool dungeonRunTankPostOwnsSubject = false;
+    // The post's Engage step takes the subject back (AiPlayerbot.DungeonRunTankPostTaunts): on, a post tank taunts the
+    // awaited unit off a healer, a damage dealer or another tank whenever it is not on it, through the taunt gate, in
+    // Defensive Stance first for a warrior, and by area taunt only when the single taunt cannot go out, the unit is
+    // within 10 yd and on a non-tank; off, the step only attacks the unit as before (default off).
+    bool dungeonRunTankPostTaunts = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;
@@ -811,6 +843,15 @@ public:
     // list (a melee bot that cannot reach an airborne boss gives up on it): within 150 yd and while the bot itself is
     // in combat, so its boss-tactic rows and stand seats stay active (default off).
     bool bossTacticsKeepsEngagedBoss = false;
+    // Protection potions from a boss's spread row: the row's spell names the school (fire, nature or shadow) and its
+    // priority the roles that drink (1 tanks, 2 melee damage, 4 ranged damage, 8 healers). Off, only the bosses of the
+    // built-in entry table use one (default off).
+    bool dungeonRunBossProtectionPotion = false;
+    // The healer top-up reserve (the `heal_reserve` boss-tactic row): outside the row's release window a healer tops
+    // up members above the medium-health line only while its mana is at or above the row's percent; tanks and the
+    // boss's current victim are exempt, and every lower heal tier is unchanged. Off keeps the MediumMana rule
+    // (default off).
+    bool dungeonRunHealReserve = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).
@@ -822,6 +863,17 @@ public:
     // The ranged_only boss-tactic kind (melee bots leave a subject that stands the row's gap above them: Ayamiss in the
     // air, so the melee take the adds): off, the rows and the held target are ignored (default off).
     bool dungeonRunRangedOnly = false;
+    // A ranged reach at a hostile that hovers 8 yd or more above the floor under it inside a dungeon (Onyxia in P2)
+    // walks to the floor under it and stops at the trigger's own combat-reach distance instead of giving up under the
+    // body (default off, recommended on).
+    bool rangedReachHoverTarget = false;
+    // The airborne-boss wand row yields to the class nuke rows for damage-dealing wand casters (Onyxia P2: mage,
+    // warlock and non-healer priest; their class rows already wand only when the nuke cannot go out). Hunters,
+    // melee, tanks and healers keep the row (default off).
+    bool airborneWandYieldsToNukes = false;
+    // A ranged damage dealer whose hovering target stands in spell range takes no `raid spread` spacing step, unless
+    // a live boss `spread` row asks for one (default off).
+    bool hoverCastHoldsSpread = false;
     // The gate_hold boss-tactic kind (damage dealers stop on a boss at or below the row's health gate while its blocker
     // still fights): off, the rows are ignored and nothing reads the gate (default off, recommended on).
     bool dungeonRunGateHold = false;
@@ -1150,6 +1202,10 @@ public:
     // populated bracket, capped at one concurrent instance (average PC).
     bool randomBotBgAutonomous = true;
     uint32 randomBotBgAutonomousMaxInstances = 1;
+    // WSG team roles (off by default): defenders hold the own flag room,
+    // attackers go for the enemy flag, the rest hold mid/escort - also with
+    // a human on the team. Off keeps the 2026-07-27 mid-field patrol.
+    bool wsgFlagRoles = false;
 
     bool jumpInBg;
     bool jumpWithPlayer;

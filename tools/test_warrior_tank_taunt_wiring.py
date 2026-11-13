@@ -57,16 +57,20 @@ class WarriorTankTauntWiringTest(unittest.TestCase):
         self.assertIn('creators["loose adds near"]', (TRIGGERS / "TriggerContext.h").read_text())
 
     def test_loose_adds_sees_past_focus_marks(self):
-        # Item 4: the trigger counts the group's real attackers (core
+        # Item 4: the shared walk counts the group's real attackers (core
         # GetAttackers per group member), not the "attackers" value that
         # "focus rti targets" collapses to the marked target.
-        trig = (TRIGGERS / "GenericTriggers.cpp").read_text()
-        fn = trig[trig.index("bool LooseAddsNearTrigger::IsActive()"):]
-        fn = fn[:fn.index("\n}\n")]
-        code = "\n".join(l for l in fn.splitlines() if not l.strip().startswith("//"))
+        cpp = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
+        start = cpp.index("bool ai::AoeTauntStillNeeded(")
+        code = "\n".join(l for l in cpp[start:cpp.index("\n}\n", start)].splitlines()
+                         if not l.strip().startswith("//"))
         self.assertIn("GetAttackers()", code)
         self.assertIn("IsPlayer()", code)
         self.assertNotIn('"attackers"', code)
+        trig = (TRIGGERS / "GenericTriggers.cpp").read_text()
+        fn = trig[trig.index("bool LooseAddsNearTrigger::IsActive()"):]
+        fn = fn[:fn.index("\n}\n")]
+        self.assertIn("AoeTauntStillNeeded(ai, bot)", fn)
 
 if __name__ == "__main__":
     unittest.main()

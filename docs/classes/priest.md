@@ -50,13 +50,13 @@ In a Patchwerk fight with the opt-in tank roles ([Patchwerk roles](../play/dunge
 4. Casts *Mind Blast* on cooldown.
 5. Channels *Mind Flay* as primary filler, stacking *Shadow Weaving* where talented.
 6. Casts *Silence* to interrupt dangerous enemy spellcasters and healers.
-7. Off-heals wounded allies (*Power Word: Shield*, *Greater Heal*, *Renew* by wound band) per [off-healing rules](overview.md#shared-bot-behaviors).
+7. Off-heals wounded allies (*Power Word: Shield*, *Greater Heal*, *Renew* by wound band) per [off-healing rules](overview.md#shared-bot-behaviors). In *Shadowform* the priest leaves a *Renew* to another healer who already covers that ally, and drops the form only when its heal can go out at once (not during a global cooldown or a wand swing).
 
 <details>
 <summary>Healer off-spec damage and wand stops</summary>
 
 - **Off-spec DPS:** Enabled by default via the `offdps` strategy per [healer off-DPS rules](overview.md#shared-bot-behaviors), casting *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards* (only above 50% mana and beyond 15 yards), or *Mind Blast* (*Holy Nova* into packed melee) against engaged mobs.
-- **Wand Stops:** Because wand shots incur global cooldown on Turtle WoW, the `wand blocks cast` trigger stops active wanding as soon as a heal or a nuke needs the cast window. A separate `wand blocks cc` trigger stops wanding while a *Shackle Undead* cast is queued.
+- **Wand Stops:** Because wand shots incur global cooldown on Turtle WoW, the `wand blocks cast` trigger stops active wanding as soon as a heal or a nuke needs the cast window. A separate `wand blocks cc` trigger stops wanding while a *Shackle Undead* cast is queued. A Holy or Discipline priest in a group checks every moment while it wands (not once per shot), so it stops the wand and heals within one wand swing of a hit.
 
 </details>
 

@@ -74,6 +74,15 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
+    // The other ranged damage dealers after the add crew takes over (AiPlayerbot.DungeonRunAddCrew): a bot past the
+    // crew on a whelp returns to the hovering boss, which the melee cannot reach.
+    class OnyxiaAttackBossAction : public AttackAction
+    {
+    public:
+        OnyxiaAttackBossAction(PlayerbotAI* ai) : AttackAction(ai, "onyxia attack boss") {}
+        bool Execute(Event& event) override;
+    };
+
     // Step back out of an egg cave (mod-playerbots parity:
     // OnyxiaAvoidEggsAction) before the trap circle hatches whelps.
     class OnyxiaAvoidEggsAction : public MovementAction

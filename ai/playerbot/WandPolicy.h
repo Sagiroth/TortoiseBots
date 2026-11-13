@@ -228,11 +228,34 @@ namespace ai
     // The old rule waited the ranged timer alone, capped at the unmodified
     // swing: about 70% of frost-mage stops in Zul'Farrak saw Frostbolt
     // still "not ready" and Shoot again within 1 s.
+
+    // How long the AI sleeps after the "shoot" action ran (CastShootAction::Execute).
+    // The donor slept the weapon delay plus a GCD (3 s for a 1.5 s wand) so the
+    // bot would not re-cast Shoot and cut its own shot. Re-casting is already
+    // prevented (a running wand is never re-cast), and a grouped healer must see
+    // a hit within one tick: its wand runs on its own, its stop rows
+    // (HealerMayWand, "wand blocks cast") wait out the swing themselves
+    // (WandStopWaitMs). Every other shooter (mage, warlock, shadow priest, a
+    // solo healer, a bow, gun, crossbow or thrown weapon) keeps the donor sleep.
+    inline std::uint32_t ShootSleepMs(bool wand, bool groupedHealer, std::uint32_t weaponDelayMs, std::uint32_t reactDelayMs)
+    {
+        return (wand && groupedHealer) ? reactDelayMs : weaponDelayMs;
+    }
+
     inline std::uint32_t WandStopWaitMs(std::uint32_t rangedTimerMs, std::uint32_t spellGcdRemainingMs, std::uint32_t reactDelayMs)
     {
         std::uint32_t wait = rangedTimerMs > spellGcdRemainingMs ? rangedTimerMs : spellGcdRemainingMs;
         if (wait > WAND_STOP_MAX_WAIT_MS)
             wait = WAND_STOP_MAX_WAIT_MS;
         return wait + reactDelayMs;
+    }
+    // AiPlayerbot.AirborneWandYieldsToNukes: a boss's "airborne -> shoot" row (Onyxia P2) sits at ACTION_HIGH, above the
+    // class "wand blocks nuke" stop (ACTION_NORMAL + 5); each Turtle wand shot renews the GCD, so the row kept every
+    // nuke "not ready" (walk 2d: 0 of 120 Shadow Bolt / Arcane Missiles on her, 193 wand shots). A damage-dealing wand
+    // caster leaves the wand to its own class rows ("no mana", "unaffordable", "wand blocks nuke").
+    inline bool IsWandCasterClass(std::uint8_t classId) { return classId == 5 || classId == 8 || classId == 9; } // priest, mage, warlock
+    inline bool AirborneWandYields(bool keyOn, bool wandCaster, bool isHealer)
+    {
+        return keyOn && wandCaster && !isHealer;
     }
 }

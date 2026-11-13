@@ -45,6 +45,7 @@ namespace ai
                actionName == "blast wave" ||
                actionName == "arcane explosion" ||
                actionName == "chain lightning" ||
+               actionName == "chain lightning single" ||
                actionName == "multi-shot" ||
                actionName == "volley" ||
                actionName == "rain of fire";

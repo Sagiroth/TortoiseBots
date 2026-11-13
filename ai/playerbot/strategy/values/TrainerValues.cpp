@@ -5,8 +5,71 @@
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "../../../../runtime/policy/provision/TradeTrainerPolicy.h"
 #include "../../../../runtime/ProfessionGrantPolicy.h"
+#include "playerbot/policy/gear/SpellRankPolicy.h"
+#include "BudgetValues.h"
 
 using namespace ai;
+
+bool ai::TrainerSpellLearnableNow(Player* bot, TrainerSpell const* tSpell)
+{
+    if (!tSpell || bot->GetTrainerSpellState(tSpell) != TRAINER_SPELL_GREEN)
+        return false;
+
+    SpellEntry const* proto = sServerFacade.LookupSpellInfo(tSpell->spell);
+    if (!proto)
+        return false;
+
+    // Same walk as TrainerAction::Learn: the row teaches through its
+    // learn-spell effects, and each taught spell's own level decides.
+    for (int j = 0; j < 3; ++j)
+    {
+        if (proto->Effect[j] != SPELL_EFFECT_LEARN_SPELL || !proto->EffectTriggerSpell[j])
+            continue;
+
+        SpellEntry const* taughtInfo = sServerFacade.LookupSpellInfo(proto->EffectTriggerSpell[j]);
+        if (!taughtInfo || ai::SpellRankTeachableNow(bot->GetLevel(), taughtInfo->spellLevel,
+                taughtInfo->spellLevel != 0, true))
+            return true;
+    }
+
+    return false;
+}
+
+uint32 ai::TrainerSpellPrice(TrainerSpell const* tSpell, float discountMod)
+{
+    return uint32(floor(tSpell->spellCost * discountMod));
+}
+
+bool ai::TrainerTrainsForFree(PlayerbotAI* ai)
+{
+    return sPlayerbotAIConfig.autoTrainSpells == "free" || ai->HasCheat(BotCheatMask::gold);
+}
+
+uint32 ai::TrainerSpendableMoney(PlayerbotAI* ai, TrainerType type)
+{
+    if (TrainerTrainsForFree(ai))
+        return UINT32_MAX;
+
+    NeedMoneyFor budget = NeedMoneyFor::anything;
+    switch (type)
+    {
+    case TRAINER_TYPE_CLASS:
+        budget = NeedMoneyFor::spells;
+        break;
+    case TRAINER_TYPE_MOUNTS:
+        budget = NeedMoneyFor::mount; //Only train mounts when you can actually buy mount
+        break;
+    case TRAINER_TYPE_TRADESKILLS:
+        budget = NeedMoneyFor::skilltraining;
+        break;
+    default:
+        budget = NeedMoneyFor::anything;
+        break;
+    }
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return AI_VALUE2(uint32, "free money for", (uint32)budget);
+}
 
 
 trainableSpellMap* TrainableSpellMapValue::Calculate()
@@ -138,8 +201,11 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
 
             for (auto& [trainerSpell, trainers] : trainerSpellList)
             {
-                TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell);
-                if (state != TRAINER_SPELL_GREEN)
+                // Green AND teachable at this level: the same rule the visit
+                // applies (TrainerSpellLearnableNow), so the trip decision, the
+                // spell reserve ("train cost") and the trainer list never count
+                // a rank the trainer will refuse to teach.
+                if (!TrainerSpellLearnableNow(bot, trainerSpell))
                     continue;
 
                 // Skip initial profession training below the pool grant level:
