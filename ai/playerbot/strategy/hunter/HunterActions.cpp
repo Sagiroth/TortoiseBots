@@ -383,6 +383,29 @@ std::string OrderedAspectFor(PlayerbotAI* ai)
 }
 } // namespace ai
 
+bool CastChoiceAspectAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (ordered.empty())
+        return false;
+    if (ai->HasAura(ordered, bot))
+        return false;
+    // Travel aspects never land in a fight, ordered or not (same rule as
+    // their own upkeep rows).
+    if ((ordered == "aspect of the cheetah" || ordered == "aspect of the pack") &&
+        AI_VALUE(bool, "has attackers"))
+        return false;
+    return ai->HasSpell(ordered) && CastBuffSpellAction::isUseful();
+}
+
+bool CastChoiceAspectAction::Execute(Event& event)
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (ordered.empty())
+        return false;
+    return ai->CastSpell(ordered, bot, nullptr, false);
+}
+
 bool CastAspectOfTheMonkeyAction::isUseful()
 {
     std::string const ordered = OrderedAspectFor(ai);

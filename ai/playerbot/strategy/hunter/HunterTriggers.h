@@ -61,6 +61,16 @@ namespace ai
         AspectOfTheCheetahTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the cheetah") {}
     };
 
+    // A saved `.bot choice` order keeps its own aspect up: fires while an
+    // aspect is ordered and missing. The upkeep rows cast exactly it.
+    class ChoiceAspectTrigger : public Trigger
+    {
+    public:
+        ChoiceAspectTrigger(PlayerbotAI* ai) : Trigger(ai, "choice aspect") {}
+        bool IsActive() override;
+        std::string GetTargetName() override { return "self target"; }
+    };
+
     BEGIN_TRIGGER(HuntersPetDeadTrigger, Trigger)
     END_TRIGGER()
 

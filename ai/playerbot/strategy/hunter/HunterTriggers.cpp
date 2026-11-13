@@ -39,6 +39,17 @@ static TortoiseBots::HunterViperInputs BuildViperInputs(PlayerbotAI* ai, Player*
     return in;
 }
 
+namespace ai { std::string OrderedAspectFor(PlayerbotAI* ai); }
+
+bool ChoiceAspectTrigger::IsActive()
+{
+    std::string const ordered = ai::OrderedAspectFor(ai);
+    if (ordered.empty() || !ai->HasSpell(ordered))
+        return false;
+    Unit* target = GetTarget();
+    return target && !ai->HasAura(ordered, bot);
+}
+
 bool AspectOfTheHawkTrigger::IsActive()
 {
     // Toggle off: exactly the plain buff trigger.

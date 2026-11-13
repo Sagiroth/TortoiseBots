@@ -187,6 +187,19 @@ public:
         virtual bool isUseful() override;
     };
 
+    // The aspect the saved `.bot choice` order wants, as its spell name;
+    // empty on auto or when the bot no longer knows it.
+    std::string OrderedAspectFor(PlayerbotAI* ai);
+
+    // Casts the saved `.bot choice` aspect order.
+    class CastChoiceAspectAction : public CastBuffSpellAction
+    {
+    public:
+        CastChoiceAspectAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "choice aspect") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     class CastCallPetAction : public CastBuffSpellAction
     {
     public:

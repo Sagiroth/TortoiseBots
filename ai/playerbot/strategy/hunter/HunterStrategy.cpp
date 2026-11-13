@@ -537,6 +537,11 @@ void HunterStingRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 
 void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A saved `.bot choice` order keeps its own aspect up, above the Hawk
+    // row; the action gates below let nothing else through while one is set.
+    triggers.push_back(new TriggerNode(
+        "choice aspect",
+        NextAction::array(0, new NextAction("choice aspect", ACTION_HIGH + 6), NULL)));
     // Opt-in (AiPlayerbot.HunterViperOnLowMana): Viper on low mana, above the
     // Hawk row; the Hawk trigger holds back until mana recovers. Row only
     // exists with the toggle on, so off is today's behaviour exactly.
@@ -554,6 +559,9 @@ void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void HunterAspectStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode(
+        "choice aspect",
+        NextAction::array(0, new NextAction("choice aspect", ACTION_NORMAL + 1), NULL)));
     triggers.push_back(new TriggerNode(
         "aspect of the hawk",
         NextAction::array(0, new NextAction("aspect of the hawk", ACTION_NORMAL), NULL)));
