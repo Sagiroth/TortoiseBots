@@ -3,6 +3,7 @@
 #include "PlayerbotAIPackets.h"
 #include "../../runtime/RemoteCommanderTasks.h"
 #include "../../runtime/policy/infra/DeferredDeliveryPolicy.h"
+#include "../../runtime/policy/infra/SpeedChangeAckPolicy.h"
 #include "strategy/actions/MovementActions.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/TargetValue.h"
@@ -10,8 +11,31 @@
 #include "playerbot/WandPolicy.h"
 #include "playerbot/policy/guild/EnchantTradePolicy.h"
 #include "runtime/GuildOrderStore.h"
+#include <iomanip>
+#include <sstream>
 
 using namespace ai;
+
+// The ack writer in SpeedChangeAckPolicy.h must name the same wire values the
+// core table does; both sides are checked at compile time.
+static_assert(TortoiseBots::SpeedChangeAck::kServerWalk == SMSG_FORCE_WALK_SPEED_CHANGE, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kServerRun == SMSG_FORCE_RUN_SPEED_CHANGE, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kServerRunBack == SMSG_FORCE_RUN_BACK_SPEED_CHANGE, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kServerSwim == SMSG_FORCE_SWIM_SPEED_CHANGE, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kServerSwimBack == SMSG_FORCE_SWIM_BACK_SPEED_CHANGE, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kServerTurnRate == SMSG_FORCE_TURN_RATE_CHANGE, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kClientWalk == CMSG_FORCE_WALK_SPEED_CHANGE_ACK, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kClientRun == CMSG_FORCE_RUN_SPEED_CHANGE_ACK, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kClientRunBack == CMSG_FORCE_RUN_BACK_SPEED_CHANGE_ACK, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kClientSwim == CMSG_FORCE_SWIM_SPEED_CHANGE_ACK, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kClientSwimBack == CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::kClientTurnRate == CMSG_FORCE_TURN_RATE_CHANGE_ACK, "speed ack opcode drift");
+static_assert(TortoiseBots::SpeedChangeAck::MoveIndex(TortoiseBots::SpeedChangeAck::Move::Walk) == MOVE_WALK, "speed ack move order drift");
+static_assert(TortoiseBots::SpeedChangeAck::MoveIndex(TortoiseBots::SpeedChangeAck::Move::Run) == MOVE_RUN, "speed ack move order drift");
+static_assert(TortoiseBots::SpeedChangeAck::MoveIndex(TortoiseBots::SpeedChangeAck::Move::RunBack) == MOVE_RUN_BACK, "speed ack move order drift");
+static_assert(TortoiseBots::SpeedChangeAck::MoveIndex(TortoiseBots::SpeedChangeAck::Move::Swim) == MOVE_SWIM, "speed ack move order drift");
+static_assert(TortoiseBots::SpeedChangeAck::MoveIndex(TortoiseBots::SpeedChangeAck::Move::SwimBack) == MOVE_SWIM_BACK, "speed ack move order drift");
+static_assert(TortoiseBots::SpeedChangeAck::MoveIndex(TortoiseBots::SpeedChangeAck::Move::TurnRate) == MOVE_TURN_RATE, "speed ack move order drift");
 
 void PacketHandlingHelper::DropQueuedOpcode(uint16 opcode)
 {
@@ -363,6 +387,62 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
             }
         }
 
+        return;
+    }
+    // A bot's world session never answered the core's forced speed change, so
+    // every change waited out the 2+2 s resend timeout before it applied. Echo
+    // the client ACK at once, exactly as a real client does.
+    case SMSG_FORCE_WALK_SPEED_CHANGE:
+    case SMSG_FORCE_RUN_SPEED_CHANGE:
+    case SMSG_FORCE_RUN_BACK_SPEED_CHANGE:
+    case SMSG_FORCE_SWIM_SPEED_CHANGE:
+    case SMSG_FORCE_SWIM_BACK_SPEED_CHANGE:
+    case SMSG_FORCE_TURN_RATE_CHANGE:
+    {
+        TortoiseBots::SpeedChangeAck::Move move;
+        if (!TortoiseBots::SpeedChangeAck::MoveForServerOpcode(packet.getOpcode(), move) ||
+            !bot->GetSession() || !bot->GetSession()->IsHeadless() || !bot->FindMap())
+        {
+            // A real player's client sends this ack itself.
+            botOutgoingPacketHandlers.AddPacket(packet);
+            return;
+        }
+
+        WorldPacket p(packet);
+        p.rpos(0);
+        ObjectGuid guid;
+        uint32 counter = 0;
+        float speed = 0.f;
+        p >> guid.ReadAsPacked() >> counter >> speed;
+        if (guid != bot->getObjectGuid())
+        {
+            // The change belongs to a unit the bot moves (a pet); the bot's own
+            // ack would name the wrong mover.
+            botOutgoingPacketHandlers.AddPacket(packet);
+            return;
+        }
+
+        WorldPacket ack(TortoiseBots::SpeedChangeAck::ClientOpcode(move), 8 + 4 + 30 + 4);
+        TortoiseBots::SpeedChangeAck::WriteAck(ack, guid.GetRawValue(), counter, bot->m_movementInfo, speed);
+        bot->GetSession()->HandleForceSpeedChangeAckOpcodes(ack);
+
+        if (sPlayerbotAIConfig.raidBossDiagnostics && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        {
+            uint32 const now = WorldTimer::getMSTime();
+            if (!speedChangeAckLogMs || now - speedChangeAckLogMs >= 1000)
+            {
+                speedChangeAckLogMs = now;
+                UnitMoveType const type = static_cast<UnitMoveType>(TortoiseBots::SpeedChangeAck::MoveIndex(move));
+                std::ostringstream detail;
+                detail << "rate=" << std::fixed << std::setprecision(3) << bot->GetSpeedRate(type)
+                    << " counter=" << counter
+                    << " slowed=" << (bot->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) ? 1 : 0);
+                sPlayerbotAIConfig.logEvent(this, "SpeedChange", TortoiseBots::SpeedChangeAck::MoveName(move), detail.str());
+            }
+        }
+
+        // Keep the run-speed "check mount state" dispatch.
+        botOutgoingPacketHandlers.AddPacket(packet);
         return;
     }
     case SMSG_MOVE_KNOCK_BACK: // handle knockbacks
