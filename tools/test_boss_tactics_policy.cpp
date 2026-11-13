@@ -1824,35 +1824,95 @@ static void TestTankPostRow_RadiusCap()
     CHECK(loads(40.0f));
 }
 
-// Walk 2i H: the healers a `hold_spot` post holds on its tank. A healer already held stays while it is still a
-// candidate, and the rest fill by the raid layout's seat on this holder, then mana, then distance, then guid. The
-// failing case is the fill itself: sorting by distance first picks B (5 yd) over C (the layout's own tank seat, 40 yd).
-static void TestPickTankPostHealers_KeepsAndFills()
+// Walk 2i H: the healers a `hold_spot` post holds on its tank. Every candidate and the incumbents are ranked together
+// on each scan: the raid layout's seat on this holder, then more mana, then distance, then guid. A healer under 10 %
+// mana is no candidate at all, and an incumbent keeps its seat unless a challenger clears the swap margin. The failing
+// case is the fill itself: sorting by distance first picks B (5 yd) over C (the layout's own tank seat, 40 yd).
+static void TestPickTankPostHealers_ReranksAndFills()
 {
-    auto const candidate = [](std::uint64_t guid, std::uint8_t rank, bool mana, float yd)
+    auto const candidate = [](std::uint64_t guid, std::uint8_t rank, float manaPct, float yd)
     {
         TankPostHealerCandidate c;
         c.guid = guid;
         c.seatRank = rank;
-        c.hasMana = mana;
+        c.manaPct = manaPct;
         c.ydToHolder = yd;
         return c;
     };
     const std::vector<TankPostHealerCandidate> all = {
-        candidate(1, 1, true, 30.0f),   // A: held
-        candidate(2, 2, true, 5.0f),    // B: another tank's seat, nearest
-        candidate(3, 0, true, 40.0f),   // C: the layout's seat on this holder
-        candidate(4, 1, false, 10.0f),  // D: no mana
-        candidate(5, 1, true, 20.0f),   // E: no tank seat
+        candidate(1, 1, 60.0f, 30.0f),   // A: held, no tank seat
+        candidate(2, 2, 100.0f, 5.0f),   // B: another tank's seat, nearest
+        candidate(3, 0, 100.0f, 40.0f),  // C: the layout's seat on this holder
+        candidate(4, 1, 5.0f, 10.0f),    // D: under the mana floor
+        candidate(5, 1, 60.0f, 25.0f),   // E: no tank seat, 5 yd closer than A
     };
-    CHECK(PickTankPostHealers({1}, all, 2) == std::vector<std::uint64_t>({1, 3}));
-    CHECK(PickTankPostHealers({}, all, 2) == std::vector<std::uint64_t>({3, 5}));
+    CHECK(PickTankPostHealers({1}, all, 2) == std::vector<std::uint64_t>({3, 1})); // C fills; E is inside the margin
+    CHECK(PickTankPostHealers({}, all, 2) == std::vector<std::uint64_t>({3, 5}));  // the ranked pair, never D
     CHECK(PickTankPostHealers({1}, all, 0).empty());            // want 0: nobody
-    CHECK(PickTankPostHealers({}, {candidate(2, 1, true, 5.0f)}, 2) == std::vector<std::uint64_t>({2}));
+    CHECK(PickTankPostHealers({}, {candidate(2, 1, 100.0f, 5.0f)}, 2) == std::vector<std::uint64_t>({2}));
     CHECK(PickTankPostHealers({}, all, 9).size() == 4);          // never more than kTankPostHealersMax
-    // A held healer that is no candidate any more is dropped, and the held order is kept.
-    CHECK(PickTankPostHealers({1, 5}, all, 2) == std::vector<std::uint64_t>({1, 5}));
-    CHECK(PickTankPostHealers({5}, {candidate(3, 0, true, 1.0f)}, 2) == std::vector<std::uint64_t>({3}));
+    // A held healer that is no candidate any more is dropped; a held pair with no challenger keeps both seats and
+    // the output is the ranked order.
+    const std::vector<TankPostHealerCandidate> held = {
+        candidate(1, 1, 60.0f, 30.0f),
+        candidate(5, 1, 60.0f, 25.0f),
+    };
+    CHECK(PickTankPostHealers({1, 5}, held, 2) == std::vector<std::uint64_t>({5, 1}));
+    CHECK(PickTankPostHealers({5}, {candidate(3, 0, 100.0f, 1.0f)}, 2) == std::vector<std::uint64_t>({3}));
+    CHECK(PickTankPostHealers({4}, all, 2) == std::vector<std::uint64_t>({3, 5})); // the held one has no mana
+}
+
+// The depleted pair: two held healers run under 10 % mana while two full-mana ones stand free, so both seats are
+// reassigned on the very scan. The failing case is the old sticky set, which kept them until they died.
+static void TestPickTankPostHealers_DepletedPairIsSwapped()
+{
+    auto const candidate = [](std::uint64_t guid, float manaPct, float yd)
+    {
+        TankPostHealerCandidate c;
+        c.guid = guid;
+        c.seatRank = 1;
+        c.manaPct = manaPct;
+        c.ydToHolder = yd;
+        return c;
+    };
+    const std::vector<TankPostHealerCandidate> all = {
+        candidate(11, 5.0f, 10.0f),   // held, under the floor
+        candidate(12, 2.0f, 12.0f),   // held, under the floor
+        candidate(21, 100.0f, 20.0f), // free
+        candidate(22, 90.0f, 25.0f),  // free
+    };
+    CHECK(PickTankPostHealers({11, 12}, all, 2) == std::vector<std::uint64_t>({21, 22}));
+    CHECK(PickTankPostHealers({11, 12}, all, 1) == std::vector<std::uint64_t>({21}));
+}
+
+// The margin that keeps a seat still: a better seat wins outright, 20 % more mana wins, and 10 yd wins only while the
+// mana stays inside its own margin; a near-equal challenger leaves the incumbent where it is.
+static void TestPickTankPostHealers_SwapMargins()
+{
+    auto const candidate = [](std::uint64_t guid, std::uint8_t rank, float manaPct, float yd)
+    {
+        TankPostHealerCandidate c;
+        c.guid = guid;
+        c.seatRank = rank;
+        c.manaPct = manaPct;
+        c.ydToHolder = yd;
+        return c;
+    };
+    CHECK(kTankPostHealerSwapManaPct == 20.0f);
+    CHECK(kTankPostHealerSwapYd == 10.0f);
+    CHECK(!TankPostHealerDisplaces(candidate(2, 1, 90.0f, 10.0f), candidate(1, 1, 75.0f, 10.0f))); // 15 % mana
+    CHECK(TankPostHealerDisplaces(candidate(2, 1, 95.0f, 10.0f), candidate(1, 1, 75.0f, 10.0f)));  // 20 %
+    CHECK(!TankPostHealerDisplaces(candidate(2, 1, 60.0f, 5.0f), candidate(1, 1, 95.0f, 30.0f)));  // mana far behind
+    CHECK(TankPostHealerDisplaces(candidate(2, 1, 90.0f, 20.0f), candidate(1, 1, 85.0f, 30.0f)));  // 10 yd
+    CHECK(!TankPostHealerDisplaces(candidate(2, 1, 90.0f, 21.5f), candidate(1, 1, 85.0f, 30.0f))); // 8.5 yd
+    CHECK(TankPostHealerDisplaces(candidate(2, 0, 50.0f, 40.0f), candidate(1, 1, 100.0f, 5.0f)));  // seat
+    // A held healer inside the margin keeps its seat on the next scan; the same pair the other way keeps the other.
+    const std::vector<TankPostHealerCandidate> all = {
+        candidate(1, 1, 75.0f, 10.0f),
+        candidate(2, 1, 90.0f, 10.0f),
+    };
+    CHECK(PickTankPostHealers({1}, all, 1) == std::vector<std::uint64_t>({1}));
+    CHECK(PickTankPostHealers({2}, all, 1) == std::vector<std::uint64_t>({2}));
 }
 
 // AiPlayerbot.DungeonRunTankPostHealers: a post healer's heal target is its holder or nobody.
@@ -1927,6 +1987,41 @@ static void TestTankPostCooldownStep_WindowAndGiveUp()
     CHECK(TankPostCooldownStep(true, 1, 2, 10000) == TankPostCooldown::GiveUp);
     CHECK(TankPostCooldownStep(false, 0, 2, 500) == TankPostCooldown::None);
     CHECK(TankPostCooldownStep(true, 0, 0, 500) == TankPostCooldown::None);
+}
+
+// The hold tick: the unit on this tank with no raid member carrying the row's aura. The landing Roar shows both at
+// once, so that tick counts nothing and the next fresh Roar is the first sighting. The failing case is the old gate,
+// which counted the landing tick and spent the window on a Roar the tank already wore.
+static void TestTankPostCooldownHolds_LandingRoarDoesNotCount()
+{
+    CHECK(TankPostCooldownHolds(true, false));
+    CHECK(!TankPostCooldownHolds(true, true));   // the landing: she is on the tank and the raid still carries it
+    CHECK(!TankPostCooldownHolds(false, false));
+    bool heldOnce = false;
+    heldOnce = heldOnce || TankPostCooldownHolds(true, true);
+    CHECK(!heldOnce);
+    CHECK(!TankPostCooldownSeen(true, 18431, heldOnce, false, true)); // the landing Roar does not fire
+    heldOnce = heldOnce || TankPostCooldownHolds(true, false);        // the aura faded while she was on the tank
+    CHECK(heldOnce);
+    CHECK(!TankPostCooldownSeen(true, 18431, heldOnce, false, false)); // no aura now: nothing to answer
+    CHECK(TankPostCooldownSeen(true, 18431, heldOnce, false, true));   // the next fresh Roar fires
+}
+
+// A refused action (on cooldown) spends its name: shield wall refused leaves last stand for the next tick, and the
+// last refusal closes the window. The failing case is the old retry, which asked shield wall again until the window
+// ended and never tried last stand.
+static void TestTankPostCooldownAfter_RefusedMovesToNextName()
+{
+    const std::vector<const char*> names = TankPostCooldownActions(1);
+    TankPostCooldownAttempt attempt = TankPostCooldownAfter(0, names.size(), true); // shield wall refused
+    CHECK(!attempt.closed);
+    CHECK(TankPostCooldownStep(true, attempt.tried, names.size(), 500) == TankPostCooldown::Cast);
+    CHECK(std::strcmp(names[attempt.tried], "last stand") == 0);
+    attempt = TankPostCooldownAfter(attempt.tried, names.size(), true); // last stand refused too
+    CHECK(attempt.closed);
+    CHECK(TankPostCooldownStep(true, attempt.tried, names.size(), 500) == TankPostCooldown::None);
+    CHECK(TankPostCooldownAfter(1, names.size(), false).closed); // anything else closes at once
+    CHECK(TankPostCooldownAfter(255, 300, true).tried == 255);   // the count saturates
 }
 
 static CastDangerZone Zone(float x, float y, float z, float radius)
@@ -2156,13 +2251,17 @@ int main()
     TestTankPostTauntStep_AreaOnlyOffNonTank();
     TestTankPostTauntWord_All();
     TestTankPostRow_RadiusCap();
-    TestPickTankPostHealers_KeepsAndFills();
+    TestPickTankPostHealers_ReranksAndFills();
+    TestPickTankPostHealers_DepletedPairIsSwapped();
+    TestPickTankPostHealers_SwapMargins();
     TestTankPostHealPickOf_HolderOrNobody();
     TestTankPostHealerPoint_FlankOrLine();
     TestTankPostHealerFar_PastThirty();
     TestTankPostCooldownSeen_FirstSightingAfterHold();
     TestTankPostCooldownActions_ByClass();
     TestTankPostCooldownStep_WindowAndGiveUp();
+    TestTankPostCooldownHolds_LandingRoarDoesNotCount();
+    TestTankPostCooldownAfter_RefusedMovesToNextName();
     AddCrewState_SwitchesAfterDeath();
     AddCrewLoader_Rows();
     AddCrewRank_Order();

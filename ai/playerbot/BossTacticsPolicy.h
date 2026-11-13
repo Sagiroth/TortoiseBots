@@ -4156,15 +4156,50 @@ namespace ai
     constexpr float kTankPostHealerFlankYd = 20.0f; // or this far beside the held unit
     constexpr float kTankPostHealerUnitYd = 15.0f;  // the held unit counts while it is this near the holder
     constexpr float kTankPostHealerMinManaPct = 10.0f;
+    // An incumbent keeps its seat unless a candidate clears one of these: a better tank seat, this much more mana, or
+    // (with the mana inside the same margin both ways) this much less distance. Without the margin two near-equal
+    // healers trade the seat on every scan.
+    constexpr float kTankPostHealerSwapManaPct = 20.0f;
+    constexpr float kTankPostHealerSwapYd = 10.0f;
     struct TankPostHealerCandidate
     {
         std::uint64_t guid = 0;
         std::uint8_t seatRank = 1; // 0: the raid layout seats it on this holder, 1: no tank seat, 2: a seat on another tank
-        bool hasMana = true;       // at or above kTankPostHealerMinManaPct
+        float manaPct = 100.0f;    // of its maximum; under kTankPostHealerMinManaPct it is no candidate
         float ydToHolder = 0.0f;
     };
-    // The post's healers: every current one that is still a candidate stays (in order), then the rest fill up to
-    // `want` by seat rank, mana, distance, guid. Never more than kTankPostHealersMax.
+    inline bool TankPostHealerHasMana(const TankPostHealerCandidate& candidate)
+    {
+        return candidate.manaPct >= kTankPostHealerMinManaPct;
+    }
+    // Seat rank, then more mana, then the shorter walk, then guid.
+    inline bool TankPostHealerOutranks(const TankPostHealerCandidate& a, const TankPostHealerCandidate& b)
+    {
+        if (a.seatRank != b.seatRank)
+            return a.seatRank < b.seatRank;
+        if (a.manaPct != b.manaPct)
+            return a.manaPct > b.manaPct;
+        if (a.ydToHolder != b.ydToHolder)
+            return a.ydToHolder < b.ydToHolder;
+        return a.guid < b.guid;
+    }
+    // Whether a challenger takes an incumbent's seat: a better tank seat outright, else the mana margin, else the walk
+    // margin while the mana stays inside its own margin (a healer far behind on mana is not closer by default).
+    inline bool TankPostHealerDisplaces(const TankPostHealerCandidate& challenger,
+                                        const TankPostHealerCandidate& incumbent)
+    {
+        if (challenger.seatRank != incumbent.seatRank)
+            return challenger.seatRank < incumbent.seatRank;
+        if (challenger.manaPct - incumbent.manaPct >= kTankPostHealerSwapManaPct)
+            return true;
+        if (incumbent.manaPct - challenger.manaPct >= kTankPostHealerSwapManaPct)
+            return false;
+        return incumbent.ydToHolder - challenger.ydToHolder >= kTankPostHealerSwapYd;
+    }
+    // The post's healers: every candidate with the mana for it, the incumbents among them, ranked together on each
+    // scan by seat rank, mana, distance, guid; an incumbent under kTankPostHealerMinManaPct is out at once. The
+    // ranking fills the free seats; a full set takes a candidate only where it displaces the weakest holder by a
+    // clear margin. Never more than kTankPostHealersMax.
     inline std::vector<std::uint64_t> PickTankPostHealers(const std::vector<std::uint64_t>& current,
         const std::vector<TankPostHealerCandidate>& candidates, std::size_t want)
     {
@@ -4172,38 +4207,46 @@ namespace ai
         std::size_t const cap = std::min<std::size_t>(want, kTankPostHealersMax);
         if (cap == 0)
             return picked;
-        for (const std::uint64_t guid : current)
-        {
-            if (picked.size() >= cap)
-                break;
-            const auto found = std::find_if(candidates.begin(), candidates.end(),
-                [guid](const TankPostHealerCandidate& candidate) { return candidate.guid == guid; });
-            if (found != candidates.end())
-                picked.push_back(guid);
-        }
-        std::vector<TankPostHealerCandidate> rest;
+        std::vector<TankPostHealerCandidate> ranked;
         for (const TankPostHealerCandidate& candidate : candidates)
         {
-            if (std::find(picked.begin(), picked.end(), candidate.guid) == picked.end())
-                rest.push_back(candidate);
+            if (TankPostHealerHasMana(candidate))
+                ranked.push_back(candidate);
         }
-        std::sort(rest.begin(), rest.end(),
-            [](const TankPostHealerCandidate& a, const TankPostHealerCandidate& b)
-            {
-                if (a.seatRank != b.seatRank)
-                    return a.seatRank < b.seatRank;
-                if (a.hasMana != b.hasMana)
-                    return a.hasMana;
-                if (a.ydToHolder != b.ydToHolder)
-                    return a.ydToHolder < b.ydToHolder;
-                return a.guid < b.guid;
-            });
-        for (const TankPostHealerCandidate& candidate : rest)
+        std::sort(ranked.begin(), ranked.end(), TankPostHealerOutranks);
+        std::vector<TankPostHealerCandidate> holders;
+        for (const std::uint64_t guid : current)
         {
-            if (picked.size() >= cap)
-                break;
-            picked.push_back(candidate.guid);
+            const auto found = std::find_if(ranked.begin(), ranked.end(),
+                [guid](const TankPostHealerCandidate& candidate) { return candidate.guid == guid; });
+            if (found != ranked.end() && holders.size() < cap)
+                holders.push_back(*found);
         }
+        std::sort(holders.begin(), holders.end(), TankPostHealerOutranks);
+        for (const TankPostHealerCandidate& candidate : ranked)
+        {
+            const auto held = std::find_if(holders.begin(), holders.end(),
+                [&candidate](const TankPostHealerCandidate& holder) { return holder.guid == candidate.guid; });
+            if (held != holders.end())
+                continue;
+            if (holders.size() < cap)
+            {
+                holders.push_back(candidate);
+                continue;
+            }
+            std::size_t weakest = 0;
+            for (std::size_t i = 1; i < holders.size(); ++i)
+            {
+                if (TankPostHealerOutranks(holders[weakest], holders[i]))
+                    weakest = i;
+            }
+            if (!TankPostHealerDisplaces(candidate, holders[weakest]))
+                continue;
+            holders[weakest] = candidate;
+        }
+        std::sort(holders.begin(), holders.end(), TankPostHealerOutranks);
+        for (const TankPostHealerCandidate& holder : holders)
+            picked.push_back(holder.guid);
         return picked;
     }
     enum class TankPostHealPick : std::uint8_t { Normal, Holder, None };
@@ -4256,6 +4299,10 @@ namespace ai
     {
         return keyOn && rowSpell != 0 && heldOnce && !seenBefore && auraOnRaid;
     }
+    // Whether a tick counts as the unit being held on this tank: it is on the tank and no raid member carries the row's
+    // aura. A landing cast shows both at once (the Roar as she turns to the tank), and only a tick without the aura
+    // makes the next sighting a fresh application.
+    inline bool TankPostCooldownHolds(bool onTank, bool auraOnRaid) { return onTank && !auraOnRaid; }
     // The defensive actions of a tank class, in cast order; empty for a class with none. By class id only: the code
     // names no boss and no spell id.
     inline std::vector<const char*> TankPostCooldownActions(std::uint8_t classId)
@@ -4274,6 +4321,27 @@ namespace ai
         if (!seen || tried >= total)
             return TankPostCooldown::None;
         return msSinceSeen >= kTankPostCooldownTryMs ? TankPostCooldown::GiveUp : TankPostCooldown::Cast;
+    }
+    struct TankPostCooldownAttempt
+    {
+        std::uint8_t tried = 0;
+        bool closed = false;
+    };
+    // One attempt spends one name whether it cast or was refused (a spell on cooldown must not hold the window): the
+    // next tick tries the next untried name, and the last one closes the window. Anything else closes it at once.
+    inline TankPostCooldownAttempt TankPostCooldownAfter(std::uint8_t tried, std::size_t total, bool attempted)
+    {
+        TankPostCooldownAttempt next;
+        next.tried = tried;
+        if (!attempted)
+        {
+            next.closed = true;
+            return next;
+        }
+        if (next.tried < 255)
+            ++next.tried;
+        next.closed = static_cast<std::size_t>(next.tried) >= total;
+        return next;
     }
 
     // AiPlayerbot.DungeonRunTankPostKeepsUnit, for the tank's own target pick: whether the post's latched unit decides

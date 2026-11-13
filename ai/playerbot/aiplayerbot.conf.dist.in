@@ -1264,10 +1264,13 @@ AiPlayerbot.DungeonRunTankPostWaits = 0
 # Healers held on a `hold_spot` tank_post's tank: the row's `healers` column (0-4) names how many of the group's
 # healers the post holds on its tank. Each of them heals only that tank and nothing else (no self-heal, no fallback
 # when it is out of reach), walks back when it stands farther than 30 yd from it, and aims beside the unit the post
-# holds (20 yd at a right angle) so it does not gather in the boss's front. The row's `spell_id` is the boss spell
-# whose aura on a raid member marks the cast the tank answers with its class's defensive cooldown, once per post and
-# only after the unit was on it (0: no cooldown rule). Off, every row runs as before and `healers`/`spell_id` do
-# nothing. Needs AiPlayerbot.DungeonRunTankPost and AiPlayerbot.DungeonRunTankPostHoldSpot.
+# holds (20 yd at a right angle) so it does not gather in the boss's front. The held set is re-picked on every scan:
+# a healer under 10 % mana frees its seat at once, and a challenger takes one only with a better tank seat, 20 % more
+# mana, or 10 yd less distance. The row's `spell_id` is the boss spell whose aura on a raid member marks the cast the
+# tank answers with its class's defensive cooldown, once per post and only after the unit was on it without the aura
+# (0: no cooldown rule); a name that does not go out (on cooldown) moves to the next one. Off, every row runs as
+# before and `healers`/`spell_id` do nothing. Needs AiPlayerbot.DungeonRunTankPost and
+# AiPlayerbot.DungeonRunTankPostHoldSpot.
 # 0 - off: no healer is held and no cooldown fires (Default)
 # 1 - on
 AiPlayerbot.DungeonRunTankPostHealers = 0

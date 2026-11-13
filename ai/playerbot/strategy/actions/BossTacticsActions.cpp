@@ -12103,6 +12103,27 @@ void LogTankPostCooldown(PlayerbotAI* ai, Player* bot, const char* info2)
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
+// Whether the post's tank or a living group member within 60 yd of it carries the row's spell aura. A triggered cast
+// never shows as the boss's current spell, so the aura is the sighting.
+bool TankPostAuraOnRaid(Player* bot, std::uint32_t mapId, std::uint32_t spellId)
+{
+    if (!bot || spellId == 0)
+        return false;
+    if (bot->HasAura(spellId))
+        return true;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member || !sServerFacade.IsAlive(member) || member->GetMapId() != mapId)
+            continue;
+        if (TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()) > 60.0f)
+            continue;
+        if (member->HasAura(spellId))
+            return true;
+    }
+    return false;
+}
+
 // The end word of a post that the step closed: the first closed input in the step's own order.
 const char* TankPostEndReason(const TankPostIn& in)
 {
@@ -12200,8 +12221,8 @@ bool ai::TankPostCooldownDue(Player* bot)
     return TankPostCooldownRead(bot, tried, seenMs);
 }
 
-// A cast advances the window's count; anything else closes it. The last action of the class's list closes it too.
-void ai::TankPostCooldownNote(Player* bot, bool cast)
+// An attempt spends one name, whether it cast or was refused; the last one or anything else closes the window.
+void ai::TankPostCooldownNote(Player* bot, bool attempted)
 {
     if (!bot)
         return;
@@ -12210,16 +12231,10 @@ void ai::TankPostCooldownNote(Player* bot, bool cast)
     if (it == g_tankPost.end())
         return;
     TankPostRecord& record = it->second;
-    if (cast)
-    {
-        if (record.cooldownTried < 255)
-            ++record.cooldownTried;
-        if (static_cast<std::size_t>(record.cooldownTried) >=
-            TankPostCooldownActions(bot->GetClass()).size())
-            record.cooldownClosed = true;
-        return;
-    }
-    record.cooldownClosed = true;
+    const TankPostCooldownAttempt next =
+        TankPostCooldownAfter(record.cooldownTried, TankPostCooldownActions(bot->GetClass()).size(), attempted);
+    record.cooldownTried = next.tried;
+    record.cooldownClosed = next.closed;
 }
 
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
@@ -12625,8 +12640,12 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     in.arrivedBefore = haveRecord &&
         TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
     in.subjectOnTank = subject && subject->GetVictim() == bot;
-    // Walk 2i C: a cast at the landing, before the unit was ever on this tank, spends nothing.
-    record.heldOnce = record.heldOnce || in.subjectOnTank;
+    // Walk 2i C: the unit counts as held only on a tick without the row's aura on the raid. A cast at the landing
+    // shows the aura and the tank on the same tick (the Roar as she turns), and that tick must not spend the window.
+    const bool cooldownLive = sPlayerbotAIConfig.dungeonRunTankPostHealers && row->spellId != 0 &&
+        !record.cooldownClosed && record.cooldownSeenMs == 0;
+    const bool auraOnRaid = cooldownLive && TankPostAuraOnRaid(bot, mapId, row->spellId);
+    record.heldOnce = record.heldOnce || TankPostCooldownHolds(in.subjectOnTank, auraOnRaid);
     // The walk key reads the stand for plain posts too: a breath seat, a stay included, stops the Engage walk.
     const BossStandTarget stand = (holdSpot || sPlayerbotAIConfig.dungeonRunTankPostWalks)
         ? FindBossStand(ai, bot) : BossStandTarget();
@@ -12755,8 +12774,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
             if (seat.seated)
                 candidate.seatRank = seat.tank == bot->GetObjectGuid() ? 0 : 2;
             const std::uint32_t maxMana = member->GetMaxPower(POWER_MANA);
-            candidate.hasMana = maxMana == 0 ||
-                100.0f * member->GetPower(POWER_MANA) / maxMana >= kTankPostHealerMinManaPct;
+            candidate.manaPct = maxMana == 0 ? 100.0f : 100.0f * member->GetPower(POWER_MANA) / maxMana;
             const float dx = member->GetPositionX() - bot->GetPositionX();
             const float dy = member->GetPositionY() - bot->GetPositionY();
             candidate.ydToHolder = std::sqrt(dx * dx + dy * dy);
@@ -12787,22 +12805,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         }
     }
 
-    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the first sighting of the row's spell after the unit was on
-    // this tank opens the holder's cooldown window. A triggered cast never shows as the boss's current spell, so the
-    // aura on the holder or a group member near it is the sighting.
-    if (sPlayerbotAIConfig.dungeonRunTankPostHealers && !record.cooldownClosed && record.heldOnce &&
-        row->spellId != 0 && record.cooldownSeenMs == 0)
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the first sighting of the row's spell after a held tick opens
+    // the holder's cooldown window. The aura read above is the same one the hold gate used.
+    if (cooldownLive && record.heldOnce)
     {
-        bool auraOnRaid = bot->HasAura(row->spellId);
-        for (Player* member : LiveGroupMembers(bot->GetGroup()))
-        {
-            if (auraOnRaid || !member || !sServerFacade.IsAlive(member) || member->GetMapId() != mapId)
-                continue;
-            if (TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
-                    member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()) > 60.0f)
-                continue;
-            auraOnRaid = member->HasAura(row->spellId);
-        }
         if (TankPostCooldownSeen(sPlayerbotAIConfig.dungeonRunTankPostHealers, row->spellId, record.heldOnce,
                 record.cooldownSeenMs != 0, auraOnRaid))
         {
@@ -13149,8 +13155,9 @@ bool BossTacticsTankPostHealerAction::Execute(Event& event)
 }
 
 // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder casts its class's defensive actions in order inside
-// the window the first sighting opened. A cast that does not go out is tried again next tick; at the window's end
-// with names left the action writes one `cd_none` row and closes the window; a class with no action closes at once.
+// the window the first sighting opened. An action that does not go out (on cooldown) spends its name, so the next
+// tick tries the next one, writing `cd_skip`; at the window's end with names left the action writes one `cd_none` row
+// and closes the window; a class with no action closes at once.
 bool BossTacticsTankPostCooldownAction::Execute(Event& event)
 {
     std::uint8_t tried = 0;
@@ -13168,10 +13175,17 @@ bool BossTacticsTankPostCooldownAction::Execute(Event& event)
         TankPostCooldownStep(true, tried, names.size(), WorldTimer::getMSTime() - seenMs);
     if (step == TankPostCooldown::Cast)
     {
-        if (!ai->DoSpecificAction(names[tried], event, true))
-            return false;
         std::string spellName(names[tried]);
         std::replace(spellName.begin(), spellName.end(), ' ', '_');
+        if (!ai->DoSpecificAction(names[tried], event, true))
+        {
+            // On cooldown or refused: the next untried name gets the rest of the window.
+            char info2[128];
+            std::snprintf(info2, sizeof(info2), "event=cd_skip,spell=%s", spellName.c_str());
+            LogTankPostCooldown(ai, bot, info2);
+            TankPostCooldownNote(bot, true);
+            return false;
+        }
         char info2[128];
         std::snprintf(info2, sizeof(info2), "event=cd_cast,spell=%s,hp=%.0f", spellName.c_str(),
             bot->GetHealthPercent());

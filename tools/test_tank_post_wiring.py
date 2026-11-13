@@ -692,7 +692,8 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fill)
         self.assertIn("TortoiseBots::BotCommands::RaidTankHealerSeat(member)", fill)
         self.assertIn("candidate.seatRank = seat.tank == bot->GetObjectGuid() ? 0 : 2;", fill)
-        self.assertIn("kTankPostHealerMinManaPct", fill)
+        self.assertIn("candidate.manaPct = maxMana == 0 ? 100.0f : 100.0f * member->GetPower(POWER_MANA) / maxMana;",
+                      fill)
         self.assertIn("otherHeld.count(memberGuid) != 0", fill)
         # The fill runs after the step is known (a yield keeps its healers) and before the record is stored.
         self.assertGreater(find.index("if (sPlayerbotAIConfig.dungeonRunTankPostHealers && holdSpot && row->healers > 0"),
@@ -765,30 +766,35 @@ class TankPostWiring(unittest.TestCase):
         # (TankPostCooldownSeen, TankPostCooldownActions, TankPostCooldownStep in tools/test_boss_tactics_policy.cpp);
         # these pins prove the live code uses them and names no boss and no spell id.
         find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
-        self.assertIn("record.heldOnce = record.heldOnce || in.subjectOnTank;", find)
-        sight = find[find.index("if (sPlayerbotAIConfig.dungeonRunTankPostHealers && !record.cooldownClosed"):]
+        # The hold counts only on a tick without the aura: the landing Roar shows it and the tank on the same tick.
+        self.assertIn("const bool auraOnRaid = cooldownLive && TankPostAuraOnRaid(bot, mapId, row->spellId);", find)
+        self.assertIn("record.heldOnce = record.heldOnce || TankPostCooldownHolds(in.subjectOnTank, auraOnRaid);",
+                      find)
+        sight = find[find.index("if (cooldownLive && record.heldOnce)"):]
         sight = sight[:sight.index("bool arrivedNow = false;")]
-        self.assertIn("record.heldOnce &&", sight)
-        self.assertIn("row->spellId != 0 && record.cooldownSeenMs == 0", sight)
-        self.assertIn("bot->HasAura(row->spellId)", sight)
-        self.assertIn("member->HasAura(row->spellId)", sight)
         self.assertIn("TankPostCooldownSeen(sPlayerbotAIConfig.dungeonRunTankPostHealers, row->spellId, "
                       "record.heldOnce,", sight)
         self.assertIn("record.cooldownSeenMs != 0, auraOnRaid)", sight)
         self.assertIn("record.cooldownSeenMs = nowMs;", sight)
         self.assertIn('"event=cd_seen,spell=%u,s=%.1f"', sight)
         self.assertNotIn("g_tankPostMutex", sight)
+        aura = body(ACTIONS, "bool TankPostAuraOnRaid(")
+        self.assertIn("bot->HasAura(spellId)", aura)
+        self.assertIn("member->HasAura(spellId)", aura)
+        self.assertIn("> 60.0f", aura)
         self.assertIn("std::uint32_t cooldownSeenMs = 0;", ACTIONS)
         self.assertIn("std::uint8_t cooldownTried = 0;", ACTIONS)
         self.assertIn("bool cooldownClosed = false;", ACTIONS)
         self.assertIn("bool heldOnce = false;", ACTIONS)
-        # The action: the policy's names in order through DoSpecificAction, the two rows, then the count.
+        # The action: the policy's names in order through DoSpecificAction, the two rows, then the count. A refused
+        # action spends its name and the next tick tries the next one.
         action = body(ACTIONS, "bool BossTacticsTankPostCooldownAction::Execute(Event& event)")
         self.assertIn("TankPostCooldownRead(bot, tried, seenMs)", action)
         self.assertIn("const std::vector<const char*> names = TankPostCooldownActions(bot->GetClass());", action)
         self.assertIn("ai->DoSpecificAction(names[tried], event, true)", action)
         self.assertIn("TankPostCooldownStep(true, tried, names.size(), WorldTimer::getMSTime() - seenMs)", action)
         self.assertIn('"event=cd_cast,spell=%s,hp=%.0f"', action)
+        self.assertIn('"event=cd_skip,spell=%s"', action)
         self.assertIn('"event=cd_none,left=%u"', action)
         self.assertIn('"event=cd_none,left=0"', action)
         self.assertIn("TankPostCooldownNote(bot, true);", action)
@@ -797,14 +803,15 @@ class TankPostWiring(unittest.TestCase):
         read = body(ACTIONS, "bool ai::TankPostCooldownRead(")
         self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", read)
         self.assertIn("record.cooldownSeenMs == 0 || record.cooldownClosed", read)
-        note = body(ACTIONS, "void ai::TankPostCooldownNote(Player* bot, bool cast)")
+        note = body(ACTIONS, "void ai::TankPostCooldownNote(Player* bot, bool attempted)")
         self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", note)
-        self.assertIn("++record.cooldownTried;", note)
-        self.assertIn("record.cooldownClosed = true;", note)
-        self.assertIn("TankPostCooldownActions(bot->GetClass()).size()", note)
+        self.assertIn("TankPostCooldownAfter(record.cooldownTried, "
+                      "TankPostCooldownActions(bot->GetClass()).size(), attempted)", note)
+        self.assertIn("record.cooldownTried = next.tried;", note)
+        self.assertIn("record.cooldownClosed = next.closed;", note)
         self.assertIn("bool TankPostCooldownDue(Player* bot);", ACTIONS_H)
         self.assertIn("bool TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs);", ACTIONS_H)
-        self.assertIn("void TankPostCooldownNote(Player* bot, bool cast);", ACTIONS_H)
+        self.assertIn("void TankPostCooldownNote(Player* bot, bool attempted);", ACTIONS_H)
         # The trigger and its node: above the post's own node.
         self.assertIn('creators["boss tank post cooldown"] = [](PlayerbotAI* ai) '
                       '{ return new BossTacticsTankPostCooldownTrigger(ai); };', TRIGGER_CONTEXT)

@@ -221,10 +221,11 @@ namespace ai
 
     // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post holder's cooldown at the first cast the row's spell
     // marks. `Due` is the trigger's read (seen, not closed, the record live); `Read` hands the action the same
-    // record's tried count and sighting clock; `Note` advances the count after a cast and closes the window otherwise.
+    // record's tried count and sighting clock; `Note` spends one name after an attempt (cast or refused) and closes
+    // the window otherwise.
     bool TankPostCooldownDue(Player* bot);
     bool TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs);
-    void TankPostCooldownNote(Player* bot, bool cast);
+    void TankPostCooldownNote(Player* bot, bool attempted);
 
     // The area taunts' own scan: whether any hostile within kAreaTauntRadiusYd of the bot is another live post's
     // reserved subject, so Challenging Shout or Challenging Roar must not cast (the selected target alone is the gate's
