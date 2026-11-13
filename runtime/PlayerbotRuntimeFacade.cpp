@@ -11,6 +11,7 @@
 
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/AiFactory.h"
+#include "../ai/playerbot/GroupMembers.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../ai/playerbot/BotState.h"
@@ -72,6 +73,20 @@ std::string ValueKey(uint32 guid, std::string const& name)
 std::string TradeKey(ObjectGuid bot, ObjectGuid master)
 {
     return bot.GetString() + "\n" + master.GetString();
+}
+
+// Issue #1605: a party with a human in it is the player's, not the pool
+// roulette's. LiveGroupMembers resolves each slot's guid through the
+// ObjectAccessor, so a bot mid-relogin cannot hand out a freed pointer.
+bool GroupHasRealPlayer(PlayerbotAI* ai, Player* bot)
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    for (Player* member : LiveGroupMembers(group))
+        if (member != bot && ai->IsRealPlayer(member))
+            return true;
+    return false;
 }
 }
 
@@ -484,8 +499,11 @@ void RandomBotFacade::ChangeStrategy(Player* player)
         // it is grouped: the list's "+dps" is the class DPS alias (shadow
         // for a priest) and drops the sibling spec, which left a filled
         // healer unable to heal mid-dungeon. ResetStrategies is the only
-        // place that applies the role; leaving the group clears it.
-        if (TortoiseBots::TimedReapplyHoldsRole({ static_cast<uint8>(ai->GetForcedRole()), player->GetGroup() != nullptr }))
+        // place that applies the role; leaving the group clears it. A bot in
+        // a real player's party is held even without a forced role: the LFT
+        // fill assigns none when the natural kit already matches the slot.
+        if (TortoiseBots::TimedReapplyHoldsRole({ static_cast<uint8>(ai->GetForcedRole()),
+                player->GetGroup() != nullptr, GroupHasRealPlayer(ai, player) }))
             return;
 
         // Same rules as AddDefaultCombatStrategies: the string's -threat must

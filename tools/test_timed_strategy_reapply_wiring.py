@@ -6,11 +6,13 @@ every Min..MaxRandomBotChangeStrategyTime. It must not do that for a bot whose
 role the dungeon finder (or `.bot role` / the hire provisioner) set while the
 bot is in a group: the list's "+dps" is the class DPS alias (shadow for a
 priest) and Engine::addStrategy drops the sibling spec, which turned a filled
-healer into a shadow priest mid-dungeon.
+healer into a shadow priest mid-dungeon. Nor may it run for a bot standing in a
+real player's party at all: the fill assigns no forced role when the natural
+kit already matches the slot, so the party hold is the one that covers that bot.
 
 The pure verdict is TimedReapplyHoldsRole (tools/test_timed_strategy_reapply_policy.cpp);
-this checks the call site asks it, with the bot's own forced role and group,
-before it touches either engine.
+this checks the call site asks it, with the bot's own forced role and group and
+the group's real-player scan, before it touches either engine.
 """
 import pathlib
 import unittest
@@ -37,9 +39,17 @@ class TimedStrategyReapplyWiringTest(unittest.TestCase):
         self.assertIn('#include "runtime/policy/infra/TimedStrategyReapplyPolicy.h"', FACADE)
         fn = self.change_strategy()
         self.assertIn("TimedReapplyHoldsRole(", fn)
-        # The verdict reads the bot's own role and its group.
+        # The verdict reads the bot's own role, its group, and whether a real
+        # player is in that group.
         self.assertIn("GetForcedRole()", fn)
         self.assertIn("player->GetGroup()", fn)
+        self.assertIn("GroupHasRealPlayer(ai, player)", fn)
+
+    def test_group_scan_reads_real_players(self):
+        scan = strip_comments(body(FACADE, "bool GroupHasRealPlayer(PlayerbotAI* ai, Player* bot)", "\n}\n"))
+        self.assertIn("bot->GetGroup()", scan)
+        self.assertIn("LiveGroupMembers(group)", scan)
+        self.assertIn("ai->IsRealPlayer(member)", scan)
 
     def test_skip_comes_before_any_strategy_change(self):
         fn = self.change_strategy()

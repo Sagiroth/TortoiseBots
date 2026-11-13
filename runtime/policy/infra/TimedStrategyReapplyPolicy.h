@@ -11,13 +11,19 @@
 // again. With the shipped list its "+dps assist" still undid a player's own
 // `.bot co -dps assist`.
 //
-// The bot carries that role in PlayerbotAI::m_forcedRole (set by the LFT fill,
-// `.bot role`, the hire provisioner and the 7.3 shaman tank factory), and
-// PlayerbotAI::ResetStrategies is the one place that re-applies it. While the
-// bot is in a group - a player's party or a server-owned LFT group - the role
-// is a standing order and the timed re-apply must leave the whole kit alone;
-// once the bot leaves, LeaveGroupAction/LftBotFillService clear the role and
-// the roulette resumes. A solo bot, and a grouped bot with no forced role,
+// Two holds, either one skips the re-apply:
+//
+//  - A bot in a group with a real (network) player. The party is the player's
+//    and the fill's, not the roulette's. This is the hold that covers a bot
+//    whose natural kit already matched its LFT slot: the fill assigns no
+//    forced role there, so the role check alone let exactly that bot through.
+//  - A bot carrying a forced role (PlayerbotAI::m_forcedRole) while grouped.
+//    The LFT fill, `.bot role`, the hire provisioner and the 7.3 shaman tank
+//    factory set it; PlayerbotAI::ResetStrategies is the one place that
+//    applies it, and it stays the standing order until the bot leaves the
+//    group (LeaveGroupAction/LftBotFillService clear the role).
+//
+// A solo bot, and a grouped bot with no forced role in an all-bot group,
 // keep today's behaviour exactly.
 //
 // Pure policy: no core/engine headers, unit-tested standalone
@@ -30,15 +36,17 @@ namespace TortoiseBots
 
 struct TimedReapplyInputs
 {
-    uint8_t forcedRole = 0; // PlayerbotAI::GetForcedRole(); 0 = none
-    bool inGroup = false;   // the bot's Player::GetGroup() is set
+    uint8_t forcedRole = 0;          // PlayerbotAI::GetForcedRole(); 0 = none
+    bool inGroup = false;            // the bot's Player::GetGroup() is set
+    bool groupHasRealPlayer = false; // a network player is in that group (implies inGroup)
 };
 
-// True when the timed strategy re-apply must be skipped: the bot holds a
-// forced role and is still grouped, so its kit stays the one the role built.
+// True when the timed strategy re-apply must be skipped: the bot stands in a
+// player's party, or it holds a forced role that its group still honours, so
+// its kit stays the one the group and the role built.
 inline bool TimedReapplyHoldsRole(TimedReapplyInputs const& in)
 {
-    return in.forcedRole != 0 && in.inGroup;
+    return in.groupHasRealPlayer || (in.forcedRole != 0 && in.inGroup);
 }
 
 } // namespace TortoiseBots

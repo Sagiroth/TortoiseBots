@@ -16,9 +16,9 @@ using TortoiseBots::TimedReapplyHoldsRole;
 
 namespace
 {
-    bool Holds(uint8_t forcedRole, bool inGroup)
+    bool Holds(uint8_t forcedRole, bool inGroup, bool groupHasRealPlayer = false)
     {
-        return TimedReapplyHoldsRole({forcedRole, inGroup});
+        return TimedReapplyHoldsRole({forcedRole, inGroup, groupHasRealPlayer});
     }
 }
 
@@ -30,9 +30,9 @@ int main()
     // healer role (forcedRole 2) and she sits in the real player's dungeon
     // group. The timed re-apply must not run: its "+dps" is the priest's
     // shadow alias and would drop the heal kit mid-run.
-    CHECK(Holds(1, true)); // tank fill in a group
-    CHECK(Holds(2, true)); // healer fill in a group - the reported case
-    CHECK(Holds(4, true)); // damage fill in a group
+    CHECK(Holds(1, true, true)); // tank fill in a player's group
+    CHECK(Holds(2, true, true)); // healer fill in a player's group - the reported case
+    CHECK(Holds(4, true, true)); // damage fill in a player's group
     std::cout << "  [PASS] grouped bot holding an LFT role keeps its kit\n";
 
     // (2) Same bot, same role, no group: the pool roulette applies as before
@@ -44,12 +44,24 @@ int main()
 
     // (3) A grouped free bot with no forced role keeps today's behaviour:
     // the timed re-apply is what gives it its pool kit.
-    CHECK(!Holds(0, true));
+    CHECK(!Holds(0, true, false));
     std::cout << "  [PASS] grouped bot without a role still re-rolls\n";
 
     // (4) Neither condition: unchanged.
-    CHECK(!Holds(0, false));
+    CHECK(!Holds(0, false, false));
     std::cout << "  [PASS] masterless unforced bot still re-rolls\n";
+
+    // (5) A natural-role pool healer the fill put in a player's group: the
+    // fill assigns no forced role when the natural kit matches the slot, so
+    // only the party hold stops the re-apply. Without it the roulette ran on
+    // exactly this bot (#1605 round 1, Codex HIGH).
+    CHECK(Holds(0, true, true));
+    std::cout << "  [PASS] natural-role healer in a player's group is not re-rolled\n";
+
+    // (6) A pool bot in an all-bot group is still the pool's: the timed
+    // re-apply must keep running for it.
+    CHECK(!Holds(0, true, false));
+    std::cout << "  [PASS] pool bot in an all-bot group is still re-rolled\n";
 
     std::cout << "TortoiseBots timed strategy re-apply tests passed.\n";
     return 0;

@@ -79,8 +79,7 @@ class ShadeCoverRow(unittest.TestCase):
     def test_documented(self):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
-        self.assertIn("BossTacticsShadeCover",
-                      "".join(CHANGELOG.split("\n- ", 30)[1:30]))  # newest entries (30: a fixed 20 is one insertion away from dropping this row)
+        self.assertIn("New: Jin'do log row BossTacticsShadeCover names each cursed damage dealer or free off-tank that leaves a Shade on a healer alone, and why (dead, charmed, other_shade, out_of_range, threat_gate, on_boss, other_target, no_target).", CHANGELOG)
         for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "guard", "on_boss", "other_target",
                      "no_target"):
             self.assertIn(word, member(DOCS_ROWS, "`BossTacticsShadeCover`", "\n"))
@@ -95,8 +94,7 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn("Recommended on.", member(DOCS_RUNS, "### `AiPlayerbot.DungeonRunShadeHealerCover`", "</details>"))
         self.assertIn("recommended on", member(CONF, "# Shade healer cover at Jin'do", "AiPlayerbot.DungeonRunShadeHealerCover = 0"))
         self.assertIn("DungeonRunShadeHealerCover", DOCS)
-        self.assertIn("DungeonRunShadeHealerCover",
-                      "".join(CHANGELOG.split("\n- ", 30)[1:30]))  # newest entries (30: a fixed 20 is one insertion away from dropping this row)
+        self.assertIn("New: behind AiPlayerbot.DungeonRunShadeHealerCover (default 0), a cursed off-tank that does not hold Jin'do takes a Shade attacking a healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it and on its floor ahead of other Shades.", CHANGELOG)
 
     def test_the_carrier_pick_reads_the_key(self):
         pick = member(ACTIONS, "Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,\n    float carrierReachYd)\n{", "\n}\n")
