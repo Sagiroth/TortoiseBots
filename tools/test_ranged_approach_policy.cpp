@@ -204,7 +204,7 @@ int main()
         CHECK(RangedApproachStopDistance(0.0f) == 0.0f);
         CHECK(RangedApproachInPosition(23.0f, 26.0f, true));
         CHECK(RangedApproachInPosition(10.0f, 26.0f, true));
-        CHECK(!RangedApproachInPosition(19.6f, 26.0f, true));
+        CHECK(!RangedApproachInPosition(23.1f, 26.0f, true));
         CHECK(!RangedApproachInPosition(10.0f, 26.0f, false));
         std::cout << "  [PASS] stop band: in position just inside range, in sight\n";
     }
