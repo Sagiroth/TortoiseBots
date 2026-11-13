@@ -43,6 +43,108 @@ namespace ai
         return dx * dx + dy * dy + dz * dz;
     }
 
+    // Stop band for a ranged reach: the walk ends this far inside the
+    // casting distance, so a bot at the band's edge casts instead of
+    // stepping again. Well inside real spell range, so a small step by the
+    // target does not kick the reach back off; far enough out that the bot
+    // does not stand on the tank.
+    inline float RangedApproachStopDistance(float distance)
+    {
+        if (distance <= 0.0f)
+            return 0.0f;
+        return distance * 0.75f;
+    }
+
+    // Whether the bot already stands where the reach wants it: inside the
+    // stop band and in line of sight. The caller passes the live range and
+    // sight check of the target; nothing here touches the world.
+    inline bool RangedApproachInPosition(float distToTarget, float distance, bool inLos)
+    {
+        if (!inLos)
+            return false;
+        return distToTarget <= RangedApproachStopDistance(distance);
+    }
+
+    // An unpulled hostile the reach walk must respect: centre and aggro
+    // radius (yards). The caller builds the list from its cached target
+    // list; this header only owns the geometry.
+    struct ApproachIdlePack
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float radius = 0.0f;
+    };
+
+    // True when the walk point (x, y) stays clear of the pack: outside its
+    // aggro radius, or no closer to it than the bot already stands (a bot
+    // inside a radius may still step away from that pack). The same rule
+    // as the flee's landing check (PoolFleeLandingWakesMob).
+    inline bool ApproachPointClearOfPack(float x, float y, float botX, float botY, ApproachIdlePack const& pack)
+    {
+        if (pack.radius <= 0.0f)
+            return true;
+        float const dx = x - pack.x;
+        float const dy = y - pack.y;
+        float const distSq = dx * dx + dy * dy;
+        float const wakeSq = pack.radius * pack.radius;
+        if (distSq >= wakeSq)
+            return true;
+        float const bx = botX - pack.x;
+        float const by = botY - pack.y;
+        return distSq >= bx * bx + by * by;
+    }
+
+    // True when the point is a destination the reach may walk to: within
+    // casting distance of the target, in sight of it, and clear of every
+    // idle pack. When no listed point qualifies, the caller keeps the
+    // current behaviour (the bot must still be able to fight).
+    template <typename LosFn>
+    inline bool RangedApproachPointSafe(ApproachPoint const& point, ApproachPoint const& target,
+        ApproachPoint const& bot, float distance, LosFn hasLos,
+        ApproachIdlePack const* packs, std::size_t packCount)
+    {
+        if (ApproachDistanceSq(point, target) > distance * distance)
+            return false;
+        if (!hasLos(point))
+            return false;
+        for (std::size_t i = 0; i < packCount; ++i)
+        {
+            if (!ApproachPointClearOfPack(point.x, point.y, bot.x, bot.y, packs[i]))
+                return false;
+        }
+        return true;
+    }
+
+    // When the planned destination lies in an idle pack's aggro range, step
+    // back along the walked path to the first point (nearest the bot) that
+    // is in casting range, in sight and clear of every pack. Only points
+    // closer to the bot than the planned destination count, so the walk
+    // never goes further than planned. Invalid when none qualifies: the
+    // caller keeps the planned destination (the bot must still fight).
+    template <typename LosFn>
+    inline RangedApproachChoice StepBackToPackSafePoint(
+        std::vector<ApproachPoint> const& points, ApproachPoint const& choice,
+        ApproachPoint const& target, float distance, LosFn hasLos,
+        ApproachIdlePack const* packs, std::size_t packCount)
+    {
+        RangedApproachChoice result;
+        if (points.empty() || packCount == 0)
+            return result;
+        ApproachPoint const& bot = points.front();
+        float const choiceSq = ApproachDistanceSq(choice, bot);
+        for (auto const& point : points)
+        {
+            if (ApproachDistanceSq(point, bot) >= choiceSq)
+                continue;
+            if (!RangedApproachPointSafe(point, target, bot, distance, hasLos, packs, packCount))
+                continue;
+            result.valid = true;
+            result.point = point;
+            return result;
+        }
+        return result;
+    }
+
     // The path walk replaces the core chase only where the chase fails: inside
     // a dungeon (raids included, the core's Map::IsDungeon) and for a distance
     // beyond melee reach (a melee-reach destination passes the core's dungeon
@@ -84,6 +186,9 @@ namespace ai
         if (path.size() < 2 || distance <= 0.0f)
             return result;
 
+        // `distance` is the stop band the caller wants the bot at (see
+        // RangedApproachStopDistance): the walk ends there, not at the
+        // range rim, so the bot casts instead of stepping again.
         float const rangeSq = distance * distance;
         float const startSq = ApproachDistanceSq(path.front(), target);
 

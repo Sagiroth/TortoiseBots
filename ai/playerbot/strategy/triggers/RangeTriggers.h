@@ -10,7 +10,7 @@
 #include "playerbot/strategy/values/Formations.h"
 #include "playerbot/FormationStationPolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
-
+#include "playerbot/policy/combat/RangedApproachPolicy.h"
 namespace ai
 {
     class EnemyTooCloseForSpellTrigger : public Trigger
@@ -323,7 +323,13 @@ namespace ai
             if (!sServerFacade.IsHostileTo(bot, target))
                 return false;
 
-            return target && (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            // The reach walks only to the stop band inside the range rim and
+            // stops there, so the trigger must stay lit until the band: at
+            // the rim the target is castable but the bot would stand past
+            // the tanks.
+            return (bot->GetDistance(target, SizeFactor::CombatReach) >
+                (RangedApproachStopDistance(distance) - sPlayerbotAIConfig.contactDistance)) ||
+                !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -346,7 +352,10 @@ namespace ai
                     float(sPlayerbotAIConfig.almostFullHealth)))
                 return false;
 
-            bool const outOfRange = (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) ||
+            // The heal reach also stops at its band inside the rim, so the
+            // trigger keeps the walk going until there.
+            bool const outOfRange = (bot->GetDistance(target, SizeFactor::CombatReach) >
+                (RangedApproachStopDistance(distance) - sPlayerbotAIConfig.contactDistance)) ||
                 !bot->IsWithinLOSInMap(target, true);
             if (!outOfRange)
                 return false;
