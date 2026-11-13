@@ -243,6 +243,7 @@ namespace ai
                 creators["choice curse curse of shadow"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of shadow"); };
                 creators["choice curse curse of recklessness"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of recklessness"); };
                 creators["choice curse curse of doom"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of doom"); };
+                creators["choice curse curse of exhaustion"] = [](PlayerbotAI* ai) { return new ChoiceCurseTrigger(ai, "curse of exhaustion"); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["life tap top-up"] = [](PlayerbotAI* ai) { return new LifeTapTopUpTrigger(ai); };

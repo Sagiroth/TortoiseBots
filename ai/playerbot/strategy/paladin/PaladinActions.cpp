@@ -183,6 +183,35 @@ std::string ai::OrderedAuraFor(PlayerbotAI* ai)
     return spell;
 }
 
+bool CastChoiceAuraAction::isUseful()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (ordered.empty() || ai->HasMyAura(ordered, bot))
+        return false;
+    SetSpellName(ordered);
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastChoiceAuraAction::isPossible()
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (ordered.empty())
+        return false;
+    SetSpellName(ordered);
+    return CastBuffSpellAction::isPossible();
+}
+
+bool CastChoiceAuraAction::Execute(Event& event)
+{
+    std::string const ordered = OrderedAuraFor(ai);
+    if (ordered.empty())
+        return false;
+    bool const cast = ai->CastSpell(ordered, bot, nullptr, false);
+    if (cast)
+        SetDuration(1.0f);
+    return cast;
+}
+
 std::string ai::OrderedBlessingFor(PlayerbotAI* ai, Unit* target)
 {
     if (!target || !target->IsPlayer())

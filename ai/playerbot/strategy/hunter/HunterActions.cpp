@@ -395,7 +395,17 @@ bool CastChoiceAspectAction::isUseful()
     if ((ordered == "aspect of the cheetah" || ordered == "aspect of the pack") &&
         AI_VALUE(bool, "has attackers"))
         return false;
+    SetSpellName(ordered);
     return ai->HasSpell(ordered) && CastBuffSpellAction::isUseful();
+}
+
+bool CastChoiceAspectAction::isPossible()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (ordered.empty())
+        return false;
+    SetSpellName(ordered);
+    return CastBuffSpellAction::isPossible();
 }
 
 bool CastChoiceAspectAction::Execute(Event& event)

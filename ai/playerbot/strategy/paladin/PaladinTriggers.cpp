@@ -441,6 +441,15 @@ bool NoPaladinAuraTrigger::IsActive()
     return needAura;
 }
 
+bool ChoiceAuraTrigger::IsActive()
+{
+    std::string const ordered = ai::OrderedAuraFor(ai);
+    if (ordered.empty() || !ai->HasSpell(ordered))
+        return false;
+    Unit* target = GetTarget();
+    return target && !ai->HasMyAura(ordered, bot);
+}
+
 bool HammerOfJusticeOnEnemyTrigger::IsActive()
 {
     Unit* target = GetTarget();

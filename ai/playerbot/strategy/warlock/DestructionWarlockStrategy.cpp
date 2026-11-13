@@ -380,6 +380,7 @@ void DestructionWarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*
     triggers.push_back(new TriggerNode(
         "curse of the elements",
         NextAction::array(0, new NextAction("curse of the elements", ACTION_NORMAL + 2), NULL)));
+    WarlockCursesStrategy::InitChoiceCurseTriggers(triggers);
 }
 
 void DestructionWarlockCursesPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

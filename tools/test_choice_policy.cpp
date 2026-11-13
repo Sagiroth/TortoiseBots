@@ -17,6 +17,11 @@ int main()
     CHECK(ai::ChoiceKindClassId(1) == 3);
     CHECK(ai::ChoiceKindClassId(2) == 9);
     CHECK(ai::ChoiceKindClassId(7) == 0);
+    CHECK(ai::ChoiceKindForClass(2) == 0);
+    CHECK(ai::ChoiceKindForClass(3) == 1);
+    CHECK(ai::ChoiceKindForClass(9) == 2);
+    CHECK(ai::ChoiceKindForClass(1) == -1);
+    CHECK(ai::ChoiceKindForClass(0) == -1);
 
     CHECK(ai::ChoiceWordCount(0) == 7);
     CHECK(ai::ChoiceWordCount(1) == 8);
