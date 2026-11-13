@@ -168,6 +168,32 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.24.0 (2026-11-13)
+
+### Raids & Dungeons
+- Bots now use real tactics against Hakkar and Jin'do in Zul'Gurub and throughout Onyxia's Lair. [#1590](https://github.com/Sagiroth/TortoiseBots/pull/1590)
+- In bot-led dungeon runs the tank marks a skull on every pulled pack and on boss adds, so everyone focuses one target. [#1610](https://github.com/Sagiroth/TortoiseBots/pull/1610)
+- Bots no longer taunt a boss away from a real player who is tanking it. [#1592](https://github.com/Sagiroth/TortoiseBots/pull/1592)
+- Hakkar fights now open with a short hold and potion use, and the Onyxia plan got further fixes. [#1592](https://github.com/Sagiroth/TortoiseBots/pull/1592)
+- Fourteen smaller raid, battleground and economy problems are fixed. [#1592](https://github.com/Sagiroth/TortoiseBots/pull/1592)
+
+### Groups & Dungeons
+- Summoning a bot now brings its pet along, so the pet stops walking through the dungeon and pulling packs. [#1607](https://github.com/Sagiroth/TortoiseBots/pull/1607)
+- A bot that joined your group as a healer through the dungeon finder now stays a healer for the whole run. [#1608](https://github.com/Sagiroth/TortoiseBots/pull/1608)
+- Bots stepping away from a fight now pick safe ground instead of a spot inside a pack that is not fighting yet. [#1600](https://github.com/Sagiroth/TortoiseBots/pull/1600)
+- A new hold-position switch keeps a bot following and fighting but stops it backing away on its own. [#1600](https://github.com/Sagiroth/TortoiseBots/pull/1600)
+
+### Classes & Combat
+- Slows and speed buffs on bots now wear off when they should instead of lingering for several seconds. [#1609](https://github.com/Sagiroth/TortoiseBots/pull/1609)
+
+### Dashboard
+- The fight debugger has a live view, so you can watch a raid fight as it happens with health, damage, healing, events and a map. [#1579](https://github.com/Sagiroth/TortoiseBots/pull/1579)
+
+### Settings
+- Server owners can switch on bots' raid reactions with a new setting, AiPlayerbot.RaidReactions, which is off by default. [#1591](https://github.com/Sagiroth/TortoiseBots/pull/1591)
+
+---
+
 ## v1.23.2 (2026-11-10)
 
 ### Groups & Combat
