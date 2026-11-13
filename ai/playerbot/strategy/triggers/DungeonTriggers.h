@@ -124,8 +124,9 @@ namespace ai
         bool IsActive() override;
     };
 
-    // True while the bot carries an explicit "aura ..." order in either
-    // engine. The swap stays out of the way, and so does the restore.
+    // True while the bot carries an explicit aura order: the chat "aura ..."
+    // strategy row in either engine, or the saved `.bot choice` order. The
+    // swap stays out of the way, and so does the restore.
     bool HasManualPaladinAuraOverride(PlayerbotAI* ai);
 
     // Fight over for a paladin that made the resist swap: alive and out of

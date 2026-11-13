@@ -135,8 +135,57 @@ bool SiphonLifeTrigger::IsActive()
     return DebuffTrigger::IsActive();
 }
 
+namespace
+{
+// The curse the saved `.bot choice` order wants, as its spell name; empty
+// on auto or when the bot no longer knows it (respec falls back to auto).
+// Doom keeps no sanity rules here: if ordered, it is cast.
+std::string OrderedCurseFor(PlayerbotAI* ai)
+{
+    std::string const stored =
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", "choice curse")->Get();
+    if (stored.empty() || stored == "auto")
+        return std::string();
+    std::string const want = stored == "elements" ? "curse of the elements" : "curse of " + stored;
+    static const char* const known[] = {
+        "curse of agony", "curse of the elements", "curse of shadow", "curse of recklessness",
+        "curse of weakness", "curse of tongues", "curse of doom", "curse of exhaustion"
+    };
+    for (const char* curse : known)
+        if (want == curse)
+            return ai->HasSpell(want) ? want : std::string();
+    return std::string();
+}
+
+// A curse row fires when nothing is ordered (today's behaviour), when it
+// is the ordered curse (replacing the automatic pick, even beside a chat
+// "curse ..." row for another curse), or when its own chat "curse ..."
+// manual row is set. `no curse` only means "nothing to do" with no order.
+bool ChoiceCurseRowActive(PlayerbotAI* ai, char const* row, char const* manual)
+{
+    std::string const ordered = OrderedCurseFor(ai);
+    if (ordered.empty())
+        return true;
+    if (ordered == row)
+        return true;
+    return ai->HasStrategy(manual, BotState::BOT_STATE_COMBAT);
+}
+
+} // namespace
+
+bool ChoiceCurseTrigger::IsActive()
+{
+    if (OrderedCurseFor(ai) != spell)
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+std::string ChoiceCurseTrigger::getName() { return "choice curse " + spell; }
+
 bool CurseOfAgonyTrigger::IsActive()
 {
+    if (!ChoiceCurseRowActive(ai, "curse of agony", "curse agony"))
+        return false;
     if (AI_VALUE2(uint8, "health", "current target") <= 20)
         return false;
     return DebuffTrigger::IsActive();
@@ -169,18 +218,29 @@ Value<Unit*>* ImmolateOnAttackerTrigger::GetTargetValue()
 
 bool CurseOfTheElementsTrigger::IsActive()
 {
-    // The manual "curse elements" strategy is a player order, so the life
-    // gate never silences it.
-    if (!ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT) &&
-        !WarlockDotTargetAllowed(ai, GetTarget(), false, true))
+    if (!ChoiceCurseRowActive(ai, "curse of the elements", "curse elements"))
+        return false;
+    // An order or the manual "curse elements" row is a player order, so the
+    // life gate never silences it.
+    bool const playerOrdered = !OrderedCurseFor(ai).empty() ||
+        ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT);
+    if (!playerOrdered && !WarlockDotTargetAllowed(ai, GetTarget(), false, true))
         return false;
     return DebuffTrigger::IsActive();
+}
+
+bool CurseOfTheElementsOnAttackerTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of the elements", "curse elements"))
+        return false;
+    return DebuffOnAttackerTrigger::IsActive();
 }
 
 Value<Unit*>* CurseOfTheElementsOnAttackerTrigger::GetTargetValue()
 {
     // The manual order lifts the health line only; the raid cap still holds.
-    bool const manual = ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT);
+    bool const manual = ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT) ||
+        OrderedCurseFor(ai) == "curse of the elements";
     return context->GetValue<Unit*>(manual ? "warlock spread attacker manual" : "warlock spread attacker", spell);
 }
 
@@ -258,6 +318,52 @@ bool DrainSoulTrigger::IsActive()
 		AI_VALUE(uint8, "bag space") > 0);
 }
 
+bool CurseOfDoomTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of doom", "curse doom"))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool CurseOfRecklessnessTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of recklessness", "curse recklessness"))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool CurseOfWeaknessTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of weakness", "curse weakness"))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool CurseOfTonguesTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of tongues", "curse tongues"))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool CurseOfShadowTrigger::IsActive()
+{
+    if (!ChoiceCurseRowActive(ai, "curse of shadow", "curse shadow"))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool CurseOfExhaustionSnareTrigger::IsActive()
+{
+    // The manual "curse exhaustion" row fires as today; the saved order
+    // casts through the same chassis and must not let the row fire for any
+    // other reason (the snare target exists in most fights).
+    if (!ai->HasStrategy("curse exhaustion", BotState::BOT_STATE_COMBAT) &&
+        OrderedCurseFor(ai) != "curse of exhaustion")
+        return false;
+    return SnareTargetTrigger::IsActive();
+}
+
 bool NoCurseTrigger::IsActive()
 {
 	if (!ai->HasSpell("curse of agony") &&
@@ -273,6 +379,11 @@ bool NoCurseTrigger::IsActive()
 	Unit* target = GetTarget();
 	if (target)
 	{
+		// An ordered curse casts through its own row even on a clean
+		// target: `no curse` must not claim the slot first.
+		std::string const ordered = OrderedCurseFor(ai);
+		if (!ordered.empty())
+			return !ai->HasAura(ordered.c_str(), target, false, true);
 		if (!WarlockDotTargetAllowed(ai, target))
 			return false;
 		return !ai->HasAura("curse of agony", target, false, true) &&
@@ -310,6 +421,10 @@ bool HasMyCurse(PlayerbotAI* ai, Unit* target)
 
 bool CurseOfRecklessnessRaidTrigger::IsActive()
 {
+    // An ordered curse replaces the assignment: the raid auto-pick rows
+    // stay out of the way.
+    if (!OrderedCurseFor(ai).empty())
+        return false;
     // Raid utility: worth the curse slot at any target health.
     if (!WarlockDotTargetAllowed(ai, GetTarget(), false, true))
         return false;
@@ -318,6 +433,8 @@ bool CurseOfRecklessnessRaidTrigger::IsActive()
 
 bool CurseOfShadowRaidTrigger::IsActive()
 {
+    if (!OrderedCurseFor(ai).empty())
+        return false;
     // Raid utility: worth the curse slot at any target health.
     if (!WarlockDotTargetAllowed(ai, GetTarget(), false, true))
         return false;
@@ -326,6 +443,9 @@ bool CurseOfShadowRaidTrigger::IsActive()
 
 bool NoCurseOnAttackerTrigger::IsActive()
 {
+	// The spread stays on Agony unless Agony itself is the order.
+	if (!OrderedCurseFor(ai).empty() && OrderedCurseFor(ai) != "curse of agony")
+		return false;
 	if (!ai->HasSpell("curse of agony") &&
 		!ai->HasSpell("curse of doom") &&
 		!ai->HasSpell("curse of recklessness") &&

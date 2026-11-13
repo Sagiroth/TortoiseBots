@@ -135,49 +135,61 @@ namespace ai
     {
     public:
         CastDevotionAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "devotion aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastRetributionAuraAction : public CastBuffSpellAction
     {
     public:
         CastRetributionAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "retribution aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastConcentrationAuraAction : public CastBuffSpellAction
     {
     public:
         CastConcentrationAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "concentration aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastShadowResistanceAuraAction : public CastBuffSpellAction
     {
     public:
         CastShadowResistanceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "shadow resistance aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastFrostResistanceAuraAction : public CastBuffSpellAction
     {
     public:
         CastFrostResistanceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "frost resistance aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastFireResistanceAuraAction : public CastBuffSpellAction
     {
     public:
         CastFireResistanceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "fire resistance aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastCrusaderAuraAction : public CastBuffSpellAction
     {
     public:
         CastCrusaderAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "crusader aura") {}
+        virtual bool isUseful() override;
     };
 
     class CastSanctityAuraAction : public CastBuffSpellAction
     {
     public:
         CastSanctityAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "sanctity aura") {}
+        virtual bool isUseful() override;
     };
+
+    // The aura the player ordered and this paladin has trained, as its
+    // spell name; empty when on auto (or untrained after a respec).
+    std::string OrderedAuraFor(PlayerbotAI* ai);
 
     // The blessing the player ordered for this member's class and this paladin
     // has trained, as its base spell name; empty when the class is on auto.

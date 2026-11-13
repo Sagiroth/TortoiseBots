@@ -358,3 +358,98 @@ bool CastFeignDeathAction::isUseful()
     uint8 threat = AI_VALUE2(uint8, "threat", "current target");
     return TortoiseBots::HunterFeignDeathRaidAllowed(group && group->isRaidGroup(), others, threat);
 }
+
+namespace ai
+{
+// The aspect the saved `.bot choice` order wants, as its spell name; empty
+// on auto or when the bot no longer knows it (respec falls back to auto).
+std::string OrderedAspectFor(PlayerbotAI* ai)
+{
+    std::string const stored =
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", "choice aspect")->Get();
+    if (stored.empty() || stored == "auto")
+        return std::string();
+    std::string const want = stored == "hawk" ? "aspect of the hawk" :
+        stored == "monkey" ? "aspect of the monkey" :
+        stored == "cheetah" ? "aspect of the cheetah" :
+        stored == "pack" ? "aspect of the pack" :
+        stored == "wild" ? "aspect of the wild" :
+        stored == "beast" ? "aspect of the beast" :
+        stored == "wolf" ? "aspect of the wolf" :
+        stored == "viper" ? "aspect of the viper" : "";
+    if (want.empty() || !ai->HasSpell(want))
+        return std::string();
+    return want;
+}
+} // namespace ai
+
+bool CastChoiceAspectAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (ordered.empty())
+        return false;
+    if (ai->HasAura(ordered, bot))
+        return false;
+    // Travel aspects never land in a fight, ordered or not (same rule as
+    // their own upkeep rows).
+    if ((ordered == "aspect of the cheetah" || ordered == "aspect of the pack") &&
+        AI_VALUE(bool, "has attackers"))
+        return false;
+    return ai->HasSpell(ordered) && CastBuffSpellAction::isUseful();
+}
+
+bool CastChoiceAspectAction::Execute(Event& event)
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (ordered.empty())
+        return false;
+    return ai->CastSpell(ordered, bot, nullptr, false);
+}
+
+bool CastAspectOfTheMonkeyAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (!ordered.empty())
+        return ordered == "aspect of the monkey";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastAspectOfTheHawkAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (!ordered.empty())
+        return ordered == "aspect of the hawk";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastAspectOfTheWildAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (!ordered.empty())
+        return ordered == "aspect of the wild";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastAspectOfTheBeastAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (!ordered.empty())
+        return ordered == "aspect of the beast";
+    return CastBuffSpellAction::isUseful();
+}
+
+bool CastAspectOfTheCheetahAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (!ordered.empty())
+        return ordered == "aspect of the cheetah";
+    return CastBuffSpellAction::isUseful() && !AI_VALUE(bool, "has attackers");
+}
+
+bool CastAspectOfThePackAction::isUseful()
+{
+    std::string const ordered = OrderedAspectFor(ai);
+    if (!ordered.empty())
+        return ordered == "aspect of the pack";
+    return CastBuffSpellAction::isUseful() && !AI_VALUE(bool, "has attackers");
+}
