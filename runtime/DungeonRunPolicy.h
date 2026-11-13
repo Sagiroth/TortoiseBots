@@ -898,6 +898,7 @@ struct UnitFact
     // goes before a melee unit, and its level bounds which bot may take it
     // (kRunCcMaxLevelOver). fleeRoomYd: for a fear family, the 3D distance to
     // the nearest living creature outside its pack; -1 not read (no room).
+    // Read on Facts::engagedUnits too: the pack focus's first class (PickPackFocus).
     bool caster = false;
     std::uint32_t level = 0;
     float fleeRoomYd = -1.0f;
@@ -2798,7 +2799,12 @@ struct Run
     // A new focus moves the skull with its order; until that order lands (it may be refused before the glue moves
     // the skull: not visible/found/dead) the old skull stays where it was, remembered here. The glue clears both
     // where they still are (EndRunIcon: a moved skull is a Drop, a no-op).
+    // A record is live only while its unit is a living hostile of the fight and the group's skull is still on it
+    // (SettleFocusIcons): a record left by a unit that died, despawned or left the fight, or whose mark a player
+    // moved, is dropped, so the run reads the group's skull as the player's again. focusIconMs is when the run set
+    // the mark: a fresh record's icon may not have landed yet.
     std::uint64_t focusIconGuid = 0;
+    std::uint64_t focusIconMs = 0;
     std::uint64_t focusIconClear = 0;
     std::uint64_t prevFocusIconGuid = 0;
     // Aggro estimate (Facts::joinerCeiling): a pull expected to bring more
@@ -3700,6 +3706,7 @@ inline void DropFocus(Run& r)
     {
         r.focusIconClear = r.focusIconGuid;
         r.focusIconGuid = 0;
+        r.focusIconMs = 0;
     }
     r.focusGuid = 0;
 }
@@ -3714,6 +3721,7 @@ inline void DropStaleFocusIcon(Run& r)
         return;
     r.focusIconClear = r.focusIconGuid;
     r.focusIconGuid = 0;
+    r.focusIconMs = 0;
 }
 
 // Clears what belongs to one step (also on resume, so a resumed step gets
@@ -10454,14 +10462,54 @@ inline bool KillFirstBounded(const Run& r)
         (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
 }
 
-// The focused unit is gone: no longer among this fight's kill_first units (it
-// died: the glue lists living ones only) or crowd-controlled by the run. Then
-// there is nothing left to take the focus back from.
+inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t entry); // defined below
+
+// Whether the plan or a live boss tactic row makes the entry a kill_first unit: the plan's own kill_first list, or a
+// kill_first / linked_death row of the current step that names it. The pack focus's fallback leaves such a unit alone,
+// and one the run put its skull on keeps it while it lives.
+inline bool KillFirstEntry(const Run& r, std::uint32_t entry)
+{
+    if (!entry)
+        return false;
+    if (r.plan && r.plan->KillFirstRank(entry) >= 0)
+        return true;
+    const PlanStep* const s = Current(r);
+    return s != nullptr && BossTacticOwnsEntry(r, *s, entry);
+}
+
+// The living, attackable kill_first unit a guid names, even passive (in no combat yet) and even after it dropped out of
+// every attacker list but still stands in the step (Facts::units): the run's skull stays on it until it dies, and the
+// pack's fallback takes over only then. Null for none.
+inline const UnitFact* LivingKillFirstUnit(const Run& r, const Facts& f, std::uint64_t guid)
+{
+    if (!guid)
+        return nullptr;
+    auto const find = [&r, guid](const std::vector<UnitFact>& units) -> const UnitFact*
+    {
+        for (const UnitFact& u : units)
+            if (u.guid == guid && u.hostile && u.attackable && !u.evading && !u.stealthed &&
+                KillFirstEntry(r, u.entry))
+                return &u;
+        return nullptr;
+    };
+    if (const UnitFact* const u = find(f.killFirst))
+        return u;
+    return find(f.units);
+}
+
+// The focused unit is gone: no longer among this fight's units (a kill_first one, or the pack's own fallback focus) —
+// it died, so the glue lists living ones only — or crowd-controlled by the run. Then there is nothing left to take the
+// focus back from.
 inline bool FocusGone(const Run& r, const Facts& f)
 {
     if (r.ccSent.count(r.focusGuid))
         return true;
+    if (LivingKillFirstUnit(r, f, r.focusGuid))
+        return false;
     for (const UnitFact& u : f.killFirst)
+        if (u.guid == r.focusGuid)
+            return false;
+    for (const UnitFact& u : f.engagedUnits)
         if (u.guid == r.focusGuid)
             return false;
     return true;
@@ -10592,6 +10640,7 @@ inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkul
     {
         r.prevFocusIconGuid = r.focusIconGuid;
         r.focusIconGuid = k.guid;
+        r.focusIconMs = r.runMs;
         r.focusIconClear = 0;
     }
     r.focusGuid = k.guid;
@@ -10682,30 +10731,198 @@ inline const UnitFact* PickKillFirst(const Run& r, const Facts& f)
         auto const refused = r.focusRefused.find(u.guid);
         if (refused != r.focusRefused.end() && r.runMs < refused->second)
             continue;
-        // Only this fight's: engaged with the party, the ward of one that is,
-        // or a caster keeping an aura on one that is (a channeller).
-        if (!u.engaged && !(u.owner && u.ownerEngaged) && !u.auraOnEngaged)
+        // The focused unit keeps its pick while it lives: a kill_first unit that went passive (in no combat yet) or
+        // that only a kill_first/linked_death row names still holds the run's skull, so the pack's fallback never
+        // takes it over. A linked_death row's unit ranks behind every plan kill_first entry.
+        int const rank = r.plan->KillFirstRank(u.entry);
+        int const pickRank = rank >= 0 ? rank : static_cast<int>(r.plan->killFirst.size());
+        bool const heldEntry = u.guid == r.focusGuid && (rank >= 0 || KillFirstEntry(r, u.entry));
+        if (rank < 0 && !heldEntry)
+            continue;
+        // Only this fight's: engaged with the party, the ward of one that is, or a caster keeping an aura on one that is
+        // (a channeller). The unit the run already focused is this fight's while it lives.
+        if (!u.engaged && !(u.owner && u.ownerEngaged) && !u.auraOnEngaged && !heldEntry)
             continue;
         if (bounded && u.guid != r.focusGuid && u.distLead > kKillFirstMaxYd)
-            continue;
-        int const rank = r.plan->KillFirstRank(u.entry);
-        if (rank < 0)
             continue;
         if (u.guid == r.focusGuid)
         {
             held = &u;
-            heldRank = rank;
+            heldRank = pickRank;
         }
-        if (!best || rank < bestRank || (rank == bestRank && u.distLead < best->distLead))
+        if (!best || pickRank < bestRank || (pickRank == bestRank && u.distLead < best->distLead))
         {
             best = &u;
-            bestRank = rank;
+            bestRank = pickRank;
         }
     }
     // The focused unit stays against one of the same rank: the nearest of a rank changes as the tank and the mobs move,
     // and each change moved the skull and every bot's attack before anything died (Scholomance r30 slot C, t 1521.6-
     // 1530.7: three Acolytes at 80-100 % focused in turn every 3 s). A better rank still takes it.
     if (held && heldRank == bestRank)
+        return held;
+    return best;
+}
+
+// The unit a recorded skull guid names among this tick's living hostiles in the fight (Facts::engagedUnits: in combat
+// with the party). Any other unit's record is stale.
+inline const UnitFact* EngagedHostile(const Facts& f, std::uint64_t guid)
+{
+    if (!guid)
+        return nullptr;
+    for (const UnitFact& u : f.engagedUnits)
+        if (u.guid == guid && u.hostile)
+            return &u;
+    return nullptr;
+}
+
+// Whether the unit a skull record names is still of this fight: in combat with the party, or a living kill_first unit
+// the run skulled even if passive (in no combat yet, so in no Facts::engagedUnits). The run's skull stays on it until
+// it dies.
+inline bool SkullUnitLives(const Run& r, const Facts& f, std::uint64_t guid)
+{
+    return EngagedHostile(f, guid) != nullptr || LivingKillFirstUnit(r, f, guid) != nullptr;
+}
+
+// Drops the run's stale skull records (Run::focusIconGuid, and the mark an order replaced: Run::prevFocusIconGuid):
+// the recorded unit died, despawned or left the fight, or the group's skull has moved off it (a player moved the
+// mark). Only an exact guid match with a live record is the run's own mark. A stale mark still on the group's skull
+// goes to the glue to take off (Run::focusIconClear, where it still is): left there it draws every DPS bot that
+// follows the skull, the way a mark on a unit that went home did (DropStaleFocusIcon).
+inline void SettleFocusIcons(Run& r, const Facts& f)
+{
+    if (!f.raidIconsRead)
+        return;
+    std::uint64_t const skull = f.raidIcons[kFocusIcon];
+    // The glue sets the mark from the order it answers, so a fresh record may not show on the group's skull yet:
+    // only after kFocusRefusedIgnoreMs is a mismatch a player's move. Once the new mark lands, the old one is off
+    // (one skull slot) and its record has nothing left to clear.
+    bool const landed = r.runMs >= r.focusIconMs && r.runMs - r.focusIconMs >= kFocusRefusedIgnoreMs;
+    if (r.focusIconGuid && skull != r.focusIconGuid && landed)
+    {
+        r.focusIconGuid = 0;
+        r.focusIconMs = 0;
+    }
+    if (r.prevFocusIconGuid && skull != r.prevFocusIconGuid)
+        r.prevFocusIconGuid = 0;
+    if (!f.engagedRead)
+        return;
+    if (r.focusIconGuid && !SkullUnitLives(r, f, r.focusIconGuid))
+    {
+        if (skull == r.focusIconGuid && r.focusIconClear == 0)
+            r.focusIconClear = r.focusIconGuid;
+        r.focusIconGuid = 0;
+        r.focusIconMs = 0;
+    }
+    if (r.prevFocusIconGuid && !SkullUnitLives(r, f, r.prevFocusIconGuid))
+        r.prevFocusIconGuid = 0;
+}
+
+// The skull a player moved onto a living hostile of this fight (a raid mark the run did not set, Run::focusIconGuid):
+// the run adopts it as the focus and sends the bots to it by guid, leaving the player's mark where it is. Null for
+// none.
+inline const UnitFact* PlayerSkullFocus(const Run& r, const Facts& f)
+{
+    if (!f.raidIconsRead)
+        return nullptr;
+    std::uint64_t const skull = f.raidIcons[kFocusIcon];
+    // The run's own marks: the record of its last order (a fresh one may not have landed yet), the mark it replaced
+    // until that order lands, and a mark it is taking off now (Run::focusIconClear: its unit left the fight).
+    if (!skull || skull == r.focusIconGuid || skull == r.prevFocusIconGuid || skull == r.focusIconClear)
+        return nullptr;
+    auto const find = [skull](const std::vector<UnitFact>& units) -> const UnitFact*
+    {
+        for (const UnitFact& u : units)
+            if (u.guid == skull && u.hostile)
+                return &u;
+        return nullptr;
+    };
+    if (const UnitFact* const u = find(f.engagedUnits))
+        return u;
+    return find(f.units);
+}
+
+// Whether the boss tactics of this step own the unit's entry: a kill_first or linked_death row keyed on the boss (or on
+// one of the step's own adds) names it. Such a unit keeps its row's rule — the plan's kill_first list, a linked group
+// that dies together — and is never the pack focus's fallback.
+inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t entry)
+{
+    if (!r.liveTactics || !r.plan || !entry)
+        return false;
+    std::vector<std::uint32_t> keys = s.entries;
+    keys.push_back(s.entry);
+    for (std::uint32_t const key : keys)
+    {
+        if (!key)
+            continue;
+        const std::vector<ai::BossTacticRow>* const rows = r.liveTactics->Rows(r.plan->map, key);
+        if (!rows)
+            continue;
+        for (const ai::BossTacticRow& row : *rows)
+            if ((row.kind == ai::BossTacticKind::KillFirst || row.kind == ai::BossTacticKind::LinkedDeath) &&
+                (entry == row.targetEntry || entry == row.bossEntry))
+                return true;
+    }
+    return false;
+}
+
+// The pack's own focus. The run's skull otherwise comes from the plan's kill_first list alone, so a wing whose list
+// names one entry (scarlet_library: 4291, its Scarlet Diviner) had a skull on that entry's pulls and none on the
+// others — "the tank only marks the Scarlet Diviners". When no kill_first unit of this fight is eligible, the step's
+// pack gets the skull on its best engaged unit: a mana user (a healer or a caster) before the rest, and the nearest of
+// that class to the lead bot. A pull or move step (a pack that aggros on the way) takes any engaged unit; a boss step
+// only an add: never the boss, never an add a kill_first or linked_death row names, and no fallback skull at all once
+// only the boss is left. Only a unit of this fight: alive (the read lists living ones), not friendly, attackable, not
+// evading, not under the run's crowd control (an aura, or an order out — Run::ccSent), not one whose focus order was
+// refused a moment ago, and within kKillFirstMaxYd of the lead bot (the focus sends every bot at it). An event and a
+// rest fight keep their own rule.
+inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
+{
+    const PlanStep* const s = Current(r);
+    if (!s || InEvent(r))
+        return nullptr;
+    bool const pullOrMove = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move ||
+        s->kind == PlanStepKind::MoveDirect;
+    bool const boss = s->kind == PlanStepKind::Boss;
+    if (!pullOrMove && !boss)
+        return nullptr;
+    // A skull the run set on a kill_first unit is never replaced by the fallback while that unit lives, even passive (in
+    // no combat yet): the pack's own pick waits for its death.
+    if (LivingKillFirstUnit(r, f, r.focusGuid))
+        return nullptr;
+    const UnitFact* best = nullptr;
+    int bestClass = 2;
+    const UnitFact* held = nullptr;
+    int heldClass = 2;
+    for (const UnitFact& u : f.engagedUnits)
+    {
+        if (!u.hostile || !u.attackable || u.evading || !u.engaged || u.polymorphed || r.ccSent.count(u.guid))
+            continue;
+        // A boss step's fallback is for its adds: the boss itself and the units its own rows name keep their rule.
+        if (boss && (IsStepBoss(*s, u) || (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||
+                BossTacticOwnsEntry(r, *s, u.entry)))
+            continue;
+        // Its focus was refused a moment ago (kFocusRefusedIgnoreMs).
+        auto const refused = r.focusRefused.find(u.guid);
+        if (refused != r.focusRefused.end() && r.runMs < refused->second)
+            continue;
+        if (u.guid != r.focusGuid && u.distLead > kKillFirstMaxYd)
+            continue;
+        int const cls = u.caster ? 0 : 1;
+        if (u.guid == r.focusGuid)
+        {
+            held = &u;
+            heldClass = cls;
+        }
+        if (!best || cls < bestClass || (cls == bestClass && u.distLead < best->distLead))
+        {
+            best = &u;
+            bestClass = cls;
+        }
+    }
+    // The focused unit stays against a unit of its own class (PickKillFirst's rule): the nearest of a class changes as
+    // the tank and the mobs move, and each change would move the skull and every bot's attack before anything died.
+    if (held && heldClass == bestClass)
         return held;
     return best;
 }
@@ -22400,13 +22617,36 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // changes (it died, or a ward came up); the one exception is the held
         // totem, sent again every kTotemRefocusMs ahead of the crowd control
         // and the guard (resendTotem, above).
+        // No kill_first unit of this fight (a wing whose plan list names no
+        // unit of the pack): the pack gets the skull on its own best unit
+        // instead (PickPackFocus), so every pulled group is focused: a healer
+        // or caster before the rest, then the nearest. A move step's pack that
+        // aggros on the way counts too; a boss step only gives the skull to an
+        // add, never to the boss, and never to a unit its rows name.
+        // A skull a player moved onto a living hostile of this fight is the focus ahead of the kill_first and pack
+        // picks below: the bots are sent to it by guid and the player's mark stays where they put it. While it lives,
+        // nothing new is sent.
         // None left and the focused unit is gone (FocusGone: dead or
         // crowd-controlled): the focus is over, and with it the guard's reason
         // to keep watching (GuardTarget). One still alive (evading, say) keeps it.
-        if (const UnitFact* k = PickKillFirst(r, f))
+        SettleFocusIcons(r, f);
+        if (const UnitFact* const h = PlayerSkullFocus(r, f))
+        {
+            // Its focus was refused a moment ago (kFocusRefusedIgnoreMs): left alone for the window, like any
+            // kill_first unit, and no other unit is marked over the player's skull meanwhile.
+            auto const refused = r.focusRefused.find(h->guid);
+            if ((refused == r.focusRefused.end() || r.runMs >= refused->second) && h->guid != r.focusGuid)
+                order = IssueKillFirstFocus(r, *h, false);
+        }
+        else if (const UnitFact* k = PickKillFirst(r, f))
         {
             if (k->guid != r.focusGuid)
                 order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, k->creatureType == kCreatureTotem));
+        }
+        else if (const UnitFact* p = PickPackFocus(r, f))
+        {
+            if (p->guid != r.focusGuid)
+                order = IssueKillFirstFocus(r, *p, FocusMovesSkull(f.totemFocus, p->creatureType == kCreatureTotem));
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
             DropFocus(r);
