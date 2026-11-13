@@ -11,7 +11,6 @@
 
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/AiFactory.h"
-#include "../ai/playerbot/GroupMembers.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../ai/playerbot/BotState.h"
@@ -33,6 +32,8 @@
 #include "ObjectMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Objects/Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group/Group.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -75,17 +76,33 @@ std::string TradeKey(ObjectGuid bot, ObjectGuid master)
     return bot.GetString() + "\n" + master.GetString();
 }
 
-// Issue #1605: a party with a human in it is the player's, not the pool
-// roulette's. LiveGroupMembers resolves each slot's guid through the
-// ObjectAccessor, so a bot mid-relogin cannot hand out a freed pointer.
+// Issue #1605: a party with a human's character in it is the player's, not
+// the pool roulette's. The slot list is guid-only, so an offline member is
+// reachable here too: its character's account tells a human's account from
+// one the module owns as bot infrastructure (a pool bot that logged out
+// mid-dungeon must not turn the group into a player's party).
 bool GroupHasRealPlayer(PlayerbotAI* ai, Player* bot)
 {
     Group* group = bot->GetGroup();
     if (!group)
         return false;
-    for (Player* member : LiveGroupMembers(group))
-        if (member != bot && ai->IsRealPlayer(member))
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        TortoiseBots::TimedReapplyMember member;
+        member.self = slot.guid == bot->GetObjectGuid();
+        if (Player* online = ObjectAccessor::FindPlayer(slot.guid))
+        {
+            member.online = true;
+            member.hasClient = ai->IsRealPlayer(online);
+        }
+        else if (uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))
+        {
+            member.hasAccount = true;
+            member.botAccount = sPlayerbotAIConfig.IsInRandomAccountList(account);
+        }
+        if (TortoiseBots::TimedReapplyMemberIsRealPlayer(member))
             return true;
+    }
     return false;
 }
 }
@@ -501,7 +518,9 @@ void RandomBotFacade::ChangeStrategy(Player* player)
         // healer unable to heal mid-dungeon. ResetStrategies is the only
         // place that applies the role; leaving the group clears it. A bot in
         // a real player's party is held even without a forced role: the LFT
-        // fill assigns none when the natural kit already matches the slot.
+        // fill assigns none when the natural kit already matches the slot,
+        // and the party still counts as the player's while that human is
+        // offline (the member slot keeps the guid, the account says human).
         if (TortoiseBots::TimedReapplyHoldsRole({ static_cast<uint8>(ai->GetForcedRole()),
                 player->GetGroup() != nullptr, GroupHasRealPlayer(ai, player) }))
             return;

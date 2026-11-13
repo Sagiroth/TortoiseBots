@@ -13,12 +13,37 @@
 
 using TortoiseBots::TimedReapplyInputs;
 using TortoiseBots::TimedReapplyHoldsRole;
+using TortoiseBots::TimedReapplyMember;
+using TortoiseBots::TimedReapplyMemberIsRealPlayer;
 
 namespace
 {
     bool Holds(uint8_t forcedRole, bool inGroup, bool groupHasRealPlayer = false)
     {
         return TimedReapplyHoldsRole({forcedRole, inGroup, groupHasRealPlayer});
+    }
+
+    bool RealPlayer(TimedReapplyMember member)
+    {
+        return TimedReapplyMemberIsRealPlayer(member);
+    }
+
+    // The two facts the facade's scan can fill for an offline slot.
+    TimedReapplyMember Offline(bool accountKnown, bool botAccount)
+    {
+        TimedReapplyMember member;
+        member.hasAccount = accountKnown;
+        member.botAccount = botAccount;
+        return member;
+    }
+
+    // The one fact it fills for a live slot.
+    TimedReapplyMember Online(bool hasClient)
+    {
+        TimedReapplyMember member;
+        member.online = true;
+        member.hasClient = hasClient;
+        return member;
     }
 }
 
@@ -62,6 +87,42 @@ int main()
     // re-apply must keep running for it.
     CHECK(!Holds(0, true, false));
     std::cout << "  [PASS] pool bot in an all-bot group is still re-rolled\n";
+
+    // (7) Round 2: the human is offline for the whole dungeon. The slot keeps
+    // the guid, so the scan still finds the party's human through the
+    // character's account and the pool healer is held exactly as above.
+    CHECK(Holds(0, true, true));
+    std::cout << "  [PASS] pool healer in a group whose human is offline is not re-rolled\n";
+
+    // (8) Member rule, online slot: the transport decides. A network client
+    // is a real player; a headless bot is not, even while it plays.
+    CHECK(RealPlayer(Online(true)));
+    CHECK(!RealPlayer(Online(false)));
+    std::cout << "  [PASS] online member is judged by its network client\n";
+
+    // (9) Member rule, offline slot: the account decides. A human's account
+    // is a real player's party no matter who is logged in; a module bot
+    // account is not, so an all-bot group whose bot logged out mid-dungeon
+    // stays the pool's.
+    CHECK(RealPlayer(Offline(true, false)));
+    CHECK(!RealPlayer(Offline(true, true)));
+    std::cout << "  [PASS] offline member is judged by its account\n";
+
+    // (10) An offline slot the character cache cannot resolve has no account
+    // flag to read and is not counted (a slot guid always resolves in
+    // practice; this keeps the rule total).
+    CHECK(!RealPlayer(Offline(false, false)));
+    CHECK(!RealPlayer(Offline(false, true)));
+    std::cout << "  [PASS] unresolvable offline member is not counted\n";
+
+    // (11) The bot itself never counts, whatever its transport or account.
+    TimedReapplyMember self = Online(true);
+    self.self = true;
+    CHECK(!RealPlayer(self));
+    self = Offline(true, false);
+    self.self = true;
+    CHECK(!RealPlayer(self));
+    std::cout << "  [PASS] the bot's own slot never counts\n";
 
     std::cout << "TortoiseBots timed strategy re-apply tests passed.\n";
     return 0;

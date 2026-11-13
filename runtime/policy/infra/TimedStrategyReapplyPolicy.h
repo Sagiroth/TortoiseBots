@@ -13,10 +13,13 @@
 //
 // Two holds, either one skips the re-apply:
 //
-//  - A bot in a group with a real (network) player. The party is the player's
-//    and the fill's, not the roulette's. This is the hold that covers a bot
-//    whose natural kit already matched its LFT slot: the fill assigns no
-//    forced role there, so the role check alone let exactly that bot through.
+//  - A bot in a group with a real player's character, online or not. The party
+//    is the player's and the fill's, not the roulette's. This is the hold that
+//    covers a bot whose natural kit already matched its LFT slot: the fill
+//    assigns no forced role there, so the role check alone let exactly that
+//    bot through. An offline member has no session to inspect, so its
+//    character's account decides (TimedReapplyMemberIsRealPlayer); the group
+//    slot list keeps the guid either way.
 //  - A bot carrying a forced role (PlayerbotAI::m_forcedRole) while grouped.
 //    The LFT fill, `.bot role`, the hire provisioner and the 7.3 shaman tank
 //    factory set it; PlayerbotAI::ResetStrategies is the one place that
@@ -38,7 +41,7 @@ struct TimedReapplyInputs
 {
     uint8_t forcedRole = 0;          // PlayerbotAI::GetForcedRole(); 0 = none
     bool inGroup = false;            // the bot's Player::GetGroup() is set
-    bool groupHasRealPlayer = false; // a network player is in that group (implies inGroup)
+    bool groupHasRealPlayer = false; // a real player's character is in that group (implies inGroup)
 };
 
 // True when the timed strategy re-apply must be skipped: the bot stands in a
@@ -47,6 +50,33 @@ struct TimedReapplyInputs
 inline bool TimedReapplyHoldsRole(TimedReapplyInputs const& in)
 {
     return in.groupHasRealPlayer || (in.forcedRole != 0 && in.inGroup);
+}
+
+// One group member slot, as the group slot list and the character cache can
+// describe it. `self` is the bot whose re-apply is in question.
+struct TimedReapplyMember
+{
+    bool self = false;
+    bool online = false;    // a live Player object resolved for the slot
+    bool hasClient = false; // online only: PlayerbotAI::IsRealPlayer (network transport)
+    bool hasAccount = false; // offline only: the character cache knows the account
+    bool botAccount = false; // offline only: the account belongs to the module's bot infrastructure
+};
+
+// True when the member is a real player's character. An online character is
+// judged by its transport: a headless bot has no network client, so an
+// all-bot group stays the pool's even while its bots are online. An offline
+// character has no session to ask, so its account decides: any account the
+// module does not own as bot infrastructure belongs to a human, and the party
+// is that human's run. A slot the character cache cannot resolve is not
+// counted, since its account flag is unknown.
+inline bool TimedReapplyMemberIsRealPlayer(TimedReapplyMember const& m)
+{
+    if (m.self)
+        return false;
+    if (m.online)
+        return m.hasClient;
+    return m.hasAccount && !m.botAccount;
 }
 
 } // namespace TortoiseBots

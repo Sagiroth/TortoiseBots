@@ -8,11 +8,14 @@ bot is in a group: the list's "+dps" is the class DPS alias (shadow for a
 priest) and Engine::addStrategy drops the sibling spec, which turned a filled
 healer into a shadow priest mid-dungeon. Nor may it run for a bot standing in a
 real player's party at all: the fill assigns no forced role when the natural
-kit already matches the slot, so the party hold is the one that covers that bot.
+kit already matches the slot, so the party hold is the one that covers that bot,
+and it must cover the party while the human is offline too - the group's member
+slots keep the guid, so the scan classifies an offline member by its account.
 
-The pure verdict is TimedReapplyHoldsRole (tools/test_timed_strategy_reapply_policy.cpp);
-this checks the call site asks it, with the bot's own forced role and group and
-the group's real-player scan, before it touches either engine.
+The pure verdicts are TimedReapplyHoldsRole and TimedReapplyMemberIsRealPlayer
+(tools/test_timed_strategy_reapply_policy.cpp); this checks the call site asks
+them, with the bot's own forced role and group and a slot scan that reads the
+account of an offline member, before it touches either engine.
 """
 import pathlib
 import unittest
@@ -40,16 +43,22 @@ class TimedStrategyReapplyWiringTest(unittest.TestCase):
         fn = self.change_strategy()
         self.assertIn("TimedReapplyHoldsRole(", fn)
         # The verdict reads the bot's own role, its group, and whether a real
-        # player is in that group.
+        # player's character is in that group.
         self.assertIn("GetForcedRole()", fn)
         self.assertIn("player->GetGroup()", fn)
         self.assertIn("GroupHasRealPlayer(ai, player)", fn)
 
     def test_group_scan_reads_real_players(self):
         scan = strip_comments(body(FACADE, "bool GroupHasRealPlayer(PlayerbotAI* ai, Player* bot)", "\n}\n"))
+        # The group's own slot list keeps offline members; an online member is
+        # judged by its transport, an offline one by the character's account.
         self.assertIn("bot->GetGroup()", scan)
-        self.assertIn("LiveGroupMembers(group)", scan)
-        self.assertIn("ai->IsRealPlayer(member)", scan)
+        self.assertIn("GetMemberSlots()", scan)
+        self.assertIn("ObjectAccessor::FindPlayer(slot.guid)", scan)
+        self.assertIn("ai->IsRealPlayer(online)", scan)
+        self.assertIn("sObjectMgr.GetPlayerAccountIdByGUID(slot.guid)", scan)
+        self.assertIn("sPlayerbotAIConfig.IsInRandomAccountList(account)", scan)
+        self.assertIn("TimedReapplyMemberIsRealPlayer(member)", scan)
 
     def test_skip_comes_before_any_strategy_change(self):
         fn = self.change_strategy()
