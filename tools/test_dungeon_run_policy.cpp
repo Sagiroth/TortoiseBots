@@ -8220,9 +8220,10 @@ static void TestMoveAggroGetsTheSkull()
     CHECK(r.focusGuid == 0);
 }
 
-// A skull a player set on a living hostile of the group is never overwritten: the fallback leaves the mark alone and
-// focuses nothing. Once the player takes it off, the run marks the pack as usual.
-static void TestHumanSkullIsKept()
+// A skull a player puts on a living hostile of the group is adopted as the focus: the run drops its own pick and sends
+// the bots to the player's target by guid, leaving the mark where the player put it. While that target lives the
+// player's choice stands; once it dies, the run's own pick resumes.
+static void TestHumanSkullIsAdopted()
 {
     DungeonPlan plan;
     plan.steps = {PullStep(10, {4287, 4296})};
@@ -8232,11 +8233,20 @@ static void TestHumanSkullIsKept()
     CHECK(Tick(r, f) == "pullback 1");
     f.anyInCombat = true;
     f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 8))};
+    f.engagedUnits[0].caster = true;
+    // The run's own fallback focus: the caster.
+    CHECK(Tick(r, f) == "focus 1");
+    CHECK(r.focusGuid == 1 && r.focusIconGuid == 1);
+    // A player moves the skull to the melee add: the run adopts it and never puts the skull back on its own pick.
     f.raidIconsRead = true;
-    f.raidIcons[kFocusIcon] = 2; // a player's skull on the pack
+    f.raidIcons[kFocusIcon] = 2;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2);
+    CHECK(r.focusIconGuid == 1); // the run's own mark record is untouched: the player's skull stays theirs
+    // The player's target lives: the better-class caster does not take the focus back.
     CHECK(Tick(r, f).empty());
-    CHECK(r.focusGuid == 0);
-    CHECK(r.focusIconGuid == 0);
+    CHECK(r.focusGuid == 2);
+    // The player takes the skull off: the run's own pick resumes.
     f.raidIcons[kFocusIcon] = 0;
     CHECK(Tick(r, f) == "focus 1");
     CHECK(r.focusGuid == 1);
@@ -37610,7 +37620,7 @@ int main()
     TestPackFocusIsBoundedOnTheStep();
     TestBossAddsGetTheSkull();
     TestMoveAggroGetsTheSkull();
-    TestHumanSkullIsKept();
+    TestHumanSkullIsAdopted();
     TestPackFocusNeverOutranksThePlan();
     TestCrowdControlMustLand();
     TestKillFirstIsThisFightsOnly();

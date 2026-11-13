@@ -9,7 +9,8 @@ W3: a pull or move step's pack gets the fallback, and so does a boss step's adds
     kill_first/linked_death row names, an event and a rest fight return no pick.
 W4: a mana user goes before the rest and only a unit of the fight, attackable, not evading, not held by the run's
     crowd control and within kKillFirstMaxYd of the lead bot is a candidate.
-W5: a skull a player set on a living hostile of the fight is never overwritten.
+W5: a skull a player moved onto a living hostile of the fight is adopted as the focus (ahead of the plan's
+    kill_first and the fallback), sent by guid without moving the player's mark.
 W6: FocusGone also reads Facts::engagedUnits, so a pack focus whose unit left the fight is dropped.
 """
 import pathlib
@@ -31,8 +32,9 @@ class PackFocusWiringTest(unittest.TestCase):
         self.assertIn("fact.caster = other->GetMaxPower(POWER_MANA) > 0;", fn)
 
     def test_tick_falls_back_after_the_plans_kill_first(self):
-        fn = body(POLICY, "        if (const UnitFact* k = PickKillFirst(r, f))")
+        fn = body(POLICY, "        if (const UnitFact* const h = PlayerSkullFocus(r, f))")
         # The plan's kill_first pick keeps its own branch; the fallback is the else-if after it.
+        self.assertIn("else if (const UnitFact* k = PickKillFirst(r, f))", fn)
         self.assertIn("order = IssueKillFirstFocus(r, *k, FocusMovesSkull(", fn)
         fallback = fn[fn.index("else if (const UnitFact* p = PickPackFocus(r, f))"):]
         self.assertIn("IssueKillFirstFocus(r, *p, FocusMovesSkull(", fallback)
@@ -45,7 +47,7 @@ class PackFocusWiringTest(unittest.TestCase):
         self.assertIn("bool const pullOrMove = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Move ||",
                       fn)
         self.assertIn("bool const boss = s->kind == PlanStepKind::Boss;", fn)
-        self.assertIn("if ((!pullOrMove && !boss) || PlayerSkullOnFight(r, f))", fn)
+        self.assertIn("if (!pullOrMove && !boss)", fn)
         self.assertIn("return nullptr;", fn)
 
     def test_a_boss_add_is_no_boss_and_no_tactic_row_unit(self):
@@ -57,12 +59,16 @@ class PackFocusWiringTest(unittest.TestCase):
                       own)
         self.assertIn("(entry == row.targetEntry || entry == row.bossEntry)", own)
 
-    def test_a_players_skull_is_left_alone(self):
-        fn = body(POLICY, "inline bool PlayerSkullOnFight(")
+    def test_a_players_skull_is_adopted(self):
+        fn = body(POLICY, "inline const UnitFact* PlayerSkullFocus(")
         self.assertIn("std::uint64_t const skull = f.raidIcons[kFocusIcon];", fn)
         self.assertIn("if (!skull || skull == r.focusIconGuid)", fn)
         self.assertIn("if (u.guid == skull && u.hostile)", fn)
-        self.assertIn("return marked(f.engagedUnits) || marked(f.units);", fn)
+        self.assertIn("return &u;", fn)
+        tick = body(POLICY, "        if (const UnitFact* const h = PlayerSkullFocus(r, f))")
+        # The player's mark is adopted ahead of the run's own pick, and its order moves no skull.
+        self.assertLess(tick.index("PlayerSkullFocus"), tick.index("PickKillFirst(r, f)"))
+        self.assertIn("order = IssueKillFirstFocus(r, *h, false);", tick)
 
     def test_priority_and_the_filters(self):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")
