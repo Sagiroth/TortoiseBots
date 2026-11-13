@@ -174,7 +174,7 @@ Teleports an owned bot or hired companion to your current location. The bot itse
 .bot summon <CharacterName>
 ```
 
-Teleportation takes 3 seconds. On arrival the bot resumes following you. It anchors where it lands only if you gave `stay`, `guard`, `hold` or `comestay` after the summon request (`come` later re-enables follow-restore).
+Teleportation takes 3 seconds. On arrival the bot resumes following you. It anchors where it lands only if you gave `stay`, `guard`, `hold` or `comestay` after the summon request (`come` later re-enables follow-restore). A live hunter pet or warlock demon is summoned with the bot and arrives beside it; a dead pet stays where it fell.
 <a id="automatic-summon-on-group-accept"></a>With [`AiPlayerbot.OwnedBotSummonWhenGroup`](../../server/settings/party.md#aiplayerbotownedbotsummonwhengroup) on, owned bots and hires that accept a party invite are summoned automatically (same map, beyond sight distance; pool bots never).
 Cooldown and combat/death/revive/repair behavior follow the matching `OwnedBotSummon*` settings below.
 

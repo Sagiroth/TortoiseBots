@@ -4,6 +4,7 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/SummonPetFollowPolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 
@@ -370,8 +371,24 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         cleanupPortal(state, origin);
         bot->GetMotionMaster()->Clear(false);
         bot->StopMoving();
+        // Issue #1606: a summoned bot used to leave its pet behind, and the pet
+        // walked the direct route to its owner through the instance, pulling
+        // whatever it passed. Hand a live pet to the core's temporary unsummon
+        // cache before the teleport: ResummonPetTemporaryUnSummonedIfAny puts it
+        // back beside the bot when the teleport lands (ExecuteTeleportNear, or
+        // HandleMoveWorldportAckOpcode for a far teleport), as it already does
+        // for players. The policy keeps every case where that would lose the pet.
+        Pet* const pet = bot->GetPet();
+        bool const petFollows = ai::SummonTeleportMovesPet(pet != nullptr, pet && pet->IsAlive(),
+            bot->GetTemporaryUnsummonedPetNumber() == 0, !bot->IsPetNeedBeTemporaryUnsummoned());
+        if (petFollows)
+            bot->UnsummonPetTemporaryIfAny();
+
         if (!bot->TeleportTo(state.destMap, state.destX, state.destY, state.destZ, state.destO, 0))
         {
+            // Give the pet back before the summon is dropped: the bot stays here.
+            if (petFollows)
+                bot->ResummonPetTemporaryUnSummonedIfAny();
             // Do not enter the arrival phase when the core rejected the
             // teleport. Otherwise the next tick would treat the unchanged
             // in-world position as a successful summon and restore Follow.
