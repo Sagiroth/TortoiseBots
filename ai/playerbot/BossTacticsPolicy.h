@@ -4304,13 +4304,14 @@ namespace ai
     // makes the next sighting a fresh application.
     inline bool TankPostCooldownHolds(bool onTank, bool auraOnRaid) { return onTank && !auraOnRaid; }
     // The defensive actions of a tank class, in cast order; empty for a class with none. By class id only: the code
-    // names no boss and no spell id.
+    // names no boss and no spell id. A druid tank stands in bear or dire bear form, where CastBarkskinAction refuses,
+    // so Frenzied Regeneration is its only entry.
     inline std::vector<const char*> TankPostCooldownActions(std::uint8_t classId)
     {
         if (classId == 1) // CLASS_WARRIOR
             return {"shield wall", "last stand"};
         if (classId == 11) // CLASS_DRUID
-            return {"frenzied regeneration", "barkskin"};
+            return {"frenzied regeneration"};
         return {};
     }
     enum class TankPostCooldown : std::uint8_t { None, Cast, GiveUp };
@@ -4322,25 +4323,34 @@ namespace ai
             return TankPostCooldown::None;
         return msSinceSeen >= kTankPostCooldownTryMs ? TankPostCooldown::GiveUp : TankPostCooldown::Cast;
     }
+    // The name this tick asks for: the first at or past `tried` that its own action accepts now (isUseful and
+    // isPossible both true). A name the action refuses (a form, an empty resource, a standing buff) is passed over
+    // without spending it, so an entry the tank cannot run can never hide the one behind it. `total` when every name
+    // left is refused: nothing to cast, nothing spent.
+    template <typename UsableFn>
+    inline std::size_t TankPostCooldownPick(std::size_t tried, std::size_t total, UsableFn usable)
+    {
+        for (std::size_t i = tried; i < total; ++i)
+            if (usable(i))
+                return i;
+        return total;
+    }
     struct TankPostCooldownAttempt
     {
         std::uint8_t tried = 0;
         bool closed = false;
     };
-    // One attempt spends one name whether it cast or was refused (a spell on cooldown must not hold the window): the
-    // next tick tries the next untried name, and the last one closes the window. Anything else closes it at once.
-    inline TankPostCooldownAttempt TankPostCooldownAfter(std::uint8_t tried, std::size_t total, bool attempted)
+    // What the tick spent. `cast`: the name's cast went out and the window is over. `spent`: the action accepted but
+    // the cast did not go out (on cooldown), so the next tick goes on past it, and the window closes once nothing is
+    // left. A refused action is neither and never reaches this.
+    enum class TankPostCooldownOutcome : std::uint8_t { Cast, Spent };
+    inline TankPostCooldownAttempt TankPostCooldownAfter(std::size_t index, std::size_t total,
+                                                         TankPostCooldownOutcome outcome)
     {
+        std::size_t const nextIndex = index + 1 < 255 ? index + 1 : 255;
         TankPostCooldownAttempt next;
-        next.tried = tried;
-        if (!attempted)
-        {
-            next.closed = true;
-            return next;
-        }
-        if (next.tried < 255)
-            ++next.tried;
-        next.closed = static_cast<std::size_t>(next.tried) >= total;
+        next.tried = static_cast<std::uint8_t>(nextIndex);
+        next.closed = outcome == TankPostCooldownOutcome::Cast || nextIndex >= total;
         return next;
     }
 

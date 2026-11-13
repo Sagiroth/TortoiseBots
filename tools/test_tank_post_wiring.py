@@ -786,32 +786,40 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("std::uint8_t cooldownTried = 0;", ACTIONS)
         self.assertIn("bool cooldownClosed = false;", ACTIONS)
         self.assertIn("bool heldOnce = false;", ACTIONS)
-        # The action: the policy's names in order through DoSpecificAction, the two rows, then the count. A refused
-        # action spends its name and the next tick tries the next one.
+        # The action: the policy's pick over the class names through CanDoSpecificAction and DoSpecificAction, the two
+        # rows, then the count. A refused action is passed over unspent; a spent one moves the window past it.
         action = body(ACTIONS, "bool BossTacticsTankPostCooldownAction::Execute(Event& event)")
         self.assertIn("TankPostCooldownRead(bot, tried, seenMs)", action)
         self.assertIn("const std::vector<const char*> names = TankPostCooldownActions(bot->GetClass());", action)
-        self.assertIn("ai->DoSpecificAction(names[tried], event, true)", action)
+        self.assertIn("TankPostCooldownPick(tried, names.size(),", action)
+        self.assertIn("ai->CanDoSpecificAction(names[i])", action)
+        self.assertIn("ai->DoSpecificAction(names[pick], event, true)", action)
         self.assertIn("TankPostCooldownStep(true, tried, names.size(), WorldTimer::getMSTime() - seenMs)", action)
         self.assertIn('"event=cd_cast,spell=%s,hp=%.0f"', action)
         self.assertIn('"event=cd_skip,spell=%s"', action)
         self.assertIn('"event=cd_none,left=%u"', action)
         self.assertIn('"event=cd_none,left=0"', action)
-        self.assertIn("TankPostCooldownNote(bot, true);", action)
-        self.assertIn("TankPostCooldownNote(bot, false);", action)
+        self.assertIn("TankPostCooldownNote(bot, pick, true);", action)
+        self.assertIn("TankPostCooldownNote(bot, pick, false);", action)
+        self.assertIn("TankPostCooldownClose(bot);", action)
         # The clock lives in the record, read and written under its lock only.
         read = body(ACTIONS, "bool ai::TankPostCooldownRead(")
         self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", read)
         self.assertIn("record.cooldownSeenMs == 0 || record.cooldownClosed", read)
-        note = body(ACTIONS, "void ai::TankPostCooldownNote(Player* bot, bool attempted)")
+        note = body(ACTIONS, "void ai::TankPostCooldownNote(Player* bot, std::size_t index, bool cast)")
         self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", note)
-        self.assertIn("TankPostCooldownAfter(record.cooldownTried, "
-                      "TankPostCooldownActions(bot->GetClass()).size(), attempted)", note)
+        self.assertIn("TankPostCooldownAfter(index,", note)
+        self.assertIn("TankPostCooldownActions(bot->GetClass()).size(),", note)
+        self.assertIn("cast ? TankPostCooldownOutcome::Cast : TankPostCooldownOutcome::Spent", note)
         self.assertIn("record.cooldownTried = next.tried;", note)
         self.assertIn("record.cooldownClosed = next.closed;", note)
+        close = body(ACTIONS, "void ai::TankPostCooldownClose(Player* bot)")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", close)
+        self.assertIn("it->second.cooldownClosed = true;", close)
         self.assertIn("bool TankPostCooldownDue(Player* bot);", ACTIONS_H)
         self.assertIn("bool TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs);", ACTIONS_H)
-        self.assertIn("void TankPostCooldownNote(Player* bot, bool attempted);", ACTIONS_H)
+        self.assertIn("void TankPostCooldownNote(Player* bot, std::size_t index, bool cast);", ACTIONS_H)
+        self.assertIn("void TankPostCooldownClose(Player* bot);", ACTIONS_H)
         # The trigger and its node: above the post's own node.
         self.assertIn('creators["boss tank post cooldown"] = [](PlayerbotAI* ai) '
                       '{ return new BossTacticsTankPostCooldownTrigger(ai); };', TRIGGER_CONTEXT)
@@ -835,6 +843,8 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("enum class TankPostCooldown : std::uint8_t { None, Cast, GiveUp };", POLICY)
         self.assertIn("inline TankPostCooldown TankPostCooldownStep(bool seen, std::size_t tried, "
                       "std::size_t total,", POLICY)
+        self.assertIn("inline std::size_t TankPostCooldownPick(std::size_t tried, std::size_t total,", POLICY)
+        self.assertIn("enum class TankPostCooldownOutcome : std::uint8_t { Cast, Spent };", POLICY)
 
     def test_a_done_record_survives_a_renumbering(self):
         # Codex M: a renumbering erased the waiting post's done record before its band closed, and the row started a

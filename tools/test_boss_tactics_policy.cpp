@@ -1968,14 +1968,35 @@ static void TestTankPostCooldownSeen_FirstSightingAfterHold()
     CHECK(kTankPostCooldownTryMs == 10000);
 }
 
-// The class's defensive actions, in cast order; a class with none keeps its own rules.
+// The class's defensive actions, in cast order; a class with none keeps its own rules. A druid tank stands in bear
+// or dire bear form, where CastBarkskinAction refuses, so its only entry is Frenzied Regeneration.
 static void TestTankPostCooldownActions_ByClass()
 {
     CHECK(TankPostCooldownActions(1) == std::vector<const char*>({"shield wall", "last stand"}));
-    CHECK(TankPostCooldownActions(11) == std::vector<const char*>({"frenzied regeneration", "barkskin"}));
-    CHECK(TankPostCooldownActions(2).empty());   // paladin
+    CHECK(TankPostCooldownActions(11) == std::vector<const char*>({"frenzied regeneration"}));
+    CHECK(TankPostCooldownActions(2).empty());   // paladin, no fallback
     CHECK(TankPostCooldownActions(5).empty());   // priest
     CHECK(TankPostCooldownActions(0).empty());
+}
+
+// The real actions' form guards, as the class actions state them: CastBarkskinAction refuses in cat, bear, dire bear
+// and tree of life form; shield wall and last stand carry no form guard. The standalone harness has no bot to build
+// the action objects for, so the guard is pinned here and every configured name must pass it. The failing case is the
+// list that named barkskin for a bear tank: the action refuses, and the window closed without a fallback.
+static bool TankPostActionRefusedInTankForm(std::uint8_t classId, const char* action)
+{
+    if (classId == 11) // CLASS_DRUID, tanking in bear or dire bear form
+        return std::strcmp(action, "barkskin") == 0;
+    return false;
+}
+
+static void TestTankPostCooldownActions_RunInTheTankForm()
+{
+    CHECK(TankPostActionRefusedInTankForm(11, "barkskin"));              // the guard the list must respect
+    CHECK(!TankPostActionRefusedInTankForm(11, "frenzied regeneration"));
+    for (std::uint8_t classId = 0; classId < 12; ++classId)
+        for (const char* name : TankPostCooldownActions(classId))
+            CHECK(!TankPostActionRefusedInTankForm(classId, name));
 }
 
 // The window: cast while a name is left, give up once at its end, nothing after the last one.
@@ -2007,21 +2028,37 @@ static void TestTankPostCooldownHolds_LandingRoarDoesNotCount()
     CHECK(TankPostCooldownSeen(true, 18431, heldOnce, false, true));   // the next fresh Roar fires
 }
 
-// A refused action (on cooldown) spends its name: shield wall refused leaves last stand for the next tick, and the
-// last refusal closes the window. The failing case is the old retry, which asked shield wall again until the window
-// ended and never tried last stand.
-static void TestTankPostCooldownAfter_RefusedMovesToNextName()
+// A refused action is not an attempt: the tick passes it and asks the next name now, so a form-locked entry cannot
+// hold the window. Nothing to spend when every name left refuses; the one-name druid list is that case. The failing
+// case is the old tick, which asked only the first name and treated its form refusal as spent.
+static void TestTankPostCooldownPick_RefusedIsPassedOver()
+{
+    const std::vector<const char*> names = TankPostCooldownActions(1); // shield wall, last stand
+    CHECK(TankPostCooldownPick(0, names.size(), [](std::size_t i) { return i != 0; }) == 1);
+    CHECK(TankPostCooldownPick(0, names.size(), [](std::size_t) { return false; }) == names.size());
+    CHECK(TankPostCooldownPick(0, names.size(), [](std::size_t) { return true; }) == 0);
+    CHECK(TankPostCooldownPick(1, names.size(), [](std::size_t) { return true; }) == 1);
+    const std::vector<const char*> bear = TankPostCooldownActions(11);
+    CHECK(bear.size() == 1);
+    CHECK(TankPostCooldownPick(0, bear.size(), [](std::size_t) { return false; }) == bear.size());
+}
+
+// An action that accepted but whose cast did not go out (on cooldown) spends its name: shield wall leaves last stand
+// for the next tick, and the last spent name closes the window. A cast closes it at once, whatever is left.
+static void TestTankPostCooldownAfter_SpentAndCast()
 {
     const std::vector<const char*> names = TankPostCooldownActions(1);
-    TankPostCooldownAttempt attempt = TankPostCooldownAfter(0, names.size(), true); // shield wall refused
+    TankPostCooldownAttempt attempt = TankPostCooldownAfter(0, names.size(), TankPostCooldownOutcome::Spent);
+    CHECK(attempt.tried == 1);
     CHECK(!attempt.closed);
     CHECK(TankPostCooldownStep(true, attempt.tried, names.size(), 500) == TankPostCooldown::Cast);
     CHECK(std::strcmp(names[attempt.tried], "last stand") == 0);
-    attempt = TankPostCooldownAfter(attempt.tried, names.size(), true); // last stand refused too
+    attempt = TankPostCooldownAfter(attempt.tried, names.size(), TankPostCooldownOutcome::Spent);
     CHECK(attempt.closed);
     CHECK(TankPostCooldownStep(true, attempt.tried, names.size(), 500) == TankPostCooldown::None);
-    CHECK(TankPostCooldownAfter(1, names.size(), false).closed); // anything else closes at once
-    CHECK(TankPostCooldownAfter(255, 300, true).tried == 255);   // the count saturates
+    CHECK(TankPostCooldownAfter(0, names.size(), TankPostCooldownOutcome::Cast).closed);
+    CHECK(TankPostCooldownAfter(0, 1, TankPostCooldownOutcome::Spent).closed); // the druid's one name
+    CHECK(TankPostCooldownAfter(255, 300, TankPostCooldownOutcome::Spent).tried == 255); // the count saturates
 }
 
 static CastDangerZone Zone(float x, float y, float z, float radius)
@@ -2259,9 +2296,11 @@ int main()
     TestTankPostHealerFar_PastThirty();
     TestTankPostCooldownSeen_FirstSightingAfterHold();
     TestTankPostCooldownActions_ByClass();
+    TestTankPostCooldownActions_RunInTheTankForm();
     TestTankPostCooldownStep_WindowAndGiveUp();
     TestTankPostCooldownHolds_LandingRoarDoesNotCount();
-    TestTankPostCooldownAfter_RefusedMovesToNextName();
+    TestTankPostCooldownPick_RefusedIsPassedOver();
+    TestTankPostCooldownAfter_SpentAndCast();
     AddCrewState_SwitchesAfterDeath();
     AddCrewLoader_Rows();
     AddCrewRank_Order();

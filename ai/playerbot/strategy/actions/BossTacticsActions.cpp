@@ -12221,8 +12221,8 @@ bool ai::TankPostCooldownDue(Player* bot)
     return TankPostCooldownRead(bot, tried, seenMs);
 }
 
-// An attempt spends one name, whether it cast or was refused; the last one or anything else closes the window.
-void ai::TankPostCooldownNote(Player* bot, bool attempted)
+// One spent name moves the window past it; the last one, or a cast, closes the window.
+void ai::TankPostCooldownNote(Player* bot, std::size_t index, bool cast)
 {
     if (!bot)
         return;
@@ -12231,10 +12231,23 @@ void ai::TankPostCooldownNote(Player* bot, bool attempted)
     if (it == g_tankPost.end())
         return;
     TankPostRecord& record = it->second;
-    const TankPostCooldownAttempt next =
-        TankPostCooldownAfter(record.cooldownTried, TankPostCooldownActions(bot->GetClass()).size(), attempted);
+    const TankPostCooldownAttempt next = TankPostCooldownAfter(index,
+        TankPostCooldownActions(bot->GetClass()).size(),
+        cast ? TankPostCooldownOutcome::Cast : TankPostCooldownOutcome::Spent);
     record.cooldownTried = next.tried;
     record.cooldownClosed = next.closed;
+}
+
+// The window is over with nothing left to try: no action of the class's list, or its time is up.
+void ai::TankPostCooldownClose(Player* bot)
+{
+    if (!bot)
+        return;
+    std::lock_guard<std::mutex> lock(g_tankPostMutex);
+    auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_tankPost.end())
+        return;
+    it->second.cooldownClosed = true;
 }
 
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
@@ -13154,10 +13167,12 @@ bool BossTacticsTankPostHealerAction::Execute(Event& event)
     return walk(lineX, lineY);
 }
 
-// Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder casts its class's defensive actions in order inside
-// the window the first sighting opened. An action that does not go out (on cooldown) spends its name, so the next
-// tick tries the next one, writing `cd_skip`; at the window's end with names left the action writes one `cd_none` row
-// and closes the window; a class with no action closes at once.
+// Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder casts the first of its class's defensive actions that
+// accepts it inside the window the first sighting opened. An action its own isUseful/isPossible refuses is not an
+// attempt: the tick passes it unspent and asks the next name, so an entry the tank's form locks out cannot hold the
+// window. An action that accepts but whose cast does not go out (on cooldown) spends its name, so the next tick tries
+// the next one, writing `cd_skip`; at the window's end with names left the action writes one `cd_none` row and closes
+// the window; a class with no action closes at once.
 bool BossTacticsTankPostCooldownAction::Execute(Event& event)
 {
     std::uint8_t tried = 0;
@@ -13168,40 +13183,43 @@ bool BossTacticsTankPostCooldownAction::Execute(Event& event)
     if (names.empty())
     {
         LogTankPostCooldown(ai, bot, "event=cd_none,left=0");
-        TankPostCooldownNote(bot, false);
+        TankPostCooldownClose(bot);
         return false;
     }
     const TankPostCooldown step =
         TankPostCooldownStep(true, tried, names.size(), WorldTimer::getMSTime() - seenMs);
-    if (step == TankPostCooldown::Cast)
-    {
-        std::string spellName(names[tried]);
-        std::replace(spellName.begin(), spellName.end(), ' ', '_');
-        if (!ai->DoSpecificAction(names[tried], event, true))
-        {
-            // On cooldown or refused: the next untried name gets the rest of the window.
-            char info2[128];
-            std::snprintf(info2, sizeof(info2), "event=cd_skip,spell=%s", spellName.c_str());
-            LogTankPostCooldown(ai, bot, info2);
-            TankPostCooldownNote(bot, true);
-            return false;
-        }
-        char info2[128];
-        std::snprintf(info2, sizeof(info2), "event=cd_cast,spell=%s,hp=%.0f", spellName.c_str(),
-            bot->GetHealthPercent());
-        LogTankPostCooldown(ai, bot, info2);
-        TankPostCooldownNote(bot, true);
-        return true;
-    }
     if (step == TankPostCooldown::GiveUp)
     {
         char info2[64];
         std::snprintf(info2, sizeof(info2), "event=cd_none,left=%u",
             static_cast<unsigned>(names.size() - tried));
         LogTankPostCooldown(ai, bot, info2);
-        TankPostCooldownNote(bot, false);
+        TankPostCooldownClose(bot);
+        return false;
     }
-    return false;
+    if (step != TankPostCooldown::Cast)
+        return false;
+    std::size_t const pick = TankPostCooldownPick(tried, names.size(),
+        [&](std::size_t i) { return ai->CanDoSpecificAction(names[i]); });
+    if (pick >= names.size())
+        return false; // every name left refuses: nothing to spend, the window runs to its end
+
+    std::string spellName(names[pick]);
+    std::replace(spellName.begin(), spellName.end(), ' ', '_');
+    if (!ai->DoSpecificAction(names[pick], event, true))
+    {
+        char info2[128];
+        std::snprintf(info2, sizeof(info2), "event=cd_skip,spell=%s", spellName.c_str());
+        LogTankPostCooldown(ai, bot, info2);
+        TankPostCooldownNote(bot, pick, false);
+        return false;
+    }
+    char info2[128];
+    std::snprintf(info2, sizeof(info2), "event=cd_cast,spell=%s,hp=%.0f", spellName.c_str(),
+        bot->GetHealthPercent());
+    LogTankPostCooldown(ai, bot, info2);
+    TankPostCooldownNote(bot, pick, true);
+    return true;
 }
 
 namespace
