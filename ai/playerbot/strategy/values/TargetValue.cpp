@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/FankrissGauntletPolicy.h"
 #include "TargetValue.h"
+#include "ObjectAccessor.h"
 #include "playerbot/policy/combat/CcAreaGuardPolicy.h"
 #include "CcMarkHoldPolicy.h"
 #include "PeriodicDamageAura.h"
@@ -219,7 +220,10 @@ bool FindNonCcTargetStrategy::IsCcSpell(SpellEntry const* info)
 bool FindNonCcTargetStrategy::IsCastingCcAt(Unit* caster, Unit* target)
 {
     Spell* spell = caster ? caster->GetCurrentSpell(CURRENT_GENERIC_SPELL) : nullptr;
-    if (!spell || !spell->m_spellInfo || spell->m_targets.getUnitTarget() != target)
+    if (!spell || !spell->m_spellInfo)
+        return false;
+    // Compare guids: the caster's cached unit-target pointer can point at a unit the map freed this tick.
+    if (spell->m_targets.getUnitTargetGuid() != (target ? target->GetObjectGuid() : ObjectGuid()))
         return false;
     return IsCcSpell(spell->m_spellInfo);
 }
@@ -301,12 +305,19 @@ bool CcGuard::CcInRunningArea(Spell const* spell)
         // the unit a chain jumps from (a chain has no destination).
         if (spell->m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
             spell->m_targets.getDestination(x, y, z);
-        else if (Unit* const target = spell->m_targets.getUnitTarget())
+        else
         {
-            x = target->GetPositionX();
-            y = target->GetPositionY();
-            z = target->GetPositionZ();
-            mapId = target->GetMapId();
+            // The cached unit-target pointer is refreshed only in the caster's next Spell::update: resolve the guid the
+            // cast holds, and a target that already left the world leaves the area at the bot's own position.
+            ObjectGuid const targetGuid = spell->m_targets.getUnitTargetGuid();
+            Unit* const target = targetGuid ? ObjectAccessor::GetUnit(*bot, targetGuid) : nullptr;
+            if (target)
+            {
+                x = target->GetPositionX();
+                y = target->GetPositionY();
+                z = target->GetPositionZ();
+                mapId = target->GetMapId();
+            }
         }
     }
     return BreakableCcNear(x, y, z, mapId, radius);

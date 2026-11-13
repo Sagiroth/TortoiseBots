@@ -317,7 +317,9 @@ class SeekWalkoutT1106b(unittest.TestCase):
         self.assertIn("CURRENT_GENERIC_SPELL", current)
         self.assertIn("CURRENT_CHANNELED_SPELL", current)
         self.assertIn("CURRENT_AUTOREPEAT_SPELL", current)
-        self.assertIn("m_targets.getUnitTarget() == son", current)
+        # The cast's target is compared by guid: its cached pointer can point at a unit the map freed this tick.
+        self.assertIn("m_targets.getUnitTargetGuid() == sonGuid", current)
+        self.assertNotIn("m_targets.getUnitTarget()", current)
 
     def test_the_timeout_logs_the_cast_the_los_and_the_stand(self):
         log = body(ACTIONS, "void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry,")
