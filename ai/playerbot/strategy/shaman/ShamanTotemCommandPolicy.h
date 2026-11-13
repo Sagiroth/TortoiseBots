@@ -222,9 +222,12 @@ inline std::string OrderedTotemForSlot(std::string const& storedOrder)
 }
 
 // A slot with an order takes only the ordered totem: every other totem of
-// that slot (spec rows, pack and reactive picks) stays out of it.
+// that slot (spec rows, pack and reactive picks) stays out of it. Tremor is
+// the one exception: a feared group needs it more than the ordered buff.
 inline bool TotemBlockedBySlotOrder(std::string const& totem, std::string const storedOrders[4])
 {
+    if (totem == "tremor totem")
+        return false;
     for (int slot = 0; slot < 4; ++slot)
     {
         std::string const ordered = OrderedTotemForSlot(storedOrders[slot]);

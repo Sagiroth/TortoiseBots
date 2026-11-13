@@ -798,11 +798,17 @@ namespace ai
                 return false;
             if (!ai->HasSpell("tremor totem"))
                 return false;
-            if (AI_VALUE2(bool, "has totem", "stoneclaw totem") ||
+            if (AI_VALUE2(bool, "has totem", "tremor totem"))
+                return false;
+            // An ordered earth totem stands for the whole fight, so waiting
+            // for an empty slot would mean no Tremor at all: it takes the
+            // slot over, and the order gets it back once Tremor is gone.
+            bool orderedEarth = !OrderedTotemForSlot(AI_VALUE2(std::string, "manual saved string", TotemOrderKey(0))).empty();
+            if (!orderedEarth &&
+                (AI_VALUE2(bool, "has totem", "stoneclaw totem") ||
                 AI_VALUE2(bool, "has totem", "stoneskin totem") ||
                 AI_VALUE2(bool, "has totem", "earthbind totem") ||
-                AI_VALUE2(bool, "has totem", "strength of earth totem") ||
-                AI_VALUE2(bool, "has totem", "tremor totem"))
+                AI_VALUE2(bool, "has totem", "strength of earth totem")))
                 return false;
             // Party fear scan first (cheap self check, then group members).
             // Fear + charm only: tremor dispels charm/fear/sleep mechanics

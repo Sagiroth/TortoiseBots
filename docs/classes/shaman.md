@@ -70,6 +70,7 @@ Shamans maintain 4-element totem sets tailored to group composition:
 - After the fight *Totemic Recall* refunds the standing set, and nothing re-drops it out of combat, so the refund sticks until the next fight.
 - `.bot totem` `mode manual` quiets the automatic rows (except *Stoneclaw Totem*, which still auto-drops on trash).
 - The reactive rows (*Tremor*, cleansing, *Grounding*, *Earthbind*) still fire on need.
+- A slot with a `.bot totem` order takes only the ordered totem, so the reactive rows skip it. *Tremor Totem* alone still takes an ordered earth slot when the group is feared or charmed, and hands it back when it expires.
 
 </details>
 
