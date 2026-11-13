@@ -607,11 +607,17 @@ void PaladinOffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
 
 void PaladinAuraStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    triggers.push_back(new TriggerNode(
+        "choice aura",
+        NextAction::array(0, new NextAction("choice aura", ACTION_HIGH + 6), NULL)));
 }
 
 void PaladinAuraStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode(
+        "choice aura",
+        NextAction::array(0, new NextAction("choice aura", ACTION_NORMAL + 2), NULL)));
+
     triggers.push_back(new TriggerNode(
         "no paladin aura",
         NextAction::array(0, new NextAction("paladin aura", ACTION_NORMAL), NULL)));

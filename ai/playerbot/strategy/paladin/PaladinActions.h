@@ -191,6 +191,15 @@ namespace ai
     // spell name; empty when on auto (or untrained after a respec).
     std::string OrderedAuraFor(PlayerbotAI* ai);
 
+    class CastChoiceAuraAction : public CastBuffSpellAction
+    {
+    public:
+        CastChoiceAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "choice aura") { isOwner = true; }
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+    };
+
     // The blessing the player ordered for this member's class and this paladin
     // has trained, as its base spell name; empty when the class is on auto.
     std::string OrderedBlessingFor(PlayerbotAI* ai, Unit* target);

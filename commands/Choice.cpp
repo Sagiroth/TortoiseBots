@@ -141,7 +141,8 @@ bool HandleChoice(ChatHandler* handler, char const* args)
     for (Player* bot : bots)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-        if (!ai || bot->GetClass() != ai::ChoiceKindClassId(kind))
+        int const rowKind = status ? ai::ChoiceKindForClass(bot->GetClass()) : kind;
+        if (!ai || rowKind < 0 || bot->GetClass() != ai::ChoiceKindClassId(rowKind))
             continue;
         if (!status)
         {
@@ -155,7 +156,7 @@ bool HandleChoice(ChatHandler* handler, char const* args)
             ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Set(word3);
             sPlayerbotDbStore.Save(ai);
         }
-        SendChoiceLine(handler, bot, ai, kind);
+        SendChoiceLine(handler, bot, ai, rowKind);
         ++matched;
     }
     if (status)

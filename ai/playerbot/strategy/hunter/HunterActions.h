@@ -197,6 +197,7 @@ public:
     public:
         CastChoiceAspectAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "choice aspect") {}
         bool isUseful() override;
+        bool isPossible() override;
         bool Execute(Event& event) override;
     };
 

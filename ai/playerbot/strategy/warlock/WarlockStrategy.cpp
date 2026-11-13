@@ -637,20 +637,25 @@ void WarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     // the current target). The `choice curse ...` triggers fire only as the
     // order, and `no curse` above keeps the slot open for them; the shared
     // rows above stand their own non-ordered curses down while one is set.
-    char const* const choiceCurses[] = {
-        "curse of agony", "curse of the elements", "curse of weakness", "curse of tongues",
-        "curse of shadow", "curse of recklessness", "curse of doom"
-    };
-    for (char const* curse : choiceCurses)
-        triggers.push_back(new TriggerNode(
-            std::string("choice curse ") + curse,
-            NextAction::array(0, new NextAction(curse, ACTION_NORMAL + 2), NULL)));
+    InitChoiceCurseTriggers(triggers);
     // Exhaustion snares the snare target (WAR-7), never the current target:
     // same trigger chassis as the manual row, minus the aoe "on attacker"
     // twin. The gate below keeps it quiet unless exhaustion is ordered.
     triggers.push_back(new TriggerNode(
         "curse of exhaustion on snare target",
         NextAction::array(0, new NextAction("curse of exhaustion on snare target", ACTION_NORMAL + 2), NULL)));
+}
+
+void WarlockCursesStrategy::InitChoiceCurseTriggers(std::list<TriggerNode*>& triggers)
+{
+    char const* const choiceCurses[] = {
+        "curse of agony", "curse of the elements", "curse of weakness", "curse of tongues",
+        "curse of shadow", "curse of recklessness", "curse of doom", "curse of exhaustion"
+    };
+    for (char const* curse : choiceCurses)
+        triggers.push_back(new TriggerNode(
+            std::string("choice curse ") + curse,
+            NextAction::array(0, new NextAction(curse, ACTION_NORMAL + 2), NULL)));
 }
 
 void WarlockCursesPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

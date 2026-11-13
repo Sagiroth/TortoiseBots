@@ -45,6 +45,17 @@ inline std::uint8_t ChoiceKindClassId(int index)
     }
 }
 
+inline int ChoiceKindForClass(std::uint8_t classId)
+{
+    switch (classId)
+    {
+    case 2: return 0;
+    case 3: return 1;
+    case 9: return 2;
+    default: return -1;
+    }
+}
+
 // The short word the player types ("retribution"), without the spell noise.
 inline char const* ChoiceWord(int kind, int index)
 {

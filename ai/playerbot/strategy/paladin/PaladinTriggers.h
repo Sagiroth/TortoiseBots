@@ -47,6 +47,13 @@ namespace ai
         bool IsActive() override;
     };
 
+    class ChoiceAuraTrigger : public Trigger
+    {
+    public:
+        ChoiceAuraTrigger(PlayerbotAI* ai) : Trigger(ai, "choice aura") {}
+        bool IsActive() override;
+    };
+
     BUFF_TRIGGER(ShadowResistanceAuraTrigger, "shadow resistance aura");
     BUFF_TRIGGER(FrostResistanceAuraTrigger, "frost resistance aura");
     BUFF_TRIGGER(FireResistanceAuraTrigger, "fire resistance aura");
