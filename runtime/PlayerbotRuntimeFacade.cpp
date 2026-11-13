@@ -6,6 +6,7 @@
 #include "../ai/playerbot/RandomBotFacade.h"
 #include "runtime/BotActivityLease.h"
 #include "runtime/policy/ah/AhReadModelPolicy.h"
+#include "runtime/policy/infra/TimedStrategyReapplyPolicy.h"
 #include "NamedLocationIndex.h"
 
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -477,6 +478,16 @@ void RandomBotFacade::ChangeStrategy(Player* player)
 
     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player))
     {
+        // Issue #1605: the timed re-apply is the pool roulette. A bot the
+        // dungeon finder (or `.bot role`, the hire provisioner, the 7.3
+        // shaman tank factory) handed a role keeps that kit for as long as
+        // it is grouped: the list's "+dps" is the class DPS alias (shadow
+        // for a priest) and drops the sibling spec, which left a filled
+        // healer unable to heal mid-dungeon. ResetStrategies is the only
+        // place that applies the role; leaving the group clears it.
+        if (TortoiseBots::TimedReapplyHoldsRole({ static_cast<uint8>(ai->GetForcedRole()), player->GetGroup() != nullptr }))
+            return;
+
         // Same rules as AddDefaultCombatStrategies: the string's -threat must
         // not strip the party back-off from a bot grouped with a real master
         // (only a back-off the bot already runs is kept, so a player's
