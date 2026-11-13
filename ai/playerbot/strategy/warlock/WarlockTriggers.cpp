@@ -171,6 +171,8 @@ bool ChoiceCurseRowActive(PlayerbotAI* ai, char const* row, char const* manual)
     return ai->HasStrategy(manual, BotState::BOT_STATE_COMBAT);
 }
 
+} // namespace
+
 bool ChoiceCurseTrigger::IsActive()
 {
     if (OrderedCurseFor(ai) != spell)
@@ -179,7 +181,6 @@ bool ChoiceCurseTrigger::IsActive()
 }
 
 std::string ChoiceCurseTrigger::getName() { return "choice curse " + spell; }
-} // namespace
 
 bool CurseOfAgonyTrigger::IsActive()
 {
