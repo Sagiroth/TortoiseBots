@@ -5077,6 +5077,9 @@ void PlayerbotAI::StartPullWindow(uint8 windowSeconds, bool leadKeyed, uint8 min
     if (!aiObjectContext)
         return;
 
+    if (pullWindow_.Running() && pullWindow_.engage)
+        EndPullWindow("order");
+
     // A restarted or chained window must not log the previous pull's reason.
     SetPullReleaseReason(nullptr);
 
@@ -5099,6 +5102,31 @@ void PlayerbotAI::StartPullWindow(uint8 windowSeconds, bool leadKeyed, uint8 min
 
     waitTime->Set(windowSeconds);
     pullWindow_.Start(time(0), added, previousSeconds, leadKeyed, minSeconds, fightStart);
+}
+
+void PlayerbotAI::StartEngageWindow(uint64_t requesterGuid, uint32 delaySeconds, uint32 timeoutSeconds)
+{
+    if (!aiObjectContext)
+        return;
+
+    SetPullReleaseReason(nullptr);
+
+    auto* waitTime = aiObjectContext->GetValue<uint8>("wait for attack time");
+    uint8 const previousSeconds = waitTime->Get();
+
+    unsigned added = 0;
+    for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
+    {
+        BotState const state = static_cast<BotState>(i);
+        if (HasStrategy("wait for attack", state))
+            continue;
+        ChangeStrategy("+wait for attack", state);
+        added |= ai::PullJoinWindow::EngineBit(i);
+    }
+
+    waitTime->Set(static_cast<uint8>(std::min<uint32>(timeoutSeconds + delaySeconds, 255)));
+    pullWindow_.StartEngage(time(0), added, previousSeconds, requesterGuid, delaySeconds, timeoutSeconds);
+    ParkPetForPullHold();
 }
 
 void PlayerbotAI::SetPlayerWaitForAttackTime(uint8 seconds)
@@ -5146,7 +5174,7 @@ void PlayerbotAI::EndPullWindow(const char* reason)
         std::string const stored = PullReleaseReason();
         std::string const logged = reason && *reason ? reason : (stored.empty() ? "order" : stored);
         sLog.outBasic("[BOT] pull-release %s reason=%s kind=%s elapsed=%u", bot->GetName(), logged.c_str(),
-            window.fightStart ? "fight-start" : (window.leadKeyed ? "pull" : "chat"), window.start ? uint32(time(0) - window.start) : 0);
+            window.engage ? "engage" : (window.fightStart ? "fight-start" : (window.leadKeyed ? "pull" : "chat")), window.start ? uint32(time(0) - window.start) : 0);
     }
     SetPullReleaseReason(nullptr);
 
