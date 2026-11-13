@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "WarlockTriggers.h"
+#include "../generic/ClassChoicePolicy.h"
 #include "WarlockActions.h"
 #include "WarlockPetTaunt.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -381,9 +382,8 @@ bool NoCurseTrigger::IsActive()
 	{
 		// An ordered curse casts through its own row even on a clean
 		// target: `no curse` must not claim the slot first.
-		std::string const ordered = OrderedCurseFor(ai);
-		if (!ordered.empty())
-			return !ai->HasAura(ordered.c_str(), target, false, true);
+		if (!ShouldNoCurseTriggerFire(OrderedCurseFor(ai)))
+			return false;
 		if (!WarlockDotTargetAllowed(ai, target))
 			return false;
 		return !ai->HasAura("curse of agony", target, false, true) &&

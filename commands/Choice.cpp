@@ -153,7 +153,12 @@ bool HandleChoice(ChatHandler* handler, char const* args)
                 refused = true;
                 continue;
             }
+            std::string const previous = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Get();
             ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Set(word3);
+            // The automatic aura row only fires with no aura up, so the
+            // ordered one is dropped for it to take over.
+            if (kind == 0 && word3 == "auto" && !previous.empty() && previous != "auto")
+                ai->RemoveAura(ai::ChoiceSpell(kind, previous));
             sPlayerbotDbStore.Save(ai);
         }
         SendChoiceLine(handler, bot, ai, rowKind);

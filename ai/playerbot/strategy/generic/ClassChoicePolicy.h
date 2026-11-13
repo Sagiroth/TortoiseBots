@@ -122,4 +122,10 @@ inline bool IsChoiceWord(int kind, std::string const& word)
 {
     return word == "auto" || ChoiceWordIndex(kind, word) >= 0;
 }
+
+// `no curse` only claims the target slot when no `.bot choice` curse is active.
+inline bool ShouldNoCurseTriggerFire(std::string const& orderedCurse)
+{
+    return orderedCurse.empty();
+}
 }

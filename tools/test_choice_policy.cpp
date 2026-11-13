@@ -66,6 +66,10 @@ int main()
     CHECK(ai::IsChoiceWord(2, "tongues"));
     CHECK(!ai::IsChoiceWord(2, "cheetah"));
 
+    CHECK(ai::ShouldNoCurseTriggerFire(""));
+    CHECK(!ai::ShouldNoCurseTriggerFire("curse of the elements"));
+    CHECK(!ai::ShouldNoCurseTriggerFire("curse of agony"));
+
     std::printf("All choice policy checks PASSED!\n");
     return 0;
 }
