@@ -133,6 +133,42 @@ def migration_rows():
     return [row for kind, row in migration_statements() if kind == "insert"]
 
 
+def _set_parts(text):
+    """Split a SET list on the commas outside a quoted value: a comment may carry a comma."""
+    parts = []
+    buffer = []
+    quote = None
+    index = 0
+    size = len(text)
+    while index < size:
+        char = text[index]
+        if quote:
+            buffer.append(char)
+            if char == "\\" and index + 1 < size:
+                buffer.append(text[index + 1])
+                index += 2
+                continue
+            if char == "'":
+                if index + 1 < size and text[index + 1] == "'":
+                    buffer.append(text[index + 1])
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if char == "'":
+            quote = "'"
+        elif char == ",":
+            parts.append("".join(buffer).strip())
+            buffer = []
+            index += 1
+            continue
+        buffer.append(char)
+        index += 1
+    parts.append("".join(buffer).strip())
+    return [part for part in parts if part]
+
+
 def migration_updates(paths=None):
     """The scoped `UPDATE ai_boss_tactic SET ... WHERE ...` statements the replay applies, in file order."""
     updates = []
@@ -147,7 +183,7 @@ def migration_updates(paths=None):
             if not match:
                 continue
             changes = {}
-            for part in re.split(r"\s*,\s*", match.group(1).strip()):
+            for part in _set_parts(match.group(1)):
                 found = re.fullmatch(r"`(\w+)`\s*=\s*(.+)", part, re.S)
                 if not found:
                     raise AssertionError("unparsable SET in %s: %s" % (name, part))
@@ -777,27 +813,39 @@ class BossTacticsSql(unittest.TestCase):
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
     def test_hakkar_seek_pull_row(self):
-        # 20261107230000_world.sql: the seek walk-out gets one Son per cycle's rules (walk 51). target_entry the
-        # source, priority 3 walk-outs a cycle, window_s the 60 s last start; 20261108100000_world.sql replaces the
-        # 45 s kill lead with 75 s, so the pulled Son is burned on arrival.
-        name = "20261108100000_world.sql"
+        # 20261107230000_world.sql wrote the row (walk 51): target_entry the source, window_s the 60 s last start.
+        # 20261108100000_world.sql replaced the 45 s kill lead with 75 s (burned on arrival); 20261113220000_world.sql
+        # moves it to Son-timing variant A (walks 93 + 94): priority 1 walk-out a cycle and a 45 s kill lead, so the
+        # engaged Son is fought and held until the raid gathers instead of burned on arrival.
+        source = "20261108100000_world.sql"
+        source_path = os.path.join(ROOT, "data/sql/world", source)
+        self.assertTrue(os.path.isfile(source_path), "the seek_pull migration is missing")
+        name = "20261113220000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
-        self.assertTrue(os.path.isfile(path), "the seek_pull migration is missing")
+        self.assertTrue(os.path.isfile(path), "the seek_pull variant A migration is missing")
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         pull = live.get((309, 14834, "seek_pull", 11357, 0))
         self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
-        self.assertEqual(name, pull["file"], "the seek_pull migration owns the row")
-        self.assertEqual((3, 75.0, 60.0, "", 0, 0.0, 0, 100),
+        self.assertEqual(source, pull["file"], "the seek_pull INSERT's migration owns the row")
+        self.assertEqual((1, 45, 60.0, "", 0, 0.0, 0, 100),
                          (pull["priority"], pull["param"], pull["window_s"], pull["tactic_mode"],
                           pull["cycle_spell"], pull["cycle_s"], pull["hp_min"], pull["hp_max"]),
                          "the Hakkar seek_pull row drifted")
         self.assertIsNone(new_kind_problem(pull))
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
-        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+        self.assertIn("UPDATE `ai_boss_tactic` SET `priority` = 1, `param` = 45,", text)
+        self.assertIn("WHERE `map` = 309 AND `boss_entry` = 14834 "
                       "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
-        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("Hakkar: one Son walk-out per siphon cycle, burn from 45 s "
+                      "(walks 93+94: 50/80 kills vs 12/112)", text)
+        with open(source_path, encoding="utf-8") as handle:
+            source_text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", source_text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", source_text)))
 
     def test_hakkar_heal_reserve_row(self):
         # 20261111140000_world.sql: r11-3, the healer top-up reserve. 85 % of mana, released 60 s before each Blood
@@ -822,27 +870,40 @@ class BossTacticsSql(unittest.TestCase):
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
 
-    def test_hakkar_seek_pull_burns_on_arrival(self):
-        # 20261108100000_world.sql: the 75 s kill lead forces the burn as soon as the pulled Son is engaged
-        # (SeekLateEngagedBurnWithin), and the forced burn marks the gather ready, so the 30 % hold and the 8 s
-        # gather wait drop out. The lead's ceiling: Poisonous Blood lasts 90 s, the siphon strips it only at its own
-        # 8 s aura's end, and the 24320 cloud lasts 3 s, so 79 s is the most a Son killed now can still dose with.
-        name = "20261108100000_world.sql"
-        path = os.path.join(ROOT, "data/sql/world", name)
-        self.assertTrue(os.path.isfile(path), "the burn-on-arrival migration is missing")
+    def test_hakkar_seek_pull_one_walkout_late_burn(self):
+        # 20261113220000_world.sql: variant A. priority 1 makes WalkoutCycleRules::maxPerCycle 1, so
+        # WalkoutRetryAllowed is false after the first start and a failed walk-out leaves the cycle to the fallback
+        # take. param 45 starts the forced burn 45 s before the siphon instead of on arrival, so the 30 % hold and
+        # the 4 yd gather run and the cloud lands on the gathered raid. The lead's ceiling: Poisonous Blood lasts
+        # 90 s, the siphon strips it only at its own 8 s aura's end, and the 24320 cloud lasts 3 s, so 79 s is the
+        # most a Son killed now can still dose with. window_s stays 60 (50 s at run time under the siphon clock).
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         pull = live.get((309, 14834, "seek_pull", 11357, 0))
         self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
-        self.assertEqual(75.0, pull["param"], "the kill lead is not 75 s")
+        self.assertEqual(1, pull["priority"], "the cycle is not limited to one walk-out")
+        self.assertEqual(45, pull["param"], "the kill lead is not 45 s")
         self.assertLessEqual(pull["param"], 90.0 - 8.0 - 3.0, "the kill lead outlives the poison's 79 s")
-        self.assertEqual((3, 60.0), (pull["priority"], pull["window_s"]))
+        self.assertEqual(60.0, pull["window_s"])
         self.assertIsNone(new_kind_problem(pull))
-        with open(path, encoding="utf-8") as handle:
+
+    def test_hakkar_seek_pull_rollback_restores_the_arrival_burn(self):
+        # tools/sql/rollback/20261113220000_world.rollback.sql (outside data/sql, so the runner never applies it) is
+        # the inverse UPDATE: priority 3, param 75 and the comment 20261108100000 wrote. Replay every migration,
+        # then the rollback.
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261113220000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the variant A rollback script is missing")
+        self.assertNotIn(rollback, migration_paths())
+        rolled = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row)
+                  for row in effective_rows(migration_paths() + [rollback])}
+        pull = rolled.get((309, 14834, "seek_pull", 11357, 0))
+        self.assertIsNotNone(pull, "the rollback lost the Hakkar seek_pull row")
+        self.assertEqual((3, 75, 60.0), (pull["priority"], pull["param"], pull["window_s"]),
+                         "the rollback does not restore the burn-on-arrival row")
+        self.assertIsNone(new_kind_problem(pull))
+        with open(rollback, encoding="utf-8") as handle:
             text = handle.read()
-        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
-                      "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
-                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
-        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("burned at once (75 s lead", text)
+        self.assertIn("SET `priority` = 3, `param` = 75,", text)
 
     def test_hakkar_anchor_rows(self):
         # 20261106030000_world.sql: the fight stays on his platform. The anchor centre is his spawn (tw_world creature

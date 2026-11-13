@@ -1,4 +1,6 @@
 # Changelog
+
+- Changed: Hakkar's `seek_pull` row walks one Son of Hakkar out per Blood Siphon cycle (priority 3 -> 1) and burns an engaged Son from 45 s before the siphon instead of on arrival (param 75 -> 45), the Son-timing variant A of walks 93 + 94 (50/80 Hakkar kills against 12/112).
 - Fixed: a BossStand read no longer takes g_standHoldMutex twice on one thread (the given_up read logged its row inside the lock and froze the World thread), and the mutex asserts a self-deadlock in debug builds.
 
 - Fixed: a summoned bot's live hunter pet or warlock demon is teleported with it and resummoned beside it instead of walking through the instance to its owner and pulling whatever it passes (#1606).
