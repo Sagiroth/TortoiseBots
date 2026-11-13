@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: the new tools/test_migration_text_widths.py fails any world migration that writes a text value longer than its column's varchar width, the failure class that rolled the walk 2i image back (a 317-character `ai_boss_tactic.comment` in a varchar(255) column).
 - Changed: Hakkar's `seek_pull` row walks one Son of Hakkar out per Blood Siphon cycle (priority 3 -> 1) and burns an engaged Son from 45 s before the siphon instead of on arrival (param 75 -> 45), the Son-timing variant A of walks 93 + 94 (50/80 Hakkar kills against 12/112).
 - Fixed: a BossStand read no longer takes g_standHoldMutex twice on one thread (the given_up read logged its row inside the lock and froze the World thread), and the mutex asserts a self-deadlock in debug builds.
 
