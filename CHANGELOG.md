@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: the run leader's skull came from the plan's kill_first list alone, so a wing whose list names one entry (Scarlet Library's 4291, its Scarlet Diviner) marked that mob and no other, and the rest of the pulls were fought with no skull at all; a pull step with no kill_first unit of its fight now focuses the pack's own best unit (a healer or caster first, then the nearest within 15 yd of the tank), and the skull moves on when that unit dies (#1584).
+
 - Fixed: with `AiPlayerbot.RaidReactions` on (default 0), a bot driven out of a dragon's breath or tail cone only steps to one of the dragon's sides and stays put when neither side is clear, and a stay order is overruled by the raid spread only while a boss tactic is actually widening the spacing.
 - New: behind `AiPlayerbot.RaidReactions` (default 0), the reaction engine's universal raid answers — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread — actually run: the `react` strategy they live in had no creator and every reaction engine skipped it silently (#1589).
 - Fixed: with AiPlayerbot.DungeonRunSeekVictimRelief on, a relief take is confirmed under the latch lock on the clock of its own pick immediately before any attack or taunt, so a tank whose claim a nearer tank took over issues nothing at all, and a take that still held its claim when picked is no longer refused for confirming on a later clock.
