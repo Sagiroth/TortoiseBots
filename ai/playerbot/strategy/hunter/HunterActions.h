@@ -131,12 +131,14 @@ public:
     {
     public:
         CastAspectOfTheMonkeyAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the monkey") {}
+        virtual bool isUseful() override;
     };
 
     class CastAspectOfTheHawkAction : public CastBuffSpellAction
     {
     public:
         CastAspectOfTheHawkAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the hawk") {}
+        virtual bool isUseful() override;
     };
     class CastAspectOfTheWolfAction : public CastBuffSpellAction
     {
@@ -161,34 +163,42 @@ public:
     {
     public:
         CastAspectOfTheWildAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the wild") {}
+        virtual bool isUseful() override;
     };
 
     class CastAspectOfTheCheetahAction : public CastBuffSpellAction
     {
     public:
         CastAspectOfTheCheetahAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the cheetah") {}
-
-        bool isUseful() override
-        {
-            return CastBuffSpellAction::isUseful() && !AI_VALUE(bool, "has attackers");
-        }
+        virtual bool isUseful() override;
     };
 
     class CastAspectOfThePackAction : public CastBuffSpellAction
     {
     public:
         CastAspectOfThePackAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the pack") {}
-
-        bool isUseful() override
-        {
-            return CastBuffSpellAction::isUseful() && !AI_VALUE(bool, "has attackers");
-        }
+        virtual bool isUseful() override;
     };
 
     class CastAspectOfTheBeastAction : public CastBuffSpellAction
     {
     public:
         CastAspectOfTheBeastAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the beast") {}
+        virtual bool isUseful() override;
+    };
+
+    // The aspect the saved `.bot choice` order wants, as its spell name;
+    // empty on auto or when the bot no longer knows it.
+    std::string OrderedAspectFor(PlayerbotAI* ai);
+
+    // Casts the saved `.bot choice` aspect order.
+    class CastChoiceAspectAction : public CastBuffSpellAction
+    {
+    public:
+        CastChoiceAspectAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "choice aspect") {}
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
     };
 
     class CastCallPetAction : public CastBuffSpellAction

@@ -311,7 +311,7 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
     }
 
     if (first != "attack" && first != "interrupt" && first != "stop" && first != "pull" &&
-        first != "pullback" && first != "come" && first != "stay" &&
+        first != "pullback" && first != "engage" && first != "come" && first != "stay" &&
         first != "follow" && first != "auto" && first != "autocc" && first != "aoe" && first != "hold" &&
         first != "comestay" && first != "ready" && first != "loot" &&
         first != "repair" && first != "sell" && first != "rest" &&
@@ -429,6 +429,25 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
         if (!remainder.empty())
             return false;
         intent = first;
+        return true;
+    }
+    else if (first == "engage")
+    {
+        if (remainder.empty())
+        {
+            intent = first;
+            return true;
+        }
+        for (char c : remainder)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(c)))
+                return false;
+        }
+        unsigned long seconds = std::strtoul(remainder.c_str(), nullptr, 10);
+        if (seconds > 60)
+            return false;
+        intent = first;
+        option = std::to_string(seconds);
         return true;
     }
     else if (first == "pull" || first == "pullback")
@@ -1033,7 +1052,7 @@ bool HandleAction(ChatHandler* handler, char const* args)
             if (intent.empty())
                 intent = "unknown";
         }
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged|body]/pullback [seconds] [ranged|body]/end pull/come/stay/hold/follow/flee/guard/free/stance <near|tank|turnback|behind>/rebuff/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off/status]/autocc [on/off/status]/sap [on/off] [bot]/aoe [on/off/status]/loot [on/off/status]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged|body]/pullback [seconds] [ranged|body]/end pull/engage [seconds]/come/stay/hold/follow/flee/guard/free/stance <near|tank|turnback|behind>/rebuff/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off/status]/autocc [on/off/status]/sap [on/off] [bot]/aoe [on/off/status]/loot [on/off/status]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -1191,6 +1210,13 @@ bool HandleAction(ChatHandler* handler, char const* args)
             intent == "come" || intent == "hold" || intent == "comestay" ||
             intent == "guard" || intent == "free")
             ai->DropQueuedMovementOrders();
+
+        bool endedEngage = false;
+        if (intent != "engage" && option != "status" && ai->HasEngagePullWindow())
+        {
+            ai->EndPullWindow("order");
+            endedEngage = true;
+        }
 
         bool accepted = false;
         if (intent == "attack")
@@ -1426,13 +1452,21 @@ bool HandleAction(ChatHandler* handler, char const* args)
         {
             accepted = ExecuteQuietAction(ai, "trainer", ai::Event(intent, "learn", requester));
         }
+        else if (intent == "engage")
+        {
+            uint32 delaySeconds = ai::kEngageDefaultDelaySeconds;
+            if (!option.empty())
+                delaySeconds = static_cast<uint32>(std::strtoul(option.c_str(), nullptr, 10));
+            ai->StartEngageWindow(requester->GetObjectGuid().GetRawValue(), delaySeconds);
+            accepted = true;
+        }
         else if (intent == "end pull")
         {
             // Abort a stuck pull through the same bookkeeping as the state
             // machine's own pull end. Ordered past the gates: the order put
             // the bot in the pull, so "no pull running" never refuses it.
             accepted = ExecuteOrderedAction(ai, "end pull",
-                ai::Event(intent, "", requester));
+                ai::Event(intent, "", requester)) || endedEngage;
         }
         else if (intent == "stance")
         {

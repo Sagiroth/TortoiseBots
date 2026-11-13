@@ -145,8 +145,47 @@ static void TestTrailRecording()
     CHECK(trail.size() == ai::kFollowTrailMaxPoints);
 }
 
+// A back-off walks the trail backwards from the bot's place on it.
+static void TestTrailBackOff()
+{
+    std::vector<ai::FollowTrailPoint> trail;
+    for (int i = 0; i <= 20; ++i)
+        trail.push_back({ static_cast<float>(i) * 2.0f, 0.0f, 0.0f });
+
+    int nearest = -1;
+    int const index = ai::FollowTrailBackOffIndex(trail, 30.0f, 1.0f, 10.0f, &nearest);
+    CHECK(nearest == 15);
+    CHECK(index == 10);
+
+    // A short trail gives its start; nothing behind the start gives none.
+    CHECK(ai::FollowTrailBackOffIndex(trail, 4.0f, 0.0f, 10.0f) == 0);
+    CHECK(ai::FollowTrailBackOffIndex(trail, -3.0f, 0.0f, 10.0f) == -1);
+
+    std::vector<ai::FollowTrailPoint> empty;
+    CHECK(ai::FollowTrailBackOffIndex(empty, 0.0f, 0.0f, 10.0f) == -1);
+}
+
+// Entrance camp: the leader stands still, so only the bot's own walk in
+// extends the trail, and the back-off then runs back along those steps.
+static void TestTrailBackOffOnOwnSteps()
+{
+    std::vector<ai::FollowTrailPoint> trail;
+    for (int i = 0; i <= 10; ++i)
+        CHECK(ai::FollowTrailRecord(trail, 0.0f, 2.0f * static_cast<float>(i), 0.0f) || i == 0);
+
+    int nearest = -1;
+    CHECK(ai::FollowTrailBackOffIndex(trail, 0.0f, 0.0f, 8.0f, &nearest) == -1); // at the start: nothing behind
+    CHECK(nearest == 0);
+
+    int late = -1;
+    CHECK(ai::FollowTrailBackOffIndex(trail, 0.0f, 20.0f, 8.0f, &late) == 6);
+    CHECK(late == 10);
+}
+
 int main()
 {
+    TestTrailBackOff();
+    TestTrailBackOffOnOwnSteps();
     TestWedgeNeverInFront();
     TestWedgeRings();
     TestDropRejected();

@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -14,6 +15,7 @@
 using ai::NormalizeTotemOrder;
 using ai::OrderedTotemForSlot;
 using ai::ParseTotemDropMode;
+using ai::ParseTotemSetList;
 using ai::TotemAutoRowsFire;
 using ai::TotemicRecallShouldFire;
 using ai::TotemDropMode;
@@ -127,6 +129,36 @@ int main()
     CHECK(!TotemDropWantsSlot(false, ""));
     std::puts("  [PASS] drop queues free slots only");
 
+    // `set` takes exactly four comma-separated words, each valid for its slot.
+    {
+        std::string out[4];
+        CHECK(ParseTotemSetList("strength of earth totem,searing totem,mana spring totem,windfury totem", out));
+        CHECK(out[0] == "strength of earth totem" && out[1] == "searing totem");
+        CHECK(out[2] == "mana spring totem" && out[3] == "windfury totem");
+        CHECK(ParseTotemSetList("  Strength Of Earth , SEARING,mana spring ,Windfury  ", out));
+        CHECK(out[0] == "strength of earth totem" && out[1] == "searing totem");
+        CHECK(out[2] == "mana spring totem" && out[3] == "windfury totem");
+        CHECK(ParseTotemSetList("auto,none,auto,none", out));
+        CHECK(out[0] == "auto" && out[1].empty() && out[2] == "auto" && out[3].empty());
+        CHECK(!ParseTotemSetList("auto,auto,auto", out));
+        CHECK(!ParseTotemSetList("auto,auto,auto,auto,auto", out));
+        CHECK(!ParseTotemSetList("auto,auto,,auto", out));
+        CHECK(!ParseTotemSetList("", out));
+        CHECK(!ParseTotemSetList("searing,auto,auto,auto", out));
+        CHECK(!ParseTotemSetList("auto,auto,auto,mana spring", out));
+    }
+    std::puts("  [PASS] set list parses four valid words, rejects the rest");
+
     std::puts("All totem command policy checks PASSED!");
+    {
+        std::string const orders[4] = { "strength of earth totem", "auto", "", "windfury totem" };
+        CHECK(!ai::TotemBlockedBySlotOrder("strength of earth totem", orders));
+        CHECK(ai::TotemBlockedBySlotOrder("earthbind totem", orders));
+        CHECK(!ai::TotemBlockedBySlotOrder("tremor totem", orders));
+        CHECK(ai::TotemBlockedBySlotOrder("tranquil air totem", orders));
+        CHECK(!ai::TotemBlockedBySlotOrder("magma totem", orders));
+        CHECK(!ai::TotemBlockedBySlotOrder("mana spring totem", orders));
+    }
+
     return 0;
 }

@@ -6,6 +6,7 @@
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
 #include "playerbot/policy/class/ShamanFireGatePolicy.h"
 #include "playerbot/policy/class/ShamanTankPolicy.h"
+#include "ShamanTotemCommandPolicy.h"
 
 namespace ai
 {
@@ -137,6 +138,31 @@ namespace ai
         bool isUseful() override;
     };
 
+    inline bool TotemBlockedByOrder(PlayerbotAI* ai, std::string const& totem)
+    {
+        std::string stored[4];
+        for (int slot = 0; slot < 4; ++slot)
+            stored[slot] = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", TotemOrderKey(slot))->Get();
+        return TotemBlockedBySlotOrder(totem, stored);
+    }
+
+    // Places the totem the player ordered for one slot; the slot's own
+    // trigger decides when.
+    class CastOrderedTotemAction : public Action
+    {
+    public:
+        CastOrderedTotemAction(PlayerbotAI* ai, int slot, std::string const& name) : Action(ai, name), slot(slot) {}
+        bool Execute(Event& event) override { return ai->DoSpecificAction(Ordered(), event, true); }
+        bool isUseful() override { return !Ordered().empty(); }
+
+    private:
+        std::string Ordered()
+        {
+            return OrderedTotemForSlot(AI_VALUE2(std::string, "manual saved string", TotemOrderKey(slot)));
+        }
+        int slot;
+    };
+
     class CastTotemAction : public CastBuffSpellAction
     {
     public:
@@ -159,6 +185,9 @@ namespace ai
         {
             time_t lastCast = AI_VALUE2(time_t, "manual time", "last totem cast time");
             if (lastCast && time(0) - lastCast < 4)
+                return false;
+
+            if (TotemBlockedByOrder(ai, name))
                 return false;
 
             if (sServerFacade.isMoving(bot))
@@ -440,7 +469,7 @@ namespace ai
     public:
         CastMagmaTotemAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "magma totem") {}
         virtual std::string GetTargetName() override { return "self target"; }
-        virtual bool isUseful() override { return CastMeleeSpellAction::isUseful() && !AI_VALUE2(bool, "has totem", name); }
+        virtual bool isUseful() override { return CastMeleeSpellAction::isUseful() && !AI_VALUE2(bool, "has totem", name) && !TotemBlockedByOrder(ai, name); }
     };
 
     class CastFireNovaAction : public CastSpellAction

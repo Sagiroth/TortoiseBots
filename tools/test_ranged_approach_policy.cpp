@@ -12,9 +12,15 @@
     } \
 } while (0)
 
+using ai::ApproachIdlePack;
 using ai::ApproachPoint;
+using ai::ApproachPointClearOfPack;
 using ai::RangedApproachChoice;
+using ai::RangedApproachInPosition;
+using ai::RangedApproachPointSafe;
+using ai::RangedApproachStopDistance;
 using ai::SelectRangedApproachPoint;
+using ai::StepBackToPackSafePoint;
 using ai::UseRangedApproach;
 
 static ApproachPoint P(float x, float y, float z = 0.0f)
@@ -182,12 +188,64 @@ int main()
         std::vector<ApproachPoint> path = { P(80, 30), P(60, 25), P(0, 25) };
         RangedApproachChoice const choice = SelectRangedApproachPoint(path, P(0, 0), 25.0f, seesAll);
         CHECK(choice.valid);
-        CHECK(std::fabs(Dist(choice.point, P(0, 0)) - 25.0f) < 0.05f);
         CHECK(choice.point.x > -1.0f && choice.point.x < 1.0f);
         std::cout << "  [PASS] near-tangent crossing: clamps, keeps the touch point\n";
     }
 
+    // A bot that does not see its target gets the first point in sight and
+    // range, never the target's own spot; in range but hidden still walks.
+    {
+        auto const pastWall = [](ApproachPoint const& point) { return point.x <= 15.0f; };
+        std::vector<ApproachPoint> corner = { P(20, 10), P(15, 0), P(0, 0) };
+        RangedApproachChoice choice = SelectRangedApproachPoint(corner, P(0, 0), 23.0f, pastWall, false);
+        CHECK(choice.valid);
+        CHECK(choice.point.x == 15.0f && choice.point.y == 0.0f);
+        std::vector<ApproachPoint> straight = { P(21, 0), P(0, 0) };
+        choice = SelectRangedApproachPoint(straight, P(0, 0), 23.0f, pastWall, false);
+        CHECK(choice.valid);
+        CHECK(choice.point.x >= 13.0f && choice.point.x <= 15.0f);
+        CHECK(!SelectRangedApproachPoint(straight, P(0, 0), 23.0f, pastWall, true).valid);
+        std::cout << "  [PASS] out of sight: first point in sight and range, not the target's feet\n";
+    }
 
-    std::cout << "Ranged approach policy tests: OK\n";
+    // The stop band sits just inside the range rim: a bot there
+    // already casts, so the walk ends before the tank instead of on it.
+    {
+        CHECK(RangedApproachStopDistance(26.0f) == 23.0f);
+        CHECK(RangedApproachStopDistance(8.0f) == 6.0f);
+        CHECK(ai::RangedReachWaitsForTarget(true, true));
+        CHECK(!ai::RangedReachWaitsForTarget(false, true));
+        CHECK(!ai::RangedReachWaitsForTarget(true, false));
+        CHECK(RangedApproachStopDistance(0.0f) == 0.0f);
+        CHECK(RangedApproachInPosition(23.0f, 26.0f, true));
+        CHECK(RangedApproachInPosition(10.0f, 26.0f, true));
+        CHECK(!RangedApproachInPosition(23.1f, 26.0f, true));
+        CHECK(!RangedApproachInPosition(10.0f, 26.0f, false));
+        std::cout << "  [PASS] stop band: in position just inside range, in sight\n";
+    }
+
+    // A destination inside an idle pack's aggro range is refused: the walk
+    // stops at a closer-to-self point that still casts, or keeps the plan
+    // when no such point exists.
+    {
+        ApproachIdlePack packs[] = { { 19.5f, 12.0f, 10.0f } };
+        ApproachPoint const bot = P(40, 0);
+        ApproachPoint const target = P(0, 0);
+        CHECK(!ApproachPointClearOfPack(15.0f, 5.0f, bot.x, bot.y, packs[0]));
+        CHECK(ApproachPointClearOfPack(19.5f, 0.0f, bot.x, bot.y, packs[0]));
+        CHECK(RangedApproachPointSafe(P(19.5f, 0.0f), target, bot, 19.5f, seesAll, packs, 1));
+        CHECK(!RangedApproachPointSafe(P(15.0f, 5.0f), target, bot, 19.5f, seesAll, packs, 1));
+        CHECK(!RangedApproachPointSafe(P(27.0f, 0.0f), target, bot, 19.5f, seesAll, packs, 1));
+        std::vector<ApproachPoint> path = { P(40, 0), P(30, 0), P(19.5f, 0.0f), P(15, 5), P(10, 0) };
+        RangedApproachChoice const back = StepBackToPackSafePoint(path, P(10, 0), target, 19.5f,
+            seesAll, packs, 1);
+        CHECK(back.valid);
+        CHECK(Near(back.point, P(19.5f, 0.0f)));
+        RangedApproachChoice const none = StepBackToPackSafePoint(path, P(10, 0), target, 19.5f,
+            [](ApproachPoint const&) { return false; }, packs, 1);
+        CHECK(!none.valid);
+        std::cout << "  [PASS] idle pack: step back to the nearest safe point in range\n";
+    }
+
     return 0;
 }

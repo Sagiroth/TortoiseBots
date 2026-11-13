@@ -29,7 +29,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
 - **Healer Rescue:** In combat, a mob hitting the healer or another non-tank member 8-25 yards away gets *Intercept* (a Berserker Stance swap and back) when the rage left after the swap pays for it; otherwise the tank runs in and taunts.
 - **Threat Generation:**
   - Maintains *Shield Block* on cooldown, which opens up *Revenge*.
-  - Stacks *Sunder Armor* to 5 stacks, refreshing before expiry.
+  - Stacks *Sunder Armor* to 5 stacks, refreshing before expiry. With [`AiPlayerbot.AnnounceSunderStacks`](../server/settings/class-behaviour.md#aiplayerbotannouncesunderstacks) on (off by default), says "5 Sunders on <target>" once per elite or boss target when a real player is in the group; damage-dealing warriors do the same.
   - Casts *Shield Slam* on cooldown (or when procced by Improved Shield Slam).
   - Uses *Thunder Clap* against 2 or more melee attackers.
   - Opens with *Shield Slam* when it is ready and treats *Sunder Armor* as the filler while the stack builds.

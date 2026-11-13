@@ -31,6 +31,22 @@ namespace ai
         PlayerbotAI* ai;
 	};
 
+    // Hostile mobs that are not fighting yet and that one back-off step could
+    // wake. Built once per flee from a cached target list, then asked per
+    // candidate landing spot.
+    class IdleMobVeto
+    {
+    public:
+        IdleMobVeto(PlayerbotAI* ai, Player* bot, std::list<ObjectGuid> const& units, Unit* ignore, float stepLength);
+        bool Wakes(float x, float y) const;
+
+    private:
+        struct Sleeper { Unit* unit; float radius; float toBot; };
+        static constexpr int kMaxSleepers = 16;
+        Sleeper sleepers[kMaxSleepers];
+        int count = 0;
+    };
+
 	class FleeManager
 	{
 	public:
@@ -47,6 +63,7 @@ namespace ai
             FleeFailureMemory const* failures = nullptr, uint32 nowMs = 0);
         bool isUseful();
         bool IsUseful() { return isUseful(); }
+        void SetIdleMobVeto(IdleMobVeto const* veto) { idleMobVeto = veto; }
 
 	private:
 		void calculatePossibleDestinations(std::list<FleePoint*> &points);
@@ -63,6 +80,7 @@ namespace ai
 		float followAngle;
         bool forceMaxDistance;
 		WorldPosition startPosition;
+        IdleMobVeto const* idleMobVeto = nullptr;
 	};
 
 };

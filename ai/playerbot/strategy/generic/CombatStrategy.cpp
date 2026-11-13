@@ -151,6 +151,21 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
     // from healing: the join window gates damage, and it deals none.
     if (ai->RunHealOnly() && PlayerbotAI::IsHeal(ai->GetBot()))
         return false;
+    if (ai->HasEngagePullWindow())
+    {
+        if (PlayerbotAI::IsHeal(ai->GetBot()))
+            return false;
+        Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (target)
+        {
+            if (Player* player = dynamic_cast<Player*>(target))
+            {
+                if (!sServerFacade.IsFriendlyTo(ai->GetBot(), player))
+                    return false;
+            }
+        }
+        return true;
+    }
     // Patchwerk: DPS wait through the opening hold, assigned soakers join at once.
     if (PatchwerkDpsOpeningHold(ai))
         return true;

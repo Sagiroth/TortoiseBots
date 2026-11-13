@@ -346,6 +346,9 @@ Unit* FindBlessingCandidate(PlayerbotAI* ai, Player* bot, bool greaterOnly)
     // runs at cast time; the trigger only needs "something could land".)
     auto CouldBless = [&](Player* member)
     {
+        std::string const ordered = OrderedBlessingFor(ai, member);
+        if (!ordered.empty())
+            return !ai->HasAura(ordered, member) && !ai->HasAura("greater " + ordered, member);
         for (char const* blessing : kBlessings)
         {
             std::string const base(blessing);
@@ -436,6 +439,15 @@ bool NoPaladinAuraTrigger::IsActive()
     }
 
     return needAura;
+}
+
+bool ChoiceAuraTrigger::IsActive()
+{
+    std::string const ordered = ai::OrderedAuraFor(ai);
+    if (ordered.empty() || !ai->HasSpell(ordered))
+        return false;
+    Unit* target = GetTarget();
+    return target && !ai->HasMyAura(ordered, bot);
 }
 
 bool HammerOfJusticeOnEnemyTrigger::IsActive()

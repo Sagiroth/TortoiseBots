@@ -24,6 +24,7 @@ These settings configure mercenary companion hiring, party cost scaling, raid pr
 | [`AiPlayerbot.HireMaxLevelAboveHirer`](#aiplayerbothiremaxlevelabovehirer) | `0` | Maximum character levels a hired companion may exceed its employer. |
 | [`AiPlayerbot.HireAnywhere`](#aiplayerbothireanywhere) | `0` | Allows hiring companions from anywhere via chat command. |
 | [`AiPlayerbot.HireAllowPvP`](#aiplayerbothireallowpvp) | `0` | Allows hired companions into battlegrounds (off = PvE-only). |
+| [`AiPlayerbot.HireCrossFactionNeutralInns`](#aiplayerbothirecrossfactionneutralinns) | `0` | Recruiters at neutral inns hire companions of both factions (needs cross-faction groups). |
 | [`AiPlayerbot.HireLoot`](#aiplayerbothireloot) | `0` | Hired companions loot and roll on group loot (off = never loot, always pass). |
 | [`AiPlayerbot.ShamanTankEnabled`](#aiplayerbotshamantankenabled) | `1` | Offers the experimental 7.3 shaman tank build at recruiters, by `.bot hire`, and to random pool shamans. |
 | [`AiPlayerbot.HireBaseCostCopper`](#aiplayerbothirebasecostcopper) | `15000` | Base copper fee used for level-scaled party companion hiring. |
@@ -148,6 +149,21 @@ Controls whether hired companions may enter battlegrounds.
 When set to `0`, hired companions are PvE-only: queueing for a battleground warns the master once, entering dismisses the companions, hiring is refused while queued or inside, and hired companions never join the battleground queue on their own or through a group queue. Each recruiter's greeting ends with a red line saying its mercenaries are for PvE only; with `1` that line is left out.
 
 When set to `1`, hires may go to battlegrounds as before.
+
+</details>
+
+### `AiPlayerbot.HireCrossFactionNeutralInns`
+Controls whether recruiters at neutral inns hire companions of both factions.
+**Default:** `0` · **Values:** `0` own faction only, `1` both factions at neutral inns · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When set to `1` and the core setting `AllowTwoSide.Interaction.Group` is `1`, a recruiter standing in a neutral inn (its innkeeper is hostile to neither faction: Booty Bay, Gadgetzan, Everlook, Ratchet and the like) lists the classes and races of both factions, so an Alliance player can hire a Shaman and a Horde player a Paladin. Recruiters in faction towns and the `.bot hire` command keep hiring your own faction only. Without cross-faction groups the setting does nothing, because the hire could not join your group.
+
+A hire of the other faction is created on a bot account that holds only that faction. It stays a member of its own faction: city guards and faction NPCs of your side attack it, and it cannot use your flight paths.
+
+When set to `0`, every recruiter hires your own faction only.
 
 </details>
 

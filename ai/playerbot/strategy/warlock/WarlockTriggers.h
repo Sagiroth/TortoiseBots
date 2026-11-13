@@ -110,7 +110,18 @@ namespace ai
     INTERRUPT_TRIGGER(DeathCoilInterruptTrigger, "death coil");
     INTERRUPT_HEALER_TRIGGER(DeathCoilInterruptTHealerTrigger, "death coil");
     SNARE_TRIGGER(DeathCoilSnareTrigger, "death coil");
-    SNARE_TRIGGER(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
+    SNARE_TRIGGER_A(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
+
+
+    // A `.bot choice` order casts through its own trigger row: fires only
+    // while the given spell is the order and missing on the target.
+    class ChoiceCurseTrigger : public DebuffTrigger
+    {
+    public:
+        ChoiceCurseTrigger(PlayerbotAI* ai, std::string const& spell) : DebuffTrigger(ai, spell) {}
+        bool IsActive() override;
+        std::string getName() override;
+    };
 
     class CorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -132,7 +143,12 @@ namespace ai
         CurseOfAgonyOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of agony") {}
     };
 
-    DEBUFF_TRIGGER(CurseOfDoomTrigger, "curse of doom");
+    class CurseOfDoomTrigger : public DebuffTrigger
+    {
+    public:
+        CurseOfDoomTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "curse of doom") {}
+        bool IsActive() override;
+    };
 
     class CurseOfDoomOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -146,10 +162,16 @@ namespace ai
     {
     public:
         CurseOfTheElementsOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of the elements") {}
+        bool IsActive() override;
         Value<Unit*>* GetTargetValue() override;
     };
 
-    DEBUFF_TRIGGER(CurseOfRecklessnessTrigger, "curse of recklessness");
+    class CurseOfRecklessnessTrigger : public DebuffTrigger
+    {
+    public:
+        CurseOfRecklessnessTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "curse of recklessness") {}
+        bool IsActive() override;
+    };
 
     class CurseOfRecklessnessOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -157,7 +179,12 @@ namespace ai
         CurseOfRecklessnessOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of recklessness") {}
     };
 
-    DEBUFF_TRIGGER(CurseOfWeaknessTrigger, "curse of weakness");
+    class CurseOfWeaknessTrigger : public DebuffTrigger
+    {
+    public:
+        CurseOfWeaknessTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "curse of weakness") {}
+        bool IsActive() override;
+    };
 
     class CurseOfWeaknessOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -165,7 +192,12 @@ namespace ai
         CurseOfWeaknessOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of weakness") {}
     };
 
-    DEBUFF_TRIGGER(CurseOfTonguesTrigger, "curse of tongues");
+    class CurseOfTonguesTrigger : public DebuffTrigger
+    {
+    public:
+        CurseOfTonguesTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "curse of tongues") {}
+        bool IsActive() override;
+    };
 
     class CurseOfTonguesOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -173,7 +205,12 @@ namespace ai
         CurseOfTonguesOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of tongues") {}
     };
 
-    DEBUFF_TRIGGER(CurseOfShadowTrigger, "curse of shadow");
+    class CurseOfShadowTrigger : public DebuffTrigger
+    {
+    public:
+        CurseOfShadowTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "curse of shadow") {}
+        bool IsActive() override;
+    };
 
     class CurseOfShadowOnAttackerTrigger : public DebuffOnAttackerTrigger
     {

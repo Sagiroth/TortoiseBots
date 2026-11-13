@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <ctime>
 
 namespace ai
@@ -35,6 +36,9 @@ namespace ai
     // ends any window still running, so a relog never comes back held.
     //
     // Pure state, no core includes; exercised by tools/test_pull_join_window_policy.cpp.
+    constexpr unsigned kEngageDefaultDelaySeconds = 4; // default post-combat delay for player-pull engage hold
+    constexpr unsigned kEngageTimeoutSeconds = 60;     // max wait for an engage order if nothing is pulled
+
     struct PullJoinWindow
     {
         std::time_t start = 0;         // 0: no pull window is running
@@ -44,6 +48,11 @@ namespace ai
         unsigned minSeconds = 0;       // the join delay: the earliest lead release after the landing
         bool landed = false;           // Restamp(now, true) ran: the pull landed (ordinary pull) or the pullback tank is back
         bool fightStart = false;       // a fight-start hold (no pull), not a run-leader pull
+        bool engage = false;           // player-pull engage hold: waiting for requester combat + delay or melee
+        std::uint64_t engageRequesterGuid = 0;
+        std::time_t engageCombatStart = 0;
+        unsigned engageDelaySeconds = kEngageDefaultDelaySeconds;
+        unsigned engageTimeoutSeconds = kEngageTimeoutSeconds;
 
         static unsigned EngineBit(unsigned engine) { return 1u << engine; }
 
@@ -66,6 +75,39 @@ namespace ai
             minSeconds = minSecondsIn;
             fightStart = fightStartIn;
             landed = false;
+            engage = false;
+            engageRequesterGuid = 0;
+            engageCombatStart = 0;
+            engageDelaySeconds = kEngageDefaultDelaySeconds;
+            engageTimeoutSeconds = kEngageTimeoutSeconds;
+        }
+
+        void StartEngage(std::time_t now, unsigned addedMask, unsigned previousWaitSeconds,
+            std::uint64_t requesterGuid, unsigned delaySeconds, unsigned timeoutSeconds)
+        {
+            if (start)
+                addedEngines |= addedMask;
+            else
+            {
+                addedEngines = addedMask;
+                savedWaitSeconds = previousWaitSeconds;
+            }
+            start = now;
+            leadKeyed = false;
+            minSeconds = 0;
+            fightStart = false;
+            landed = false;
+            engage = true;
+            engageRequesterGuid = requesterGuid;
+            engageCombatStart = 0;
+            engageDelaySeconds = delaySeconds;
+            engageTimeoutSeconds = timeoutSeconds;
+        }
+
+        void MarkEngageCombatStarted(std::time_t now)
+        {
+            if (engage && !engageCombatStart)
+                engageCombatStart = now;
         }
 
         // The pull landed, or the pullback tank is back at the anchor: the
@@ -115,6 +157,11 @@ namespace ai
             minSeconds = 0;
             landed = false;
             fightStart = false;
+            engage = false;
+            engageRequesterGuid = 0;
+            engageCombatStart = 0;
+            engageDelaySeconds = kEngageDefaultDelaySeconds;
+            engageTimeoutSeconds = kEngageTimeoutSeconds;
         }
     };
 
@@ -203,4 +250,37 @@ namespace ai
                 f.tankInGroup = true;
         }
     }
+
+    struct EngageReleaseFacts
+    {
+        bool requesterAlive = false;      // requester is alive, in world, and on the bot's map
+        bool requesterInCombat = false;   // requester is currently in combat
+        bool mobInMelee = false;          // a live in-combat hostile unit is within melee range of requester or group tank
+        bool botIsVictim = false;         // a live hostile's victim is this bot (self-defence)
+        unsigned elapsedSinceOrder = 0;   // seconds since the engage order was issued
+        unsigned timeoutSeconds = kEngageTimeoutSeconds;
+        bool combatStarted = false;       // requester entered combat since the engage order
+        unsigned elapsedSinceCombat = 0;  // seconds since requester entered combat
+        unsigned delaySeconds = kEngageDefaultDelaySeconds;
+    };
+
+    // Why an engage hold may end now, or nullptr to keep holding.
+    inline const char* EngageReleaseReason(EngageReleaseFacts const& f)
+    {
+        if (!f.requesterAlive)
+            return "requester-gone";
+        if (f.botIsVictim)
+            return "hit";
+        if (f.mobInMelee)
+            return "melee";
+        if (f.combatStarted && f.elapsedSinceCombat >= f.delaySeconds)
+            return "delay";
+        if (!f.combatStarted && f.elapsedSinceOrder >= f.timeoutSeconds)
+            return "timeout";
+        if (f.elapsedSinceOrder >= f.timeoutSeconds + f.delaySeconds)
+            return "timeout";
+        return nullptr;
+    }
+
+    inline bool EngageReleases(EngageReleaseFacts const& f) { return EngageReleaseReason(f) != nullptr; }
 }

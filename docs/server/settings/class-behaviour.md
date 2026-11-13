@@ -21,6 +21,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
+| [`AiPlayerbot.AnnounceSunderStacks`](#aiplayerbotannouncesunderstacks) | `0` | A warrior says in party or raid chat when its elite or boss target has five Sunder Armor stacks. |
 | [`AiPlayerbot.EnableOffSpecStrategies`](#aiplayerbotenableoffspecstrategies) | `1` | Gives hybrid bots their off-spec kit by default: healers deal damage, DPS specs off-heal. |
 | [`AiPlayerbot.HunterCarveInReachOnly`](#aiplayerbothuntercarveinreachonly) | `0` | Survival hunters cast Carve only on a target already in melee reach, never walking in for it. |
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
@@ -32,6 +33,20 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.WarriorGapCloser`](#aiplayerbotwarriorgapcloser) | `0` | Warriors Charge to open a fight and tanks Intercept to rescue a party member, swapping stance for it. |
 
 ## Settings
+
+### `AiPlayerbot.AnnounceSunderStacks`
+A warrior bot, tank or damage dealer, that sees five *Sunder Armor* stacks on its elite or boss target (from any warrior) says "5 Sunders on <name>" once in party chat (raid chat in a raid group).
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- The stacks on the target count, whoever applied them. With several warrior bots on the same target only one of them speaks, once per target.
+- Only elite and boss creatures count; normal mobs and players never trigger it.
+- Only a group with at least one real player hears it; a group of bots only stays silent.
+- Any Sunder Armor on the target counts, including one applied by another player.
+
+</details>
 
 ### `AiPlayerbot.EnableOffSpecStrategies`
 When new bots are created, hybrid-class bots get their off-spec strategy on top of their spec kit: healing specs (Discipline/Holy priests, Restoration shamans and druids, Holy paladins) get `offdps`, and hybrid damage specs (Shadow priests, Elemental/Enhancement shamans, Retribution paladins, Cat/Balance druids) get `offheal`. See [healer off-DPS](../../classes/overview.md#healer-off-dps-offdps) and [off-healing](../../classes/overview.md#dps-off-healing-offheal) for what each kit does.

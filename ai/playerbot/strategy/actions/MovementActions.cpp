@@ -3109,6 +3109,23 @@ bool MovementAction::Flee(Unit *target)
 
     Unit* fleeTarget = nullptr;
     Group* group = bot->GetGroup();
+    // Cleared ground first: in a dungeon or raid a mob on a caster, healer or
+    // ranged bot backs it off along the recorded trail before the old order runs, whose run-to-member
+    // step can walk toward the next pack and whose usefulness check refuses a
+    // mob that hits from melee range without standing inside the bot yet.
+    // Hold position turns every self-initiated move away off.
+    Map* instanceMap = bot->GetMap();
+    if (isTarget && !isTank && (isRanged || isHealer) && !ai->HasStrategy("hold position", BotState::BOT_STATE_COMBAT) &&
+        group && instanceMap && (instanceMap->IsDungeon() || instanceMap->IsRaid()))
+    {
+        bool const playerAttacker = target->IsPlayer();
+        float const trailDistance = (playerAttacker || WorldPosition(bot).isOverworld())
+            ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
+        IdleMobVeto const trailVeto(ai, bot, AI_VALUE(std::list<ObjectGuid>, "possible targets no los"), target, trailDistance);
+        if (FleeAlongLeadTrail(target, trailDistance, trailVeto, nowMs))
+            return true;
+    }
+
     if (group)
     {
         Unit* spareTarget = nullptr;
@@ -3259,11 +3276,19 @@ bool MovementAction::Flee(Unit *target)
         if (WorldPosition(bot).isOverworld())
             fullDistance = true;
 
-        FleeManager manager(bot, fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee"), bot->GetAngle(target) + M_PI);
+        float const fleeDistance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
+        FleeManager manager(bot, fleeDistance, bot->GetAngle(target) + M_PI);
         if (!manager.isUseful())
         {
             return false;
         }
+
+        // Around a corner the next pack has no line of sight to the bot yet,
+        // so the list without the sight filter is the one that knows it.
+        IdleMobVeto const idleMobs(ai, bot, AI_VALUE(std::list<ObjectGuid>, "possible targets no los"), target, fleeDistance);
+        if (FleeAlongLeadTrail(target, fleeDistance, idleMobs, nowMs))
+            return true;
+        manager.SetIdleMobVeto(&idleMobs);
 
         if (!urand(0, 50) && ai->HasStrategy("emote", BotState::BOT_STATE_NON_COMBAT))
         {
@@ -3291,6 +3316,39 @@ bool MovementAction::Flee(Unit *target)
     }
 
     return succeeded;
+}
+
+// Back off the way the group came: the leader's recorded path is ground the
+// group already walked through. Farthest step first, shorter ones after it.
+bool MovementAction::FleeAlongLeadTrail(Unit* target, float distance, IdleMobVeto const& idleMobs, uint32 nowMs)
+{
+    std::vector<FollowTrailPoint> const& trail = ai->GetLeadTrail();
+    int nearest = -1;
+    int const first = FollowTrailBackOffIndex(trail, bot->GetPositionX(), bot->GetPositionY(), distance, &nearest);
+    if (first < 0)
+        return false;
+
+    LastMovement& lm = AI_VALUE(LastMovement&, "last movement");
+    WorldPosition const botPos(bot);
+    float const startDistance = sServerFacade.getDistance2d(bot, target);
+    for (int i = first; i < nearest; ++i)
+    {
+        FollowTrailPoint const& point = trail[static_cast<std::size_t>(i)];
+        if (sServerFacade.getDistance2d(target, point.x, point.y) < startDistance + sPlayerbotAIConfig.followDistance)
+            continue;
+        float const heading = botPos.GetAngleTo(WorldPosition(bot->GetMapId(), point.x, point.y, point.z));
+        if (!lm.fleeFailures.IsHeadingFree(heading, nowMs))
+            continue;
+        if (idleMobs.Wakes(point.x, point.y))
+            continue;
+        if (!target->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), true))
+            continue;
+        if (!MoveTo(bot->GetMapId(), point.x, point.y, point.z))
+            continue;
+        NoteFleeDispatch(target, heading, startDistance, nowMs);
+        return true;
+    }
+    return false;
 }
 
 void MovementAction::NoteFleeDispatch(Unit* target, float heading, float startDistance, uint32 nowMs)
@@ -3351,29 +3409,7 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
             away = target->GetAngle(bot);
     }
 
-    // Unpulled hostile mobs one step could wake: one cached "possible
-    // targets" read, filtered once, not a scan per candidate. Fixed stack
-    // scratch like the pack above: this runs every flee tick.
-    struct Sleeper { Unit* unit; float radius; float toBot; };
-    Sleeper sleepers[kPoolFleeMaxPackAttackers];
-    int sleeperCount = 0;
-    std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
-    for (ObjectGuid const& guid : possibleTargets)
-    {
-        if (sleeperCount >= kPoolFleeMaxPackAttackers)
-            break;
-        Unit* unit = ai->GetUnit(guid);
-        if (!unit || unit == target || !sServerFacade.IsAlive(unit) || unit->IsInCombat())
-            continue;
-        Creature* creature = unit->ToCreature();
-        if (!creature || !unit->IsHostileTo(bot))
-            continue;
-        float const radius = creature->GetAttackDistance(bot);
-        float const toBot = sServerFacade.getDistance2d(unit, bot);
-        if (radius <= 0.0f || !PoolFleeMobInReach(toBot, radius, distance))
-            continue;
-        sleepers[sleeperCount++] = { unit, radius, toBot };
-    }
+    IdleMobVeto const idleMobs(ai, bot, AI_VALUE(std::list<ObjectGuid>, "possible targets"), target, distance);
 
     float offsets[kPoolFleeHeadingCount];
     int const count = PoolFleeHeadingOffsets(offsets);
@@ -3390,18 +3426,7 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
         if (cand.isInWater())
             continue;
 
-        bool wakesMob = false;
-        for (int s = 0; s < sleeperCount; ++s)
-        {
-            Sleeper const& sleeper = sleepers[s];
-            if (PoolFleeLandingWakesMob(sServerFacade.getDistance2d(sleeper.unit, cand.getX(), cand.getY()),
-                sleeper.toBot, sleeper.radius))
-            {
-                wakesMob = true;
-                break;
-            }
-        }
-        if (wakesMob)
+        if (idleMobs.Wakes(cand.getX(), cand.getY()))
             continue;
 
         if (!bot->IsWithinLOS(cand.getX(), cand.getY(), cand.getZ() + bot->GetCollisionHeight()))
@@ -3805,6 +3830,8 @@ bool FleeAction::Execute(Event& event)
 bool FleeAction::isUseful()
 {
     if (!MovementAction::isUseful())
+        return false;
+    if (ai->HasStrategy("hold position", BotState::BOT_STATE_COMBAT))
         return false;
     // AiPlayerbot.BossStandWholeRaid: a bot on its seat does not flee, the seat is the escape (the stand action keeps
     // it there, and the reach, the dodge and the tank post's seated read already treat it as seated). The lookup runs
@@ -4300,6 +4327,11 @@ bool FleeWithPetAction::Execute(Event& event)
 bool RunAwayAction::Execute(Event& event)
 {
     return Flee(AI_VALUE(Unit*, "master target"));
+}
+
+bool RunAwayAction::isUseful()
+{
+    return MovementAction::isUseful() && !ai->HasStrategy("hold position", BotState::BOT_STATE_COMBAT);
 }
 
 bool MoveToLootAction::StuckOnApproach(ObjectGuid guid)

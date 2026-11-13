@@ -14,10 +14,15 @@
 using namespace ai;
 
 // A player-given "aspect <x>" strategy (HunterManualAspectStrategy) in either
-// engine: an explicit order beats the Viper automation. Only called after the
-// cheap gates, so it costs nothing while mana is fine or the toggle is off.
+// engine, or the saved `.bot choice` order: an explicit order beats the Viper
+// automation. Only called after the cheap gates, so it costs nothing while
+// mana is fine or the toggle is off.
 static bool HasPlayerAspectOrder(PlayerbotAI* ai)
 {
+    std::string const stored =
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", "choice aspect")->Get();
+    if (!stored.empty() && stored != "auto")
+        return true;
     static char const* const names[] = { "aspect hawk", "aspect monkey", "aspect cheetah", "aspect pack", "aspect beast", "aspect wild" };
     for (char const* name : names)
         if (ai->HasStrategy(name, BotState::BOT_STATE_COMBAT) || ai->HasStrategy(name, BotState::BOT_STATE_NON_COMBAT))
@@ -32,6 +37,17 @@ static TortoiseBots::HunterViperInputs BuildViperInputs(PlayerbotAI* ai, Player*
     in.manaPct = ai->GetManaPercent();
     in.inViper = ai->HasAura("aspect of the viper", bot);
     return in;
+}
+
+namespace ai { std::string OrderedAspectFor(PlayerbotAI* ai); }
+
+bool ChoiceAspectTrigger::IsActive()
+{
+    std::string const ordered = ai::OrderedAspectFor(ai);
+    if (ordered.empty() || !ai->HasSpell(ordered))
+        return false;
+    Unit* target = GetTarget();
+    return target && !ai->HasAura(ordered, bot);
 }
 
 bool AspectOfTheHawkTrigger::IsActive()

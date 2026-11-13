@@ -47,6 +47,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | All gear tier quests offered at once | No | [`AiPlayerbot.HireGearAllQuestsAvailable`](../server/settings/hiring.md#aiplayerbothiregearallquestsavailable) | [Recruiter services](commands/roster-and-hiring.md#capital-recruiter-services) |
 | Hires loot and roll on loot | No | [`AiPlayerbot.HireLoot`](../server/settings/hiring.md#aiplayerbothireloot) | [Loot rules](dungeons-and-raids.md#loot-rolling-rules) |
 | Hires come along into battlegrounds | No | [`AiPlayerbot.HireAllowPvP`](../server/settings/hiring.md#aiplayerbothireallowpvp) | [Battlegrounds](../world/queues.md#battlegrounds-with-your-own-party-bots) |
+| Hire the other faction at neutral inns | No | [`AiPlayerbot.HireCrossFactionNeutralInns`](../server/settings/hiring.md#aiplayerbothirecrossfactionneutralinns) | [Hiring](commands/roster-and-hiring.md) |
 | Buy world buffs at capital recruiters | Yes | [`AiPlayerbot.WorldBuffsEnabled`](../server/settings/hiring.md#aiplayerbotworldbuffsenabled) | [World buffs](commands/roster-and-hiring.md#world-buffs-at-capital-recruiters) |
 | Keep world buffs when entering a raid | No | [`AiPlayerbot.WorldBuffsKeepInRaids`](../server/settings/hiring.md#aiplayerbotworldbuffskeepinraids) | [World buffs](commands/roster-and-hiring.md#world-buffs-at-capital-recruiters) |
 

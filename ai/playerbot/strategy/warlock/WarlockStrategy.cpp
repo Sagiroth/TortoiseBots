@@ -630,6 +630,32 @@ void WarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "no curse",
         NextAction::array(0, new NextAction("curse of agony", ACTION_NORMAL + 2), NULL)));
+
+    // A saved `.bot choice` order casts through its own trigger row, so
+    // every orderable curse lands even when no spec row would ever queue it
+    // (weakness, tongues, shadow, doom outside their niches, exhaustion on
+    // the current target). The `choice curse ...` triggers fire only as the
+    // order, and `no curse` above keeps the slot open for them; the shared
+    // rows above stand their own non-ordered curses down while one is set.
+    InitChoiceCurseTriggers(triggers);
+    // Exhaustion snares the snare target (WAR-7), never the current target:
+    // same trigger chassis as the manual row, minus the aoe "on attacker"
+    // twin. The gate below keeps it quiet unless exhaustion is ordered.
+    triggers.push_back(new TriggerNode(
+        "curse of exhaustion on snare target",
+        NextAction::array(0, new NextAction("curse of exhaustion on snare target", ACTION_NORMAL + 2), NULL)));
+}
+
+void WarlockCursesStrategy::InitChoiceCurseTriggers(std::list<TriggerNode*>& triggers)
+{
+    char const* const choiceCurses[] = {
+        "curse of agony", "curse of the elements", "curse of weakness", "curse of tongues",
+        "curse of shadow", "curse of recklessness", "curse of doom", "curse of exhaustion"
+    };
+    for (char const* curse : choiceCurses)
+        triggers.push_back(new TriggerNode(
+            std::string("choice curse ") + curse,
+            NextAction::array(0, new NextAction(curse, ACTION_NORMAL + 2), NULL)));
 }
 
 void WarlockCursesPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

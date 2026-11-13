@@ -358,10 +358,12 @@ public:
 
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
-    // The leader's recent positions as this bot saw them (AiPlayerbot.
-    // RaidFollowWedge). Sampled every AI tick: the follow action runs only when
-    // the core follow has to be replaced, which is too late to know the path
-    // the leader took.
+    // The leader's and the bot's own recent positions as this bot saw them
+    // (AiPlayerbot. RaidFollowWedge). Sampled every AI tick: the follow action
+    // runs only when the core follow has to be replaced, which is too late to
+    // know the path the leader took. The bot's own out-of-combat steps join
+    // when the leader camps at the entrance, so the trail still covers the
+    // ground the bot walked in on.
     std::vector<FollowTrailPoint> const& GetLeadTrail() const { return leadTrail; }
 
     void HandleCommands();
@@ -385,6 +387,14 @@ public:
     // adds "wait for attack" to the engines that lack it; the window owns only
     // those copies and puts the old delay back when it ends.
     void StartPullWindow(uint8 windowSeconds, bool leadKeyed = false, uint8 minSeconds = 0, bool fightStart = false);
+    void StartEngageWindow(uint64_t requesterGuid, uint32 delaySeconds = ai::kEngageDefaultDelaySeconds, uint32 timeoutSeconds = ai::kEngageTimeoutSeconds);
+    bool HasEngagePullWindow() const { return pullWindow_.Running() && pullWindow_.engage; }
+    uint64_t EngageRequesterGuid() const { return pullWindow_.engageRequesterGuid; }
+    void MarkEngageCombatStarted() { pullWindow_.MarkEngageCombatStarted(time(0)); }
+    bool EngageCombatStarted() const { return pullWindow_.engageCombatStart != 0; }
+    uint32 EngageCombatElapsed() const { return pullWindow_.engageCombatStart ? uint32(time(0) - pullWindow_.engageCombatStart) : 0; }
+    uint32 EngageDelaySeconds() const { return pullWindow_.engageDelaySeconds; }
+    uint32 EngageTimeoutSeconds() const { return pullWindow_.engageTimeoutSeconds; }
     // A fight no pull window covers (a walk-in, a pick-up): hold a bot-only
     // running-run DPS for up to kFightStartHoldSeconds, lead-keyed like a
     // run-leader pull. Opens in SetCombatStateAction::Execute, never in

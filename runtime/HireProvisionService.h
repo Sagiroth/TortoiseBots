@@ -32,6 +32,8 @@ struct HireSelection
     // Issue #936: requested level (0 = the hirer's level, as before). Hire()
     // clamps it against the hirer (HireLevelPolicy.h); gossip leaves it 0.
     uint8 level = 0;
+    // Set by a neutral-inn recruiter: the race may be of the other faction.
+    bool anyFaction = false;
 };
 
 enum class HireStatus
@@ -150,6 +152,9 @@ public:
     // Fills a missing race (random race of the requester's faction that can be
     // the class) and gender. False when no race of the faction fits the class.
     static bool FillDefaultRaceGender(Player* requester, HireSelection& sel);
+    // AiPlayerbot.HireCrossFactionNeutralInns, and only while the realm lets
+    // the two factions group at all.
+    static bool CrossFactionHireEnabled();
 
     // Completes queued provisions once the hired character is controllable,
     // then groups it with its master. Bounded: at most two provisions per tick.

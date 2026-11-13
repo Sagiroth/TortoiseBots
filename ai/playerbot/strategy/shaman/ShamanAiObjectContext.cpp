@@ -356,6 +356,10 @@ namespace ai
                 creators["flametongue totem"] = [](PlayerbotAI* ai) { return new CastFlametongueTotemAction(ai); };
                 creators["searing totem"] = [](PlayerbotAI* ai) { return new CastSearingTotemAction(ai); };
                 creators["magma totem"] = [](PlayerbotAI* ai) { return new CastMagmaTotemAction(ai); };
+                creators["ordered earth totem"] = [](PlayerbotAI* ai) { return new CastOrderedTotemAction(ai, 0, "ordered earth totem"); };
+                creators["ordered fire totem"] = [](PlayerbotAI* ai) { return new CastOrderedTotemAction(ai, 1, "ordered fire totem"); };
+                creators["ordered water totem"] = [](PlayerbotAI* ai) { return new CastOrderedTotemAction(ai, 2, "ordered water totem"); };
+                creators["ordered air totem"] = [](PlayerbotAI* ai) { return new CastOrderedTotemAction(ai, 3, "ordered air totem"); };
                 creators["windfury totem"] = [](PlayerbotAI* ai) { return new CastWindfuryTotemAction(ai); };
                 creators["stoneskin totem"] = [](PlayerbotAI* ai) { return new CastStoneskinTotemAction(ai); };
                 creators["stoneclaw totem"] = [](PlayerbotAI* ai) { return new CastStoneclawTotemAction(ai); };

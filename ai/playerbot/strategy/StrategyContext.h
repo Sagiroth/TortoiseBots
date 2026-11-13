@@ -45,6 +45,7 @@
 #include "generic/DebugStrategy.h"
 #include "generic/AoeFearStrategy.h"
 #include "generic/NoAoeStrategy.h"
+#include "generic/NoBlinkInstanceStrategy.h"
 #include "generic/BattlegroundStrategy.h"
 #include "generic/MaintenanceStrategy.h"
 #include "generic/GroupStrategy.h"
@@ -101,6 +102,7 @@ namespace ai
             creators["force rebuff"] = [](PlayerbotAI* ai) { return new ForceRebuffStrategy(ai); };
             creators["dead"] = [](PlayerbotAI* ai) { return new DeadStrategy(ai); };
             creators["flee"] = [](PlayerbotAI* ai) { return new FleeStrategy(ai); };
+            creators["hold position"] = [](PlayerbotAI* ai) { return new HoldPositionStrategy(ai); };
             creators["avoid mobs"] = [](PlayerbotAI* ai) { return new AvoidMobsStrategy(ai); };
             creators["duel"] = [](PlayerbotAI* ai) { return new DuelStrategy(ai); };
             creators["start duel"] = [](PlayerbotAI* ai) { return new StartDuelStrategy(ai); };
@@ -151,6 +153,7 @@ namespace ai
             creators["debug move"] = [](PlayerbotAI* ai) { return new DebugMoveStrategy(ai); };
             creators["aoe fear"] = [](PlayerbotAI* ai) { return new AoeFearStrategy(ai); };
             creators["no aoe"] = [](PlayerbotAI* ai) { return new NoAoeStrategy(ai); };
+            creators["no blink instance"] = [](PlayerbotAI* ai) { return new NoBlinkInstanceStrategy(ai); };
             creators["debug rpg"] = [](PlayerbotAI* ai) { return new DebugRpgStrategy(ai); };
             creators["debug spell"] = [](PlayerbotAI* ai) { return new DebugSpellStrategy(ai); };
             creators["debug travel"] = [](PlayerbotAI* ai) { return new DebugTravelStrategy(ai); };

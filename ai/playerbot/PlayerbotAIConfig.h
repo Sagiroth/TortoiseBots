@@ -399,6 +399,7 @@ public:
     // entry dismisses them, and hiring is refused while queued or inside.
     // Set for today's behaviour (hires may go to battlegrounds).
     bool hireAllowPvP = false;
+    bool hireCrossFactionNeutralInns = false;
     // Hired companions loot and roll by default. Unset: a hire never opens a
     // corpse and passes on every roll (pool bots and alts are unaffected).
     bool hireLoot = true;
@@ -594,6 +595,7 @@ public:
     bool rogueDungeonThreatDrops;
     bool sapApproachAvoidPack;
     bool warriorGapCloser;
+    bool announceSunderStacks;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
     bool hunterViperOnLowMana;
     // Hunters cast Carve only on a target already in melee reach, never walking in for it.

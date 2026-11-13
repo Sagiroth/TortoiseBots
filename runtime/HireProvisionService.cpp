@@ -231,8 +231,8 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
         outcome.message = "That race cannot be that class.";
         return outcome;
     }
-    Team requesterTeam = requester->GetTeam();
-    if (Player::TeamForRace(sel.race) != requesterTeam)
+    Team const hireTeam = Player::TeamForRace(sel.race);
+    if (hireTeam != requester->GetTeam() && !(sel.anyFaction && CrossFactionHireEnabled()))
     {
         outcome.status = HireStatus::InvalidChoice;
         outcome.message = "That race fights for the other faction.";
@@ -386,8 +386,7 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     // organic world character) and never one of the player's own characters.
     // The durable hire ledger records exactly these created characters, and it
     // is the only thing the deletion guard trusts.
-    Team team = requesterTeam;
-    if (!CreateCandidate(resolved, team, accountId, guid))
+    if (!CreateCandidate(resolved, hireTeam, accountId, guid))
     {
         outcome.status = HireStatus::NoCandidate;
         outcome.message = "No mercenary of that kind is available right now. Try again shortly.";
@@ -495,6 +494,12 @@ uint32_t HireProvisionService::QuoteHireFee(uint32_t ownedBefore, uint32_t level
     costs.raidFlatCopper = sPlayerbotAIConfig.hireRaidFlatCostCopper;
     return HireCostAtTier(HireCost::ForNextHire(costs, ownedBefore, level),
         gearTier, sPlayerbotAIConfig.hireGearTierCostMult);
+}
+
+bool HireProvisionService::CrossFactionHireEnabled()
+{
+    return sPlayerbotAIConfig.hireCrossFactionNeutralInns &&
+        sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP);
 }
 
 bool HireProvisionService::FillDefaultRaceGender(Player* requester, HireSelection& sel)

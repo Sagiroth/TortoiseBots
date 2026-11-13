@@ -90,6 +90,42 @@ namespace ai
         return static_cast<int>(trail.size() - 1);
     }
 
+    // Back-off candidates: the trail point `backYd` behind the bot's place on
+    // the path (the trail's start when the path is shorter), or -1 when nothing
+    // lies behind. Points between the result and the bot's place are shorter
+    // steps back along the same path.
+    inline int FollowTrailBackOffIndex(std::vector<FollowTrailPoint> const& trail, float botX, float botY,
+        float backYd, int* nearestOut = nullptr)
+    {
+        if (trail.empty())
+            return -1;
+
+        std::size_t nearest = 0;
+        float best = FollowTrailDistance2d(trail[0], botX, botY);
+        for (std::size_t i = 1; i < trail.size(); ++i)
+        {
+            float const distance = FollowTrailDistance2d(trail[i], botX, botY);
+            if (distance <= best)
+            {
+                best = distance;
+                nearest = i;
+            }
+        }
+        if (nearestOut)
+            *nearestOut = static_cast<int>(nearest);
+        if (nearest == 0)
+            return -1;
+
+        float along = 0.0f;
+        for (std::size_t i = nearest; i > 0; --i)
+        {
+            along += FollowTrailDistance2d(trail[i], trail[i - 1].x, trail[i - 1].y);
+            if (along >= backYd)
+                return static_cast<int>(i - 1);
+        }
+        return 0;
+    }
+
     // Record the leader's current position. Returns true when the trail changed
     // (a point was added or the trail was reset). The caller owns the leader's
     // game state and passes its position.

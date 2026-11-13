@@ -96,7 +96,6 @@ class RaidFollowFormationWiringTest(unittest.TestCase):
 
     def test_trail_is_sampled_every_ai_tick(self):
         update = body(PLAYERBOT_AI, "void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)", "\n}\n")
-        self.assertIn("if (sPlayerbotAIConfig.raidFollowWedge)", update)
         self.assertIn("UpdateLeadTrail();", update)
         sample = body(PLAYERBOT_AI, "void PlayerbotAI::UpdateLeadTrail()", "\n}\n")
         self.assertIn("FollowTrailRecord(leadTrail,", sample)

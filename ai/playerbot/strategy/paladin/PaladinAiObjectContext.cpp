@@ -276,6 +276,7 @@ namespace ai
                 creators["greater blessing of light on party"] = [](PlayerbotAI* ai) { return new GreaterBlessingOfLightOnPartyTrigger(ai); };
                 creators["greater blessing of salvation on party"] = [](PlayerbotAI* ai) { return new GreaterBlessingOfSalvationOnPartyTrigger(ai); };
                 creators["no paladin aura"] = [](PlayerbotAI* ai) { return new NoPaladinAuraTrigger(ai); };
+                creators["choice aura"] = [](PlayerbotAI* ai) { return new ChoiceAuraTrigger(ai); };
                 creators["crusader aura"] = [](PlayerbotAI* ai) { return new CrusaderAuraTrigger(ai); };
                 creators["retribution aura"] = [](PlayerbotAI* ai) { return new RetributionAuraTrigger(ai); };
                 creators["devotion aura"] = [](PlayerbotAI* ai) { return new DevotionAuraTrigger(ai); };
@@ -368,6 +369,7 @@ namespace ai
                 creators["blessing of salvation on party"] = [](PlayerbotAI* ai) { return new CastBlessingOfSalvationOnPartyAction(ai); };
                 creators["greater blessing of salvation on party"] = [](PlayerbotAI* ai) { return new CastGreaterBlessingOfSalvationOnPartyAction(ai); };
                 creators["paladin aura"] = [](PlayerbotAI* ai) { return new CastPaladinAuraAction(ai); };
+                creators["choice aura"] = [](PlayerbotAI* ai) { return new CastChoiceAuraAction(ai); };
                 creators["devotion aura"] = [](PlayerbotAI* ai) { return new CastDevotionAuraAction(ai); };
                 creators["concentration aura"] = [](PlayerbotAI* ai) { return new CastConcentrationAuraAction(ai); };
                 creators["crusader aura"] = [](PlayerbotAI* ai) { return new CastCrusaderAuraAction(ai); };
