@@ -179,6 +179,41 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.25.0 (2026-11-14)
+
+### Classes & Combat
+- You can now set each paladin, priest, shaman or druid bot to heal or fight even outside its usual role. [#1616](https://github.com/Sagiroth/TortoiseBots/pull/1616)
+- Rogues can be told which poison to use on each hand, or left to choose for themselves. [#1616](https://github.com/Sagiroth/TortoiseBots/pull/1616)
+- Hunters can be told which sting to use. [#1616](https://github.com/Sagiroth/TortoiseBots/pull/1616)
+- Warlocks can be told which demon to summon. [#1616](https://github.com/Sagiroth/TortoiseBots/pull/1616)
+- You can set a focus target mark for each bot. [#1616](https://github.com/Sagiroth/TortoiseBots/pull/1616)
+- A bot you never adjust plays exactly as it did before. [#1616](https://github.com/Sagiroth/TortoiseBots/pull/1616)
+
+### Raids & Bosses
+- The server no longer freezes while a bot decides where to stand during a boss fight. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+- Killing Jin'do no longer crashes the server. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+- Hakkar's Son now appears at the right moment. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+- Onyxia no longer sends healers to their spots in phase 3, and her Bellowing Roar has a proper cooldown. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+- Five more tank positioning options exist, each turned off until you switch it on. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+- Onyxia's older saved bot settings now carry over to the new layout. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+
+### Groups & Dungeons
+- Bots in your party now confirm when they accept a resurrection. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+
+### Items & Inventory
+- A bot giving an item to another bot no longer breaks that character's saved inventory. [#1614](https://github.com/Sagiroth/TortoiseBots/pull/1614)
+
+### Guilds
+- An alt of yours that plays on its own in your guild can now take guild orders. [#1617](https://github.com/Sagiroth/TortoiseBots/pull/1617)
+- Only the alt's owner can give it an order, and other players' alts are skipped in guild searches. [#1617](https://github.com/Sagiroth/TortoiseBots/pull/1617)
+- Your Guild tab can now show those alts as alts. [#1617](https://github.com/Sagiroth/TortoiseBots/pull/1617)
+- While on an order, an alt can buy the reagents it needs with its own gold. [#1617](https://github.com/Sagiroth/TortoiseBots/pull/1617)
+
+### Behind the scenes
+- Tidied up how saved bot settings are loaded and numbered, and added a safety check on old settings text. [#1612](https://github.com/Sagiroth/TortoiseBots/pull/1612)
+
+---
+
 ## v1.24.0 (2026-11-13)
 
 ### Raids & Dungeons
