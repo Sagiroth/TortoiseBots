@@ -93,7 +93,9 @@ class ReactionCastGuardWiring(unittest.TestCase):
 
     def test_call_site_feeds_the_rule(self):
         # One break site, and it goes through the policy with all five inputs.
-        self.assertEqual(CALL.count("InterruptSpell()"), 1)
+        # The cancel carries its CastCancel site label (cast-cancel labels, T1).
+        self.assertEqual(CALL.count("InterruptSpell("), 1)
+        self.assertIn('InterruptSpell(true, "reaction_cast")', CALL)
         self.assertIn("if (ReactionCastBreakDue(interruptCast, reaction->YieldsToHealCast(),", CALL)
         self.assertIn("sPlayerbotAIConfig.reactionHealCastGuardPct, IsHeal(bot), &cast))", CALL)
         self.assertIn("const bool interruptCast = reaction->ShouldInterruptCast();", CALL)
