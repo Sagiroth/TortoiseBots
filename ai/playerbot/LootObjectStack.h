@@ -11,7 +11,11 @@ namespace ai
     {
     public:
         LootObject() : skillId(0), reqSkillValue(0), reqItem(0) {}
-        LootObject(Player* bot, ObjectGuid guid);
+        // playerOrder marks an explicit order (a player's "use" on a chest, a commander's loot
+        // act): Refresh keeps a chest holding only common loot instead of dropping it on the
+        // automatic pickup filter. The flag lives on the object because GetWorldObject and the
+        // open-loot path Refresh it again from the guid alone.
+        LootObject(Player* bot, ObjectGuid guid, bool playerOrder);
         LootObject(const LootObject& other);
 
     public:
@@ -26,6 +30,7 @@ namespace ai
         void Refresh(Player* bot, ObjectGuid guid, bool debug = false);
         WorldObject* GetWorldObject(Player* bot);
         ObjectGuid guid;
+        bool playerOrder = false;
 
         uint32 skillId;
         uint32 reqSkillValue;

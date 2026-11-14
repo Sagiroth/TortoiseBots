@@ -895,7 +895,9 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
 
     if (gameObject->GetGoType() == GAMEOBJECT_TYPE_CHEST)
     {
-        SET_AI_VALUE(LootObject, "loot target", LootObject(bot, guid));
+        // An explicit use of a chest is a loot order: a chest holding only common loot is not
+        // dropped by the automatic pickup filter.
+        SET_AI_VALUE(LootObject, "loot target", LootObject(bot, guid, true));
 
         if (ai->DoSpecificAction("open loot", event, true))
         {

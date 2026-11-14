@@ -65,8 +65,8 @@ void LootTargetList::shrink(time_t fromTime)
     }
 }
 
-LootObject::LootObject(Player* bot, ObjectGuid guid)
-	: guid(), skillId(SKILL_NONE), reqSkillValue(0), reqItem(0)
+LootObject::LootObject(Player* bot, ObjectGuid guid, bool playerOrder)
+	: guid(), playerOrder(playerOrder), skillId(SKILL_NONE), reqSkillValue(0), reqItem(0)
 {
     Refresh(bot, guid);
 }
@@ -156,8 +156,9 @@ static bool CollectCommonChestLoot(LootTemplateAccess const* access, std::vector
 }
 
 // An open chest holding only common/poor items and nothing a quest of this
-// bot needs: a world prop (festive mug, feast food).
-static bool IsCommonWorldProp(Player* bot, GameObject* go)
+// bot needs: a world prop (festive mug, feast food). A player's or commander's
+// explicit order on the object keeps it (playerOrder).
+static bool IsCommonWorldProp(Player* bot, GameObject* go, bool playerOrder)
 {
     if (go->GetGoType() != GAMEOBJECT_TYPE_CHEST || !go->GetGOInfo())
         return false;
@@ -166,6 +167,7 @@ static bool IsCommonWorldProp(Player* bot, GameObject* go)
         return false;
     ai::GameObjectPickupFacts facts;
     facts.isChest = true;
+    facts.playerOrder = playerOrder;
     std::vector<uint32> items;
     facts.onlyCommonLoot = CollectCommonChestLoot(
         reinterpret_cast<LootTemplateAccess const*>(pickupLoot), items, 0);
@@ -354,7 +356,7 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     if (this->guid.IsGameObject() && skillId == SKILL_NONE && !reqItem)
     {
         GameObject* go = ai->GetGameObject(this->guid);
-        if (go && IsCommonWorldProp(bot, go))
+        if (go && IsCommonWorldProp(bot, go, playerOrder))
         {
             if (debug)
                 ai->TellDebug(ai->GetMaster(), "Go is a common world prop.", "debug loot");
@@ -383,6 +385,7 @@ WorldObject* LootObject::GetWorldObject(Player* bot)
 LootObject::LootObject(const LootObject& other)
 {
     guid = other.guid;
+    playerOrder = other.playerOrder;
     skillId = other.skillId;
     reqSkillValue = other.reqSkillValue;
     reqItem = other.reqItem;
@@ -756,7 +759,8 @@ std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
                 continue;
         }
 
-        LootObject lootObject(bot, guid);
+        // Automatic pickup: no player order, so a chest holding only common loot is dropped here.
+        LootObject lootObject(bot, guid, false);
         if (!lootObject.IsLootPossible(bot))
             continue;
 

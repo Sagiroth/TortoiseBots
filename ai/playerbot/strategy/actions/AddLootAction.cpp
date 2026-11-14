@@ -104,7 +104,8 @@ bool AddAllLootAction::isUseful()
 
 bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 {
-    LootObject loot(bot, guid);
+    // The bot's own sweep, not an order: the common-loot pickup filter applies.
+    LootObject loot(bot, guid, false);
 
     if (ai->HasStrategy("debug loot", BotState::BOT_STATE_NON_COMBAT))
         loot.Refresh(bot, guid, true);
@@ -278,7 +279,8 @@ bool AddGatheringLootAction::isUseful()
 
 bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
 {
-    LootObject loot(bot, guid);
+    // The bot's own sweep, not an order: the common-loot pickup filter applies.
+    LootObject loot(bot, guid, false);
 
     WorldObject *wo = loot.GetWorldObject(bot);
     if (loot.IsEmpty() || !wo)
