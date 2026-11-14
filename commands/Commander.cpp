@@ -6652,7 +6652,18 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                     if ((released || running) && !member->IsAlive() &&
                         IsLiveHeadlessBot(member, memberRecord) && !member->IsBeingTeleportedFar() &&
                         member->IsInWorld() && member->FindMap())
+                    {
                         member->RepopAtGraveyard();
+                        // The repop resurrects first and sends the entrance
+                        // near teleport second; the position only moves on the
+                        // ack, which BotManager sends after this world update.
+                        // A bot that stays alive at its corpse for that one
+                        // map update pulls the boss onto the revived raid
+                        // (walk 92, Hakkar regroup). Ack inside this call
+                        // stack, so no map update ever sees it there.
+                        if (member->IsAlive() && member->IsBeingTeleportedNear())
+                            memberAi->HandleTeleportAck();
+                    }
                     if (released || running)
                         ++revived;
                 }

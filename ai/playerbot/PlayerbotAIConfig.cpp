@@ -156,6 +156,12 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunTankPostOwnsSubject =
         config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostOwnsSubject", false);
     dungeonRunTankPostTaunts = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostTaunts", false);
+    dungeonRunTankPostWalks = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostWalks", false);
+    dungeonRunTankPostOwnsUnit = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostOwnsUnit", false);
+    dungeonRunTankPostMain = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostMain", false);
+    dungeonRunTankPostKeepsUnit = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostKeepsUnit", false);
+    dungeonRunTankPostWaits = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostWaits", false);
+    dungeonRunTankPostHealers = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostHealers", false);
     dungeonRunSeekAura = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekAura", false);
     dungeonRunSeekPullCycle = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekPullCycle", false);
     dungeonRunSeekSonMeet = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekSonMeet", false);
@@ -207,6 +213,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunThreatSuccessorKeepsAway = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway", false);
     dungeonRunFactJudgeCharmedLead = config.GetBoolDefault("AiPlayerbot.DungeonRunFactJudgeCharmedLead", false);
     dungeonRunTauntGate = config.GetBoolDefault("AiPlayerbot.DungeonRunTauntGate", false);
+    dungeonRunTauntAfterSkipsMain = config.GetBoolDefault("AiPlayerbot.DungeonRunTauntAfterSkipsMain", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));

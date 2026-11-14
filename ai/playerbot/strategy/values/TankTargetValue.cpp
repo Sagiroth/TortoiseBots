@@ -189,6 +189,19 @@ public:
         // switching the tank off would leave the Son on the healer (M3).
         if (oldUnit && ::ai::IsSeekSourceForTankPickup(ai, bot, oldUnit))
             return false;
+        // AiPlayerbot.DungeonRunTankPostKeepsUnit: a latched `tank_post` keeps its unit, even when the raid tank order
+        // moved the post's row to another slot index (its record still names the unit it arrived on), and no other
+        // loose add pulls the tank off it. Neither candidate latched: the ranking below is unchanged.
+        std::uint64_t const oldGuid = oldUnit ? oldUnit->GetObjectGuid().GetRawValue() : 0;
+        // The record's lock is taken only with the key on: off, the pick is the pre-key comparison.
+        std::uint64_t const postLatched =
+            sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit ? ::ai::TankPostLatchedUnit(bot) : 0;
+        int const postPick = ::ai::TankPostUnitPick(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit, postLatched,
+            newUnit->GetObjectGuid().GetRawValue(), oldGuid);
+        if (postPick > 0)
+            return true;
+        if (postPick < 0)
+            return false;
         // A loose add a tank_hold row lists, on a non-tank, outranks the explicit main tank's stickiness below (a ZG
         // Mad Voidwalker shocks the raid while a non-tank holds it): only when exactly one of the two candidates is
         // such a pickup, so a tank holding its pickup keeps it. Without the row or the strategy both are false and the

@@ -26,7 +26,7 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `burn_order`, "
         "`hp_min`, `hp_max`, `bot_aura`, `tactic_mode`, `window_s`, `cycle_spell`, `cycle_s`, `spot_x`, `spot_y`, "
-        "`spot_z` FROM `ai_boss_tactic`"));
+        "`spot_z`, `healers` FROM `ai_boss_tactic`"));
     if (result)
     {
         do
@@ -52,6 +52,7 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
             row.spotX = fields[15].GetFloat();
             row.spotY = fields[16].GetFloat();
             row.spotZ = fields[17].GetFloat();
+            row.healers = fields[18].GetUInt8();
             // A linked_death group's burn order: comma-separated creature entries, in the order the group dies.
             // Every other kind leaves the column empty (the shipped default).
             if (row.kind == BossTacticKind::LinkedDeath)
@@ -88,8 +89,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
                     "neither 0 nor at least 10 s, a row with neither aura nor timer, a seek_aura, pull_gate or spread "
                     "row it cannot use, an anchor row it cannot use, a seek_pull row it cannot use, a gate_hold row it "
                     "cannot use, a tank_post row it cannot use, an add_crew row it cannot use, "
-                    "a gate_hold row whose blocker is its own boss, a cycle or spot column on another kind, or a "
-                    "second row of the key)", row.map,
+                    "a gate_hold row whose blocker is its own boss, a cycle or spot column on another kind, a healers "
+                    "count on another kind, or a second row of the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);
             }
         } while (result->NextRow());

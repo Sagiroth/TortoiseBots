@@ -628,6 +628,268 @@ static void TestTankPostOwns_KeyOffWritesNoSlotWord()
     CHECK(!TankPostEndsAsSlot(false, true, false)); // the same renumbering with the key off: band
 }
 
+// Walk 2f a-2: slot 1 stood on the post at (8, -200) with Cindarion 40 yd away, the Engage step's attack returned true
+// every tick and `reach melee` never ran, so the step never walked. The walk needs the key, no taunt this tick, the
+// unit out of melee reach and no boss stand (a seat, a stay included, keeps the tank on its breath lane).
+static void TestTankPostEngageWalks_OutOfReach()
+{
+    // TankPostEngageWalks(keyOn, tauntWentOut, inMeleeReach, standActive)
+    CHECK(TankPostEngageWalks(true, false, false, false)); // key on, no taunt, out of reach: the step walks to the unit
+    CHECK(!TankPostEngageWalks(true, false, true, false)); // in reach: attack it where it stands
+    CHECK(!TankPostEngageWalks(true, true, false, false)); // a taunt went out: the tick ends on it
+    CHECK(!TankPostEngageWalks(false, false, false, false)); // key off: today's attack only
+    CHECK(!TankPostEngageWalks(true, false, false, true)); // a stand (a stay included): no walk out of its lane
+}
+
+// The walk's destination is a point at melee distance on the line from the tank to the subject, not MoveTo(Unit*),
+// which aims a hostile unit at the stance's formation spot (or refuses the move when there is none).
+static void TestTankPostMeleePoint_NoFormationNeeded()
+{
+    float x = 0.0f, y = 0.0f;
+    // A tank 40 yd east of its subject, a 6 yd combined reach: 4.8 yd east of the subject.
+    CHECK(TankPostMeleePoint(40.0f, 0.0f, 0.0f, 0.0f, 6.0f, x, y));
+    CHECK(std::fabs(x - 4.8f) < 0.01f);
+    CHECK(std::fabs(y) < 0.01f);
+    // Never past the tank's own spot: a 6 yd reach with the tank 3 yd off stays on its side of the subject.
+    CHECK(TankPostMeleePoint(3.0f, 0.0f, 0.0f, 0.0f, 6.0f, x, y));
+    CHECK(std::fabs(x - 3.0f) < 0.01f);
+    // A tiny reach still leaves a standing point off the body.
+    CHECK(TankPostMeleePoint(0.0f, 10.0f, 0.0f, 0.0f, 0.2f, x, y));
+    CHECK(std::fabs(y - 0.5f) < 0.01f);
+    // On one spot there is no line to walk.
+    CHECK(!TankPostMeleePoint(0.0f, 0.0f, 0.0f, 0.0f, 6.0f, x, y));
+}
+
+// Walk 2f F2: two posts on the Hatcher entry 50144 each reserved both Hatchers against the other tank, and the post's
+// own update reset the shared loose clock, so the 15 s grace never ended. A record owns the one unit it latched.
+static void TestTankPostRecordCovers_OtherUnitFree()
+{
+    std::uint64_t const a = 1000, b = 2000;
+    // TankPostRecordCovers(keyOn, latchedGuid, targetGuid)
+    CHECK(!TankPostRecordCovers(true, a, b)); // latched A, target B: not this post's unit
+    CHECK(TankPostRecordCovers(true, a, a));  // the unit it latched
+    CHECK(TankPostRecordCovers(true, 0, b));  // nothing latched yet: the entry reserves as before
+    CHECK(TankPostRecordCovers(false, a, b)); // key off: every unit of the entry
+}
+
+// Two posts and two Hatchers: the pick prefers the unit a post latched and skips the other post's, so repeated reads
+// keep each post on its own Hatcher instead of trading them.
+static void TestTankPostPickKeepsOwnUnit()
+{
+    std::uint64_t const a = 1000, b = 2000;
+    std::vector<TankPostUnit> units(2);
+    units[0].guid = a;
+    units[0].x = 1.0f;
+    units[0].alive = true; // the nearer one
+    units[1].guid = b;
+    units[1].x = 30.0f;
+    units[1].alive = true;
+    std::unordered_set<std::uint64_t> none;
+    std::unordered_set<std::uint64_t> otherA;
+    otherA.insert(a);
+    // Without a latch the posts would both take the nearest; with the key each record keeps its own.
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, none) == 0);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, a, none) == 0);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, b, none) == 1);
+    // The second post skips the unit the first latched and picks the free one (the same across reads).
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, 0, otherA) == 1);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, 0, otherA) == 1);
+    // Its own latched unit is never skipped, even if another record also latched it.
+    std::unordered_set<std::uint64_t> otherB;
+    otherB.insert(b);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, b, otherB) == 1);
+    // A dead latched unit does not win: the free living one does.
+    units[1].alive = false;
+    otherB.clear();
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, b, otherB) == 0);
+    // Every unit another post latched: no candidate, and with the key off the nearest as before.
+    std::unordered_set<std::uint64_t> both;
+    both.insert(a);
+    both.insert(b);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, 0, both) == -1);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, both) == 0);
+}
+
+// Walk 2g: all five P3 post ends were `reason=slot`, a tank ahead died and the row pick followed the live index, so a
+// post that had its unit lost it to a renumbering. With the key on the record's row and its living unit are the
+// post's own, whatever slot index the tank order moved the bot to.
+static void TestTankPostKeepsRow_SurvivesRenumber()
+{
+    // TankPostKeepsRow(keyOn, haveRecord, latchedGuid, latchedAlive)
+    CHECK(TankPostKeepsRow(true, true, 4242, true));   // a latched, living unit: the row survives the renumbering
+    CHECK(!TankPostKeepsRow(true, true, 4242, false)); // the unit died: the post ends as today
+    CHECK(!TankPostKeepsRow(true, true, 0, true));     // nothing latched yet: the slot pick runs
+    CHECK(!TankPostKeepsRow(true, false, 4242, true)); // no record: no post to keep
+    CHECK(!TankPostKeepsRow(false, true, 4242, true)); // key off: today's `slot` end
+}
+
+// AiPlayerbot.DungeonRunTankPostMain: slot 0 is the main tank, and it holds a post only with the key on (the loader
+// accepts such a row only on the row's own boss, so the key is the whole gate).
+static void TestTankPostRowUsable_SlotZeroNeedsKey()
+{
+    // TankPostRowUsable(mainKeyOn, priority)
+    CHECK(TankPostRowUsable(true, 0));   // slot 0 with the key: the main tank's post on the boss
+    CHECK(!TankPostRowUsable(false, 0)); // key off: slot 0 is no post and the boss is taken by the ordinary pick
+    CHECK(TankPostRowUsable(false, 3));  // any other slot needs no key
+    CHECK(TankPostRowUsable(true, 3));
+}
+
+// The row a tank's slot names: its own index, and slot 0 only with AiPlayerbot.DungeonRunTankPostMain. With the key
+// off a priority-0 row is never matched, whatever the bot's index.
+static void TestTankPostSlotRow_MainKeyGatesSlotZero()
+{
+    // TankPostSlotRow(mainKeyOn, priority, botIndex)
+    CHECK(!TankPostSlotRow(false, 0, 0)); // key off: a priority-0 row is no post
+    CHECK(TankPostSlotRow(true, 0, 0));   // key on: the main tank's row
+    CHECK(!TankPostSlotRow(true, 0, 1));  // a priority-0 row is not an off-tank's row
+    CHECK(!TankPostSlotRow(true, 1, 0));  // nor is a slot-1 row the main tank's
+    CHECK(TankPostSlotRow(false, 1, 1));  // any other slot needs no key
+    CHECK(!TankPostSlotRow(true, 1, -1)); // no tank index: no row
+}
+
+// Fable H1: the main tank dies, the raid order makes the old slot 1 the main tank (index 0), and that bot still holds
+// its kept slot-1 row with the latched unit alive. Nobody else can take the slot-0 (Onyxia) row, so the kept row must
+// give way; with the key off, or with the slot-0 row held by another live post, it does not.
+static void TestTankPost_NewMainTankTakesSlotZeroRow()
+{
+    // The new main tank: index 0, a kept row whose latched unit lives, Onyxia's row open and unheld.
+    bool const kept = TankPostKeepsRow(true, true, 4242, true);
+    CHECK(kept);
+    // The dead tank's record is no live post, so the slot-0 row is open for the new main tank.
+    CHECK(!TankPostRowHeldByOther(false, false)); // the record is not live
+    CHECK(!TankPostRowHeldByOther(true, false));  // its tank cannot act (dead): it holds nothing
+    CHECK(TankPostRowHeldByOther(true, true));    // a live post of a tank that can act does hold the row
+    bool const slotZeroOpen = TankPostSlotRow(true, 0, 0) && !TankPostRowHeldByOther(false, false);
+    CHECK(slotZeroOpen);
+    // The kept row yields, so the pick is the slot-0 row.
+    CHECK(TankPostKeptRowYields(true, slotZeroOpen));
+    CHECK(!TankPostKeptRowYields(false, slotZeroOpen)); // an off-tank keeps its own row
+    // The key gates the whole case: with it off, slot 0 is no row and the kept row stays.
+    CHECK(!(TankPostSlotRow(false, 0, 0) && !TankPostRowHeldByOther(false, false)));
+    CHECK(!TankPostKeptRowYields(true, TankPostSlotRow(false, 0, 0)));
+    // A live post on the slot-0 row keeps the newly main tank on its own row: two posts never share a row.
+    bool const heldSlotZeroOpen = TankPostSlotRow(true, 0, 0) && !TankPostRowHeldByOther(true, true);
+    CHECK(!heldSlotZeroOpen);
+    CHECK(!TankPostKeptRowYields(true, heldSlotZeroOpen));
+}
+
+// AiPlayerbot.DungeonRunTankPostKeepsUnit at the tank's target pick: the latched unit wins the comparison in both
+// directions and every other candidate leaves it alone.
+static void TestTankPostUnitPick_LatchedWins()
+{
+    std::uint64_t const latched = 4242, other = 777;
+    // TankPostUnitPick(keyOn, latched, newGuid, oldGuid)
+    CHECK(TankPostUnitPick(true, latched, latched, other) == 1);  // the new candidate is the post's unit: keep it
+    CHECK(TankPostUnitPick(true, latched, other, latched) == -1); // the held one is: do not switch off it
+    CHECK(TankPostUnitPick(true, latched, latched, latched) == 0); // both: the ranking below decides
+    CHECK(TankPostUnitPick(true, latched, other, other) == 0);     // neither: as before
+    CHECK(TankPostUnitPick(false, latched, latched, other) == 0);  // key off: today's pick
+    CHECK(TankPostUnitPick(true, 0, latched, other) == 0);         // nothing latched: today's pick
+}
+
+// Walk 2g: Onyxia's post must run before she is targetable (a hold_spot post on the row's own boss). With the wait key
+// a subjectless post walks to its spot, holds there, and still yields to a stand seat; with the key off today's rule
+// ends a started post whose unit is gone.
+static void TestTankPostStep_WaitsAtSpot()
+{
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.tankCanAct = true;
+    in.holdSpot = true;
+    in.waits = true;
+    in.arrivalRadiusYd = 90.0f;
+    in.leash = true;
+    in.botToSpotYd = 26.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Leash); // 26 yd out with no unit: walk to the spot
+    in.botToSpotYd = 4.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);  // at the spot: wait for her
+    in.botToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);  // inside the hold radius, still waiting
+    in.seated = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Yield); // a boss stand seat outranks the wait
+    in.seated = false;
+    in.waits = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);   // the key off: today's rule, a started post with no unit ends
+    in.started = false;
+    CHECK(TankPostStep(in) == TankPostDecision::None);  // the key off and no post yet: no post to end
+}
+
+// Codex T: the action's entry guard. A waiting post has no unit, so its Leash walk back and its Hold at the spot must
+// reach the action (the Hold stops the tank's move); every other step needs the awaited unit.
+static void TestTankPostActionRuns_WaitingPost()
+{
+    // TankPostActionRuns(valid, haveRow, haveSubject, step)
+    CHECK(TankPostActionRuns(true, true, false, TankPostDecision::Leash)); // no subject: the walk back runs
+    CHECK(TankPostActionRuns(true, true, false, TankPostDecision::Hold));  // no subject: the hold runs (StopMoving)
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::Engage)); // every other step needs the unit
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::Drag));
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::Walk));
+    CHECK(TankPostActionRuns(true, true, true, TankPostDecision::Engage));  // with the unit, all steps run
+    CHECK(TankPostActionRuns(true, true, true, TankPostDecision::Hold));
+    CHECK(!TankPostActionRuns(false, true, true, TankPostDecision::Engage)); // no post: nothing runs
+    CHECK(!TankPostActionRuns(true, false, true, TankPostDecision::Engage)); // no row: nothing runs
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::None));   // no step: nothing runs
+}
+
+// Fable M1: a waiting post restarted forever. Its unit dies, the step ends the post, and with the record erased the
+// next tick starts a fresh one (a new window) for as long as the band stands. The done record keeps the band from
+// starting it again; it goes when the band closes.
+static void TestTankPost_WaitDoesNotRestartInBand()
+{
+    // The band is open, the row is a wait row, the tank stands on its spot, and its unit has not arrived yet.
+    TankPostIn in;
+    in.live = true;
+    in.tankCanAct = true;
+    in.holdSpot = true;
+    in.waits = true;
+    in.waitRow = true;
+    in.arrivalRadiusYd = 90.0f;
+    in.botToSpotYd = 2.0f;
+    // No record yet: the wait starts (Hold at the spot), and the action writes a record.
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.started = true;
+    // Her unit lands and the arrival latches, then it dies: the step ends the post.
+    in.waits = false;
+    in.subjectFound = true;
+    in.subjectAlive = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.subjectAlive = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    // The end keeps a done record: with it, the step does nothing, so no new post starts inside the band.
+    CHECK(TankPostKeepsDoneRecord(true, TankPostDecision::End));
+    in.done = true;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+    // A post that is not a wait row leaves nothing: its restart needs a living subject anyway.
+    CHECK(!TankPostKeepsDoneRecord(false, TankPostDecision::End));
+    CHECK(!TankPostKeepsDoneRecord(true, TankPostDecision::Engage));
+}
+
+// Codex M: a renumbering erased the waiting post's done record before its band closed, so the row started a fresh post
+// inside the same band. The record stays while its row stands in the fight for another slot index, and the step keeps
+// doing nothing with it; only a band that closed (its row and boss gone) releases it.
+static void TestTankPost_DoneRecordSurvivesRenumber()
+{
+    // TankPostDoneRecordStays(done, bandOpen)
+    CHECK(TankPostDoneRecordStays(true, true));   // a renumbering: the row moved to another slot index, the band stands
+    CHECK(!TankPostDoneRecordStays(false, true)); // an open post: the row pick decides it as today
+    CHECK(!TankPostDoneRecordStays(true, false)); // the band closed: the record goes
+    // The kept record's step, at the bot's new slot row: no post starts in the band.
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.done = true;
+    in.slotMoved = true;
+    in.holdSpot = true;
+    in.waits = true;
+    in.waitRow = true;
+    in.arrivalRadiusYd = 90.0f;
+    in.botToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+}
+
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
 // interval is 1 s under the hold.
 static void TestCarrierHold()
@@ -970,11 +1232,11 @@ static void TestTankPost_UnselectableSubjectNotArrived()
         units[2].y = 0.0f;
         units[2].z = 0.0f;
         units[2].alive = true;
-        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 2);
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, {}) == 2);
         units[2].alive = false;
         units[1].alive = false;
-        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 0);  // the nearest, now that none lives
-        CHECK(PickTankPostUnit(std::vector<TankPostUnit>(), 0.0f, 0.0f, 0.0f) == -1);
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, {}) == 0);  // the nearest, now that none lives
+        CHECK(PickTankPostUnit(std::vector<TankPostUnit>(), 0.0f, 0.0f, 0.0f, false, 0, {}) == -1);
     }
 
     // The step closes a held post on each of the row's ends, and does nothing before a post exists.
@@ -1562,6 +1824,243 @@ static void TestTankPostRow_RadiusCap()
     CHECK(loads(40.0f));
 }
 
+// Walk 2i H: the healers a `hold_spot` post holds on its tank. Every candidate and the incumbents are ranked together
+// on each scan: the raid layout's seat on this holder, then more mana, then distance, then guid. A healer under 10 %
+// mana is no candidate at all, and an incumbent keeps its seat unless a challenger clears the swap margin. The failing
+// case is the fill itself: sorting by distance first picks B (5 yd) over C (the layout's own tank seat, 40 yd).
+static void TestPickTankPostHealers_ReranksAndFills()
+{
+    auto const candidate = [](std::uint64_t guid, std::uint8_t rank, float manaPct, float yd)
+    {
+        TankPostHealerCandidate c;
+        c.guid = guid;
+        c.seatRank = rank;
+        c.manaPct = manaPct;
+        c.ydToHolder = yd;
+        return c;
+    };
+    const std::vector<TankPostHealerCandidate> all = {
+        candidate(1, 1, 60.0f, 30.0f),   // A: held, no tank seat
+        candidate(2, 2, 100.0f, 5.0f),   // B: another tank's seat, nearest
+        candidate(3, 0, 100.0f, 40.0f),  // C: the layout's seat on this holder
+        candidate(4, 1, 5.0f, 10.0f),    // D: under the mana floor
+        candidate(5, 1, 60.0f, 25.0f),   // E: no tank seat, 5 yd closer than A
+    };
+    CHECK(PickTankPostHealers({1}, all, 2) == std::vector<std::uint64_t>({3, 1})); // C fills; E is inside the margin
+    CHECK(PickTankPostHealers({}, all, 2) == std::vector<std::uint64_t>({3, 5}));  // the ranked pair, never D
+    CHECK(PickTankPostHealers({1}, all, 0).empty());            // want 0: nobody
+    CHECK(PickTankPostHealers({}, {candidate(2, 1, 100.0f, 5.0f)}, 2) == std::vector<std::uint64_t>({2}));
+    CHECK(PickTankPostHealers({}, all, 9).size() == 4);          // never more than kTankPostHealersMax
+    // A held healer that is no candidate any more is dropped; a held pair with no challenger keeps both seats and
+    // the output is the ranked order.
+    const std::vector<TankPostHealerCandidate> held = {
+        candidate(1, 1, 60.0f, 30.0f),
+        candidate(5, 1, 60.0f, 25.0f),
+    };
+    CHECK(PickTankPostHealers({1, 5}, held, 2) == std::vector<std::uint64_t>({5, 1}));
+    CHECK(PickTankPostHealers({5}, {candidate(3, 0, 100.0f, 1.0f)}, 2) == std::vector<std::uint64_t>({3}));
+    CHECK(PickTankPostHealers({4}, all, 2) == std::vector<std::uint64_t>({3, 5})); // the held one has no mana
+}
+
+// The depleted pair: two held healers run under 10 % mana while two full-mana ones stand free, so both seats are
+// reassigned on the very scan. The failing case is the old sticky set, which kept them until they died.
+static void TestPickTankPostHealers_DepletedPairIsSwapped()
+{
+    auto const candidate = [](std::uint64_t guid, float manaPct, float yd)
+    {
+        TankPostHealerCandidate c;
+        c.guid = guid;
+        c.seatRank = 1;
+        c.manaPct = manaPct;
+        c.ydToHolder = yd;
+        return c;
+    };
+    const std::vector<TankPostHealerCandidate> all = {
+        candidate(11, 5.0f, 10.0f),   // held, under the floor
+        candidate(12, 2.0f, 12.0f),   // held, under the floor
+        candidate(21, 100.0f, 20.0f), // free
+        candidate(22, 90.0f, 25.0f),  // free
+    };
+    CHECK(PickTankPostHealers({11, 12}, all, 2) == std::vector<std::uint64_t>({21, 22}));
+    CHECK(PickTankPostHealers({11, 12}, all, 1) == std::vector<std::uint64_t>({21}));
+}
+
+// The margin that keeps a seat still: a better seat wins outright, 20 % more mana wins, and 10 yd wins only while the
+// mana stays inside its own margin; a near-equal challenger leaves the incumbent where it is.
+static void TestPickTankPostHealers_SwapMargins()
+{
+    auto const candidate = [](std::uint64_t guid, std::uint8_t rank, float manaPct, float yd)
+    {
+        TankPostHealerCandidate c;
+        c.guid = guid;
+        c.seatRank = rank;
+        c.manaPct = manaPct;
+        c.ydToHolder = yd;
+        return c;
+    };
+    CHECK(kTankPostHealerSwapManaPct == 20.0f);
+    CHECK(kTankPostHealerSwapYd == 10.0f);
+    CHECK(!TankPostHealerDisplaces(candidate(2, 1, 90.0f, 10.0f), candidate(1, 1, 75.0f, 10.0f))); // 15 % mana
+    CHECK(TankPostHealerDisplaces(candidate(2, 1, 95.0f, 10.0f), candidate(1, 1, 75.0f, 10.0f)));  // 20 %
+    CHECK(!TankPostHealerDisplaces(candidate(2, 1, 60.0f, 5.0f), candidate(1, 1, 95.0f, 30.0f)));  // mana far behind
+    CHECK(TankPostHealerDisplaces(candidate(2, 1, 90.0f, 20.0f), candidate(1, 1, 85.0f, 30.0f)));  // 10 yd
+    CHECK(!TankPostHealerDisplaces(candidate(2, 1, 90.0f, 21.5f), candidate(1, 1, 85.0f, 30.0f))); // 8.5 yd
+    CHECK(TankPostHealerDisplaces(candidate(2, 0, 50.0f, 40.0f), candidate(1, 1, 100.0f, 5.0f)));  // seat
+    // A held healer inside the margin keeps its seat on the next scan; the same pair the other way keeps the other.
+    const std::vector<TankPostHealerCandidate> all = {
+        candidate(1, 1, 75.0f, 10.0f),
+        candidate(2, 1, 90.0f, 10.0f),
+    };
+    CHECK(PickTankPostHealers({1}, all, 1) == std::vector<std::uint64_t>({1}));
+    CHECK(PickTankPostHealers({2}, all, 1) == std::vector<std::uint64_t>({2}));
+}
+
+// AiPlayerbot.DungeonRunTankPostHealers: a post healer's heal target is its holder or nobody.
+static void TestTankPostHealPickOf_HolderOrNobody()
+{
+    CHECK(TankPostHealPickOf(false, true) == TankPostHealPick::Normal);  // no duty: today's pick
+    CHECK(TankPostHealPickOf(false, false) == TankPostHealPick::Normal);
+    CHECK(TankPostHealPickOf(true, true) == TankPostHealPick::Holder);   // on duty, in reach: the holder
+    CHECK(TankPostHealPickOf(true, false) == TankPostHealPick::None);    // out of reach: nobody, never another target
+}
+
+// The walk back: beside the held unit while it stands near the holder, else a point on the line to the healer.
+static void TestTankPostHealerPoint_FlankOrLine()
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    // Unit (0, 0), holder (10, 0): the flank is 20 yd from the unit on the healer's side of that line.
+    TankPostHealerPoint(true, 0.0f, 0.0f, 10.0f, 0.0f, -5.0f, 40.0f, x, y);
+    CHECK(Near(x, 0.0f) && Near(y, 20.0f));
+    TankPostHealerPoint(true, 0.0f, 0.0f, 10.0f, 0.0f, -5.0f, -40.0f, x, y);
+    CHECK(Near(x, 0.0f) && Near(y, -20.0f));
+    // The flank only while the unit stands within 15 yd of the holder; else the line, 25 yd from the holder.
+    TankPostHealerPoint(true, 0.0f, 0.0f, 16.0f, 0.0f, -5.0f, 40.0f, x, y);
+    const float dx = x - 16.0f;
+    const float dy = y - 0.0f;
+    CHECK(Near(std::sqrt(dx * dx + dy * dy), 25.0f));
+    CHECK(x < 16.0f && y > 0.0f);
+    // No unit: the same line.
+    TankPostHealerPoint(false, 0.0f, 0.0f, 10.0f, 0.0f, 10.0f, 40.0f, x, y);
+    CHECK(Near(x, 10.0f) && Near(y, 25.0f));
+}
+
+// Walk 2i H: the leash is 30 yd (2D), not 30.01.
+static void TestTankPostHealerFar_PastThirty()
+{
+    CHECK(kTankPostHealerYd == 30.0f);
+    CHECK(!TankPostHealerFar(0.0f));
+    CHECK(!TankPostHealerFar(30.0f));
+    CHECK(TankPostHealerFar(30.1f));
+}
+
+// Walk 2i C: the holder's cooldown fires on the first sighting of the row's spell after its unit was on it, once per
+// post. The failing case is the landing cast: without heldOnce a Roar at the landing spends the window before the
+// tank has her, and the first Roar that matters finds nothing left.
+static void TestTankPostCooldownSeen_FirstSightingAfterHold()
+{
+    CHECK(TankPostCooldownSeen(true, 18431, true, false, true));
+    CHECK(!TankPostCooldownSeen(false, 18431, true, false, true));  // key off
+    CHECK(!TankPostCooldownSeen(true, 0, true, false, true));       // no row spell
+    CHECK(!TankPostCooldownSeen(true, 18431, false, false, true));  // the landing cast, before the tank had her
+    CHECK(!TankPostCooldownSeen(true, 18431, true, true, true));    // a second Roar of the same post
+    CHECK(!TankPostCooldownSeen(true, 18431, true, false, false));  // no aura seen
+    CHECK(kTankPostCooldownTryMs == 10000);
+}
+
+// The class's defensive actions, in cast order; a class with none keeps its own rules. A druid tank stands in bear
+// or dire bear form, where CastBarkskinAction refuses, so its only entry is Frenzied Regeneration.
+static void TestTankPostCooldownActions_ByClass()
+{
+    CHECK(TankPostCooldownActions(1) == std::vector<const char*>({"shield wall", "last stand"}));
+    CHECK(TankPostCooldownActions(11) == std::vector<const char*>({"frenzied regeneration"}));
+    CHECK(TankPostCooldownActions(2).empty());   // paladin, no fallback
+    CHECK(TankPostCooldownActions(5).empty());   // priest
+    CHECK(TankPostCooldownActions(0).empty());
+}
+
+// The real actions' form guards, as the class actions state them: CastBarkskinAction refuses in cat, bear, dire bear
+// and tree of life form; shield wall and last stand carry no form guard. The standalone harness has no bot to build
+// the action objects for, so the guard is pinned here and every configured name must pass it. The failing case is the
+// list that named barkskin for a bear tank: the action refuses, and the window closed without a fallback.
+static bool TankPostActionRefusedInTankForm(std::uint8_t classId, const char* action)
+{
+    if (classId == 11) // CLASS_DRUID, tanking in bear or dire bear form
+        return std::strcmp(action, "barkskin") == 0;
+    return false;
+}
+
+static void TestTankPostCooldownActions_RunInTheTankForm()
+{
+    CHECK(TankPostActionRefusedInTankForm(11, "barkskin"));              // the guard the list must respect
+    CHECK(!TankPostActionRefusedInTankForm(11, "frenzied regeneration"));
+    for (std::uint8_t classId = 0; classId < 12; ++classId)
+        for (const char* name : TankPostCooldownActions(classId))
+            CHECK(!TankPostActionRefusedInTankForm(classId, name));
+}
+
+// The window: cast while a name is left, give up once at its end, nothing after the last one.
+static void TestTankPostCooldownStep_WindowAndGiveUp()
+{
+    CHECK(TankPostCooldownStep(true, 0, 2, 500) == TankPostCooldown::Cast);
+    CHECK(TankPostCooldownStep(true, 1, 2, 9999) == TankPostCooldown::Cast);
+    CHECK(TankPostCooldownStep(true, 2, 2, 500) == TankPostCooldown::None);
+    CHECK(TankPostCooldownStep(true, 1, 2, 10000) == TankPostCooldown::GiveUp);
+    CHECK(TankPostCooldownStep(false, 0, 2, 500) == TankPostCooldown::None);
+    CHECK(TankPostCooldownStep(true, 0, 0, 500) == TankPostCooldown::None);
+}
+
+// The hold tick: the unit on this tank with no raid member carrying the row's aura. The landing Roar shows both at
+// once, so that tick counts nothing and the next fresh Roar is the first sighting. The failing case is the old gate,
+// which counted the landing tick and spent the window on a Roar the tank already wore.
+static void TestTankPostCooldownHolds_LandingRoarDoesNotCount()
+{
+    CHECK(TankPostCooldownHolds(true, false));
+    CHECK(!TankPostCooldownHolds(true, true));   // the landing: she is on the tank and the raid still carries it
+    CHECK(!TankPostCooldownHolds(false, false));
+    bool heldOnce = false;
+    heldOnce = heldOnce || TankPostCooldownHolds(true, true);
+    CHECK(!heldOnce);
+    CHECK(!TankPostCooldownSeen(true, 18431, heldOnce, false, true)); // the landing Roar does not fire
+    heldOnce = heldOnce || TankPostCooldownHolds(true, false);        // the aura faded while she was on the tank
+    CHECK(heldOnce);
+    CHECK(!TankPostCooldownSeen(true, 18431, heldOnce, false, false)); // no aura now: nothing to answer
+    CHECK(TankPostCooldownSeen(true, 18431, heldOnce, false, true));   // the next fresh Roar fires
+}
+
+// A refused action is not an attempt: the tick passes it and asks the next name now, so a form-locked entry cannot
+// hold the window. Nothing to spend when every name left refuses; the one-name druid list is that case. The failing
+// case is the old tick, which asked only the first name and treated its form refusal as spent.
+static void TestTankPostCooldownPick_RefusedIsPassedOver()
+{
+    const std::vector<const char*> names = TankPostCooldownActions(1); // shield wall, last stand
+    CHECK(TankPostCooldownPick(0, names.size(), [](std::size_t i) { return i != 0; }) == 1);
+    CHECK(TankPostCooldownPick(0, names.size(), [](std::size_t) { return false; }) == names.size());
+    CHECK(TankPostCooldownPick(0, names.size(), [](std::size_t) { return true; }) == 0);
+    CHECK(TankPostCooldownPick(1, names.size(), [](std::size_t) { return true; }) == 1);
+    const std::vector<const char*> bear = TankPostCooldownActions(11);
+    CHECK(bear.size() == 1);
+    CHECK(TankPostCooldownPick(0, bear.size(), [](std::size_t) { return false; }) == bear.size());
+}
+
+// An action that accepted but whose cast did not go out (on cooldown) spends its name: shield wall leaves last stand
+// for the next tick, and the last spent name closes the window. A cast closes it at once, whatever is left.
+static void TestTankPostCooldownAfter_SpentAndCast()
+{
+    const std::vector<const char*> names = TankPostCooldownActions(1);
+    TankPostCooldownAttempt attempt = TankPostCooldownAfter(0, names.size(), TankPostCooldownOutcome::Spent);
+    CHECK(attempt.tried == 1);
+    CHECK(!attempt.closed);
+    CHECK(TankPostCooldownStep(true, attempt.tried, names.size(), 500) == TankPostCooldown::Cast);
+    CHECK(std::strcmp(names[attempt.tried], "last stand") == 0);
+    attempt = TankPostCooldownAfter(attempt.tried, names.size(), TankPostCooldownOutcome::Spent);
+    CHECK(attempt.closed);
+    CHECK(TankPostCooldownStep(true, attempt.tried, names.size(), 500) == TankPostCooldown::None);
+    CHECK(TankPostCooldownAfter(0, names.size(), TankPostCooldownOutcome::Cast).closed);
+    CHECK(TankPostCooldownAfter(0, 1, TankPostCooldownOutcome::Spent).closed); // the druid's one name
+    CHECK(TankPostCooldownAfter(255, 300, TankPostCooldownOutcome::Spent).tried == 255); // the count saturates
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -1740,6 +2239,19 @@ int main()
     TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius();
     TestTankPostEndWord_SlotMoved();
     TestTankPostOwns_KeyOffWritesNoSlotWord();
+    TestTankPostEngageWalks_OutOfReach();
+    TestTankPostMeleePoint_NoFormationNeeded();
+    TestTankPostRecordCovers_OtherUnitFree();
+    TestTankPostPickKeepsOwnUnit();
+    TestTankPostKeepsRow_SurvivesRenumber();
+    TestTankPostRowUsable_SlotZeroNeedsKey();
+    TestTankPostSlotRow_MainKeyGatesSlotZero();
+    TestTankPost_NewMainTankTakesSlotZeroRow();
+    TestTankPostUnitPick_LatchedWins();
+    TestTankPostStep_WaitsAtSpot();
+    TestTankPostActionRuns_WaitingPost();
+    TestTankPost_WaitDoesNotRestartInBand();
+    TestTankPost_DoneRecordSurvivesRenumber();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();
@@ -1776,6 +2288,19 @@ int main()
     TestTankPostTauntStep_AreaOnlyOffNonTank();
     TestTankPostTauntWord_All();
     TestTankPostRow_RadiusCap();
+    TestPickTankPostHealers_ReranksAndFills();
+    TestPickTankPostHealers_DepletedPairIsSwapped();
+    TestPickTankPostHealers_SwapMargins();
+    TestTankPostHealPickOf_HolderOrNobody();
+    TestTankPostHealerPoint_FlankOrLine();
+    TestTankPostHealerFar_PastThirty();
+    TestTankPostCooldownSeen_FirstSightingAfterHold();
+    TestTankPostCooldownActions_ByClass();
+    TestTankPostCooldownActions_RunInTheTankForm();
+    TestTankPostCooldownStep_WindowAndGiveUp();
+    TestTankPostCooldownHolds_LandingRoarDoesNotCount();
+    TestTankPostCooldownPick_RefusedIsPassedOver();
+    TestTankPostCooldownAfter_SpentAndCast();
     AddCrewState_SwitchesAfterDeath();
     AddCrewLoader_Rows();
     AddCrewRank_Order();
@@ -2366,7 +2891,7 @@ int main()
         };
         CHECK(!table.Add(tankPost(0, 0, 1, 15.0f, 60.0f, true)));       // no awaited unit
         CHECK(!table.Add(tankPost(50143, 33439, 1, 15.0f, 60.0f, true)));  // a spell
-        CHECK(!table.Add(tankPost(50143, 0, 0, 15.0f, 60.0f, true)));   // slot 0 is the main tank, not a post
+        CHECK(!table.Add(tankPost(50143, 0, 0, 15.0f, 60.0f, true)));   // slot 0 waits on its own boss only
         CHECK(!table.Add(tankPost(50143, 0, 8, 15.0f, 60.0f, true)));   // no such slot
         CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 60.0f, false)));  // no spot
         CHECK(!table.Add(tankPost(50143, 0, 1, 4.0f, 60.0f, true)));    // radius below 5
@@ -2378,8 +2903,9 @@ int main()
         CHECK(modeWord.mode == TacticMode::Invalid);
         CHECK(!table.Add(modeWord));
         CHECK(table.Add(Gated(tankPost(50143, 0, 1, 15.0f, 60.0f, true), 41, 66)));  // the band arms it
+        CHECK(table.Add(tankPost(10184, 0, 0, 15.0f, 60.0f, true)));  // slot 0 on the row's own boss: the main tank's
         CHECK(table.Add(tankPost(50143, 0, 2, 15.0f, 60.0f, true)));    // another slot, another key
-        CHECK(table.Size() == 2);
+        CHECK(table.Size() == 3);
         CHECK(!table.HasTankPostMap(249));                              // not sealed yet
         table.Seal();
         CHECK(table.HasTankPostMap(249));
@@ -2387,6 +2913,35 @@ int main()
         CHECK(table.HasKindFor(249, 10184, BossTacticKind::TankPost));
         CHECK(!table.HasKindFor(249, 10184, BossTacticKind::Interrupt));
         CHECK(!table.HasKindFor(309, 10184, BossTacticKind::TankPost));
+    }
+
+    // Walk 2i H: the row's `healers` count and its `spell_id` belong to a `hold_spot` post. A plain post refuses both,
+    // four is the most healers the loader takes, and no other kind takes the count (TestTankPostRow_HealersAndSpell:
+    // without the two hold_spot tests the plain-post rows below load).
+    {
+        CHECK(kTankPostHealersMax == 4);
+        BossTacticTable table;
+        auto held = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, std::uint8_t healers,
+                       TacticMode mode)
+        {
+            BossTacticRow row = Row(249, 10184, BossTacticKind::TankPost, target, spell, priority, 90.0f);
+            row.windowSec = 120.0f;
+            row.spotX = 20.0f;
+            row.spotY = -218.0f;
+            row.spotZ = -85.3f;
+            row.mode = mode;
+            row.healers = healers;
+            return row;
+        };
+        CHECK(table.Add(held(10184, 18431, 0, 2, TacticMode::HoldSpot)));  // the 2i row: a spell and two healers
+        CHECK(!table.Add(held(50144, 18431, 2, 0, TacticMode::Default)));  // a spell on a plain post
+        CHECK(!table.Add(held(50144, 0, 2, 1, TacticMode::Default)));      // healers on a plain post
+        CHECK(!table.Add(held(50144, 0, 2, 5, TacticMode::HoldSpot)));     // healers 5
+        BossTacticRow behind = Row(249, 10184, BossTacticKind::Behind, 0, 18435, 0, 40.0f);
+        behind.hpMax = 40;
+        behind.healers = 1;
+        CHECK(!table.Add(behind));                                          // healers on another kind
+        CHECK(table.Size() == 1);
     }
 
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
@@ -4279,6 +4834,15 @@ int main()
         CHECK(TauntAfterTankIndex(std::vector<bool>{ false, false }, 1) == -1);
         CHECK(TauntAfterTankIndex(onlyFirst, -1) == -1);
 
+        // AiPlayerbot.DungeonRunTauntAfterSkipsMain: an off-tank row with only the main tank alive has no off-tank to
+        // name, so it answers an invalid index and the caller finds no window owner at all; never a fallback to the
+        // main tank. The main tank's own row and the key off keep today's index.
+        CHECK(TauntAfterScanIndex(true, 1, 0, 1) == -1);
+        CHECK(TauntAfterTankIndex(std::vector<bool>{ true }, 1, true) == -1);
+        CHECK(TauntAfterScanIndex(true, 2, 0, 1) == -1);   // a slot past the count too
+        CHECK(TauntAfterScanIndex(true, 0, 0, 1) == 0);    // the main tank's own row
+        CHECK(TauntAfterScanIndex(false, 1, 0, 1) == 0);   // the key is off
+
         CHECK(TauntAfterDue(true, 0, 10000, false));      // the rising edge itself
         CHECK(TauntAfterDue(true, 1, 10000, false));
         CHECK(TauntAfterDue(true, 9999, 10000, false));
@@ -4528,6 +5092,26 @@ int main()
             CHECK(TauntAfterTankPick(soleUsable, {false}, soleHold, 0) == 0); // the only tank stays pickable
         }
 
+        // AiPlayerbot.DungeonRunTauntAfterSkipsMain (walk 2g): a row that names an off-tank never sends its window to the
+        // main tank. With 3 live tanks the 10184 row's slot 3 read 3 % 3 = 0 and 13 of 26 window rows said tank=0, so a
+        // slot past the live count starts at the last tank, the scan runs over the off-tanks only, and no usable off-tank
+        // answers -1 (the main tank never leaves the boss). The main tank's own row (wanted 0) is unchanged.
+        {
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const allCan = {true, true, true};
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 3) == 0);              // today: wraps to the front
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 3, true) == 2);        // the last off-tank
+            std::vector<bool> const lastUnusable = {true, true, false};
+            CHECK(TauntAfterTankPick(lastUnusable, allCan, allCan, 2, true) == 1);  // wraps back to the first off-tank
+            std::vector<bool> const onlyMain = {true, false, false};
+            CHECK(TauntAfterTankPick(onlyMain, allCan, allCan, 1, true) == -1);     // no off-tank: nobody taunts
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 0, true) == 0);        // the main tank's own row
+            std::vector<bool> const soleMain = {true};
+            CHECK(TauntAfterTankPick(soleMain, {true}, {true}, 1, true) == -1);     // only the main tank alive
+            CHECK(TauntAfterTankPick(soleMain, {true}, {true}, 0, true) == 0);
+            CHECK(TauntAfterTankPick(soleMain, {true}, {true}, 1) == 0);            // the key is off: today
+        }
+
         // A tank that lost control (a stun, a fear, a confuse, a hex), is silenced, has no taunt, or whose taunt is on
         // cooldown cannot take the subject back now: it is skipped for a tank that can.
         CHECK(TauntAfterTankCanTaunt(true, false, true, true, true, false, true));
@@ -4579,6 +5163,16 @@ int main()
             CHECK(TauntWindowOwner(usable, {true, false, false}, 1, 1) == 0);  // wraps past the unavailable ones
             CHECK(TauntWindowOwner(usable, {false, false, false}, 1, 0) == 0);
             CHECK(TauntWindowOwner({true, true, false}, {false, false, true}, 0, 0) == 0); // available but unusable: no
+            // With the key on, an off-tank row never hands the advance to the main tank, and with only the main tank
+            // alive it has no writer at all, so no window opens. The main tank's own row and the key off keep today's.
+            std::vector<bool> const two = {true, true};
+            std::vector<bool> const one = {true};
+            CHECK(TauntWindowOwner(two, two, -1, 1, true) == 1);   // the row's off-tank
+            CHECK(TauntWindowOwner(two, two, -1, 0, true) == 0);   // the main tank's own row
+            CHECK(TauntWindowOwner(two, two, -1, 0) == 0);         // the key is off
+            CHECK(TauntWindowOwner(one, one, -1, 1, true) == -1);  // only the main tank alive: no owner
+            CHECK(TauntWindowOwner(one, one, -1, 1) == 0);         // the key is off: today's fallback
+            CHECK(TauntWindowAssign(true, false, -1, 1, one, one, one, true) == -1); // no tank is assigned
             CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));          // the owner's own read
             CHECK(!TauntWindowAdvance(1, 2, 5000, 4500, 1000));         // a rival, the owner just read
             CHECK(TauntWindowAdvance(1, 2, 5000, 4000, 1000));          // the owner went quiet: anyone advances

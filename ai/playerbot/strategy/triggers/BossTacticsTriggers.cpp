@@ -1,6 +1,8 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
+#include <cmath>
 #include <string>
+#include "ObjectAccessor.h"
 #include "BossTacticsTriggers.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
@@ -130,7 +132,11 @@ void InterruptCarrierStrikeCast(PlayerbotAI* ai, Player* bot, uint32 shadeEntry)
     Spell* const current = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     if (!current || !current->m_spellInfo)
         return;
-    Unit* const target = current->m_targets.getUnitTarget();
+    // The cast's cached unit-target pointer is refreshed only in the bot's next Spell::update, and the map frees a unit
+    // removed in this tick (Jin'do's death despawns the Shades), so resolve the guid the cast holds: a target that left
+    // the world reads none.
+    ObjectGuid const targetGuid = current->m_targets.getUnitTargetGuid();
+    Unit* const target = targetGuid ? ObjectAccessor::GetUnit(*bot, targetGuid) : nullptr;
     if (!target || target->GetEntry() != shadeEntry)
         return;
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -575,6 +581,32 @@ bool BossTacticsTankPostTrigger::IsActive()
         return false;
     const BossTankPost post = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
     return post.valid && !post.holdingOtherHostile;
+}
+
+bool BossTacticsTankPostHealerTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Its own key and the map flag keep every other map and every key-off fight at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunTankPostHealers || !GetBossTactics().HasTankPostMap(bot->GetMapId()))
+        return false;
+    const TankPostHealDuty duty = FindTankPostHealDuty(ai, bot);
+    if (!duty.holder || bot->IsNonMeleeSpellCasted(false))
+        return false;
+    const float dx = bot->GetPositionX() - duty.holder->GetPositionX();
+    const float dy = bot->GetPositionY() - duty.holder->GetPositionY();
+    return TankPostHealerFar(std::sqrt(dx * dx + dy * dy));
+}
+
+bool BossTacticsTankPostCooldownTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Its own key, the map flag and the tank test keep every other bot and every key-off fight at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunTankPostHealers || !GetBossTactics().HasTankPostMap(bot->GetMapId()) ||
+        !PlayerbotAI::IsTank(bot))
+        return false;
+    return TankPostCooldownDue(bot);
 }
 
 bool BossTacticsBurnManaTrigger::IsActive()

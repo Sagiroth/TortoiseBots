@@ -273,6 +273,7 @@ Releases the spirit of a dead companion bot so it can run back to its corpse and
 - Dead bots are released, run back, and are revived by their own dead strategy.
 - With `party`, every dead bot you control is released at once and one ACK carries the count.
 - A headless bot's release completes at once instead of waiting for the graveyard repop: inside a dungeon it comes back at the entrance, and no later resurrect leaves a pending repop.
+- With `party`, each revived bot's entrance near teleport is acknowledged in the same call stack as that repop, so no bot stands alive at its corpse for a map update and a boss cannot re-aggro the revived raid there.
 
 ### `.bot cmd lootmethod`
 
