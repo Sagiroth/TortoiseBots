@@ -91,6 +91,8 @@ struct BehaviorToggle
     char const* strategy;
     BotState state;
     bool inverted = false;
+    // Only classes with off-spec strategies have the key (OffSpecPolicy.h).
+    bool offSpec = false;
 };
 BehaviorToggle const* FindBehaviorToggle(std::string const& key);
 bool IsBehaviorOn(PlayerbotAI* ai, BehaviorToggle const& toggle);
@@ -115,6 +117,10 @@ void RestorePullMode(PlayerbotAI* ai, PullModeSnapshot const& snapshot);
 // commander's `cmd cc` / `cmd pull`.
 bool ExecuteInterruptAction(ChatHandler* handler, BotCommandContext const& context, Player* requester);
 std::string CurrentCcMark(PlayerbotAI* ai);
+// The raid marks these bots hold as their CC mark (the "cc" combat strategy
+// plus a mark, the same rule as TBM:CC_ASSIGN) and as their focus mark.
+std::vector<std::string> HeldCcMarks(std::vector<Player*> const& bots);
+std::vector<std::string> HeldFocusMarks(std::vector<Player*> const& bots);
 bool IsRaidTargetMark(std::string const& mark);
 bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* requester,
     std::string const& intent, std::string const& reportIntent);

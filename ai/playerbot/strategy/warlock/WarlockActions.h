@@ -594,6 +594,21 @@ namespace ai
         }
 	};
 
+    // Summons the demon the saved `.bot choice pet` order names; the new
+    // summon replaces the live demon.
+    class CastChoicePetAction : public CastSpellAction
+    {
+    public:
+        CastChoicePetAction(PlayerbotAI* ai) : CastSpellAction(ai, "choice pet") {}
+        std::string GetTargetName() override { return "self target"; }
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+
+    private:
+        bool LoadOrder();
+    };
+
     class CastSummonVoidwalkerAction : public CastSpellAction
     {
     public:

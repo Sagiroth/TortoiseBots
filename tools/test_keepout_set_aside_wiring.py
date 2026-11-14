@@ -33,7 +33,7 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
             # row holds it (HeldDpsTarget): both drop it to the next pick. The dps target's condition spans a second
             # line as well (a mark on a held linked_death member drops too), so the two checks are pinned by name.
             self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)", fn)
-            branch = fn[fn.index("Unit* rti = RtiTargetValue::Calculate();"):]
+            branch = fn[fn.index("Unit* rti = RtiTargetValue::CalculateFocus();"):]
             branch = branch[:branch.index("return rti;")]
             self.assertIn("IsKeepoutSetAside(rti, bot)", branch)
             self.assertIn("HeldDpsTarget(ai, bot, rti)", branch)

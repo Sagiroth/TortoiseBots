@@ -562,7 +562,7 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* add = SolniusAddTarget(ai, bot))
         return add;
 
-    Unit* rti = RtiTargetValue::Calculate();
+    Unit* rti = RtiTargetValue::CalculateFocus();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&
         !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, rti->GetObjectGuid().GetRawValue())))
         return rti;
@@ -679,7 +679,7 @@ Unit* DpsAoeTargetValue::Calculate()
         if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))
             return explicitTarget;
 
-    Unit* rti = RtiTargetValue::Calculate();
+    Unit* rti = RtiTargetValue::CalculateFocus();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;
 
     FindMaxHpTargetStrategy strategy(ai);

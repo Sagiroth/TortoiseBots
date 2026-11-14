@@ -434,6 +434,25 @@ namespace ai
         bool IsActive() override;
     };
 
+    // The demon word the saved `.bot choice pet` order wants; empty on auto.
+    std::string OrderedPetWord(PlayerbotAI* ai);
+    // The creature entry of a demon word (0 for anything else).
+    uint32 ChoicePetEntry(std::string const& word);
+
+    // A saved `.bot choice pet` order: fires out of combat while the live
+    // demon is not the ordered one and the summon can go through. Without a
+    // Soul Shard (and without the item cheat) it keeps the current demon and
+    // tells the master once per order.
+    class ChoicePetTrigger : public Trigger
+    {
+    public:
+        ChoicePetTrigger(PlayerbotAI* ai) : Trigger(ai, "choice pet", 5) {}
+        bool IsActive() override;
+
+    private:
+        std::string warnedFor;
+    };
+
     // Spec-fitting pet (opt-in, AiPlayerbot.WarlockPetBySpec): one trigger per
     // demon, active when the spec policy (runtime/WarlockPetPolicy.h) wants
     // that demon summoned now (petless, or a pool bot's default demon that no

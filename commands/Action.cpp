@@ -37,6 +37,7 @@
 #include "../ai/playerbot/PullRefusalPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
+#include "../ai/playerbot/strategy/values/FocusMarkPolicy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
 #include "../ai/playerbot/strategy/values/Stances.h"
 #include "../ai/playerbot/strategy/values/AttackersValue.h"
@@ -536,6 +537,36 @@ std::string CurrentCcMark(PlayerbotAI* ai)
     return IsRaidTargetMark(mark) ? mark : "-";
 }
 
+std::vector<std::string> HeldCcMarks(std::vector<Player*> const& bots)
+{
+    std::vector<std::string> marks;
+    for (Player* bot : bots)
+    {
+        PlayerbotAI* botAi = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        if (!botAi || !botAi->HasStrategy("cc", BotState::BOT_STATE_COMBAT))
+            continue;
+        std::string const mark = CurrentCcMark(botAi);
+        if (mark != "-")
+            marks.push_back(mark);
+    }
+    return marks;
+}
+
+std::vector<std::string> HeldFocusMarks(std::vector<Player*> const& bots)
+{
+    std::vector<std::string> marks;
+    for (Player* bot : bots)
+    {
+        PlayerbotAI* botAi = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        if (!botAi || PlayerbotAI::IsHeal(bot))
+            continue;
+        std::string const mark = botAi->GetAiObjectContext()->GetValue<std::string>("rti")->Get();
+        if (IsRaidTargetMark(mark))
+            marks.push_back(mark);
+    }
+    return marks;
+}
+
 // The `cc <mark> [bot]` order against context.enemyTarget (or the group's
 // existing mark). Shared by `.bot action cc` and the remote commander's
 // `.bot cmd cc` (issue #884): requester is the event owner and the unit whose
@@ -573,6 +604,26 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
     }
     std::string const ccFamily = TortoiseBots::DungeonRun::CcFamilyTokenNorm(ccFamilyToken);
     bool const runFamily = !ccFamily.empty() && ccFamily != "none";
+    // A bot that focuses this mark would attack the mob the CC holds. The
+    // player's own order is refused; the dungeon run's automatic pick wins
+    // instead and sends those bots back to Skull.
+    if (ai::CcMarkHeldAsFocus(ccMark, HeldFocusMarks(context.partyBots)))
+    {
+        if (!runFamily)
+        {
+            SendActionError(handler, reportIntent, "focus-mark",
+                ("A party bot focuses " + ccMark + " (.bot focus); pick another CC mark or change its focus first.").c_str());
+            return true;
+        }
+        for (Player* bot : context.partyBots)
+        {
+            PlayerbotAI* botAi = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+            if (!botAi || botAi->GetAiObjectContext()->GetValue<std::string>("rti")->Get() != ccMark)
+                continue;
+            botAi->GetAiObjectContext()->GetValue<std::string>("rti")->Set("skull");
+            sPlayerbotDbStore.Save(botAi);
+        }
+    }
     int markIndex = RtiTargetValue::GetRtiIndex(ccMark);
     Unit* ccTarget = context.enemyTarget;
 

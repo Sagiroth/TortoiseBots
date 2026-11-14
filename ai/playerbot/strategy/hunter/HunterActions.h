@@ -124,8 +124,23 @@ public:
     END_SPELL_ACTION()
 
     BEGIN_RANGED_SPELL_ACTION(CastScorpidStingAction, "scorpid sting")
-        virtual bool isUseful() override { return HunterHasRangedAmmo(ai) && CastSpellAction::isUseful(); }
+        virtual bool isUseful() override;
     END_SPELL_ACTION()
+
+    // The sting the saved `.bot choice sting` order wants, as its spell name;
+    // empty on auto or when the bot does not know it.
+    std::string OrderedStingFor(PlayerbotAI* ai);
+
+    // Casts the ordered sting when the target carries none; the automatic
+    // sting rows stand down while an order is set.
+    class CastChoiceStingAction : public CastRangedDebuffSpellAction
+    {
+    public:
+        CastChoiceStingAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "choice sting") {}
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+    };
 
     class CastAspectOfTheMonkeyAction : public CastBuffSpellAction
     {
@@ -334,12 +349,14 @@ public:
     {
     public:
         CastSerpentStingOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "serpent sting") {}
+        bool isUseful() override;
     };
 
     class CastViperStingOnAttackerAction : public CastRangedDebuffSpellOnAttackerAction
     {
     public:
         CastViperStingOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "viper sting") {}
+        bool isUseful() override;
     };
 
     class FeedPetAction : public Action

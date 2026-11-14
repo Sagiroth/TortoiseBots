@@ -60,11 +60,21 @@
 #include "../ai/playerbot/GuidPosition.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/strategy/generic/ClassChoicePolicy.h"
+#include "../ai/playerbot/strategy/rogue/RogueTriggers.h"
 namespace TortoiseBots {
 namespace BotCommands {
 
-// One TBM:CHOICE record: the stored word for the bot's kind, then every
-// value the bot has trained (may be empty).
+// A choice word the bot can use: a trained spell, or for poisons a usable
+// poison item (the item cheat counts, never above the bot's level).
+static bool ChoiceKnown(PlayerbotAI* ai, Player* bot, int kind, std::string const& word)
+{
+    if (ai::ChoiceKindUsesItem(kind))
+        return ai::HasUsablePoisonItem(ai, bot, ai::ChoicePoisonItemIds(word));
+    return ai->HasSpell(ai::ChoiceSpell(kind, word));
+}
+
+// One TBM:CHOICE record: the stored word for one of the bot's kinds, then
+// every value the bot can use (may be empty).
 static void SendChoiceLine(ChatHandler* handler, Player* bot, PlayerbotAI* ai, int kind)
 {
     std::string stored = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Get();
@@ -74,7 +84,7 @@ static void SendChoiceLine(ChatHandler* handler, Player* bot, PlayerbotAI* ai, i
     for (int i = 0; i < ai::ChoiceWordCount(kind); ++i)
     {
         std::string const word = ai::ChoiceWord(kind, i);
-        if (!ai->HasSpell(ai::ChoiceSpell(kind, word)))
+        if (!ChoiceKnown(ai, bot, kind, word))
             continue;
         known += (known.empty() ? "" : "+") + word;
     }
@@ -83,8 +93,8 @@ static void SendChoiceLine(ChatHandler* handler, Player* bot, PlayerbotAI* ai, i
 }
 
 // `.bot choice <bot|party|raid> <kind> <value|auto>` - per bot, the ordered
-// aura/aspect/curse. `.bot choice <scope> status` reports every bot that has
-// the kind as TBM:CHOICE records.
+// aura/aspect/curse/poison/sting/demon. `.bot choice <scope> status` reports
+// one TBM:CHOICE record per kind each bot's class has.
 bool HandleChoice(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
@@ -97,7 +107,7 @@ bool HandleChoice(ChatHandler* handler, char const* args)
         for (char& c : *word)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    char const* const usage = "Usage: .bot choice <bot|party|raid> <aura|aspect|curse> <value|auto> | status";
+    char const* const usage = "Usage: .bot choice <bot|party|raid> <aura|aspect|curse|poison_mh|poison_oh|sting|pet> <value|auto> | status";
     bool const status = word2 == "status";
     int const kind = ai::ChoiceKindIndex(word2);
     if (scope.empty() || (!status && (kind < 0 || !ai::IsChoiceWord(kind, word3))))
@@ -141,27 +151,35 @@ bool HandleChoice(ChatHandler* handler, char const* args)
     for (Player* bot : bots)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-        int const rowKind = status ? ai::ChoiceKindForClass(bot->GetClass()) : kind;
-        if (!ai || rowKind < 0 || bot->GetClass() != ai::ChoiceKindClassId(rowKind))
+        if (!ai)
             continue;
-        if (!status)
+        if (status)
         {
-            if (!spell.empty() && !ai->HasSpell(spell))
-            {
-                std::string msg = std::string(bot->GetName()) + " has not trained " + spell + ".";
-                SendActionError(handler, intent, "unknown-spell", msg.c_str());
-                refused = true;
-                continue;
-            }
-            std::string const previous = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Get();
-            ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Set(word3);
-            // The automatic aura row only fires with no aura up, so the
-            // ordered one is dropped for it to take over.
-            if (kind == 0 && word3 == "auto" && !previous.empty() && previous != "auto")
-                ai->RemoveAura(ai::ChoiceSpell(kind, previous));
-            sPlayerbotDbStore.Save(ai);
+            std::vector<int> const kinds = ai::ChoiceKindsForClass(bot->GetClass());
+            for (int rowKind : kinds)
+                SendChoiceLine(handler, bot, ai, rowKind);
+            if (!kinds.empty())
+                ++matched;
+            continue;
         }
-        SendChoiceLine(handler, bot, ai, rowKind);
+        if (bot->GetClass() != ai::ChoiceKindClassId(kind))
+            continue;
+        if (!spell.empty() && !ChoiceKnown(ai, bot, kind, word3))
+        {
+            bool const item = ai::ChoiceKindUsesItem(kind);
+            std::string msg = std::string(bot->GetName()) + (item ? " has no usable " : " has not trained ") + spell + ".";
+            SendActionError(handler, intent, item ? "no-item" : "unknown-spell", msg.c_str());
+            refused = true;
+            continue;
+        }
+        std::string const previous = ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Get();
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::ChoiceOrderKey(kind))->Set(word3);
+        // The automatic aura row only fires with no aura up, so the
+        // ordered one is dropped for it to take over.
+        if (kind == ai::CHOICE_AURA && word3 == "auto" && !previous.empty() && previous != "auto")
+            ai->RemoveAura(ai::ChoiceSpell(kind, previous));
+        sPlayerbotDbStore.Save(ai);
+        SendChoiceLine(handler, bot, ai, kind);
         ++matched;
     }
     if (status)

@@ -102,6 +102,8 @@ bool ExposeArmorTrigger::IsActive()
 
 bool MainHandWeaponNoEnchantTrigger::IsActive()
 {
+    if (!OrderedPoisonWord(ai, true).empty())
+        return false;
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     if (!weapon || weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
         return false;
@@ -112,12 +114,32 @@ bool MainHandWeaponNoEnchantTrigger::IsActive()
 
 bool OffHandWeaponNoEnchantTrigger::IsActive()
 {
+    if (!OrderedPoisonWord(ai, false).empty())
+        return false;
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
     if (!weapon || weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
         return false;
 
     static const uint32 ohPoisons[] = { 2892, 2893, 8984, 8985, 20844, 22053, 22054, 6947, 6949, 6950, 8926, 8927, 8928, 21927, 10918, 10920, 10921, 10922, 22055, 3775, 3776, 5237, 6951, 9186 };
     return HasUsablePoisonItem(ai, bot, ohPoisons);
+}
+
+bool ChoicePoisonTrigger::IsActive()
+{
+    std::string const word = OrderedPoisonWord(ai, mainHand);
+    if (word.empty())
+        return false;
+    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, mainHand ? EQUIPMENT_SLOT_MAINHAND : EQUIPMENT_SLOT_OFFHAND);
+    if (!weapon)
+        return false;
+    // Without the item (and without the item cheat) the current poison stays.
+    if (!HasUsablePoisonItem(ai, bot, ChoicePoisonItemIds(word)))
+        return false;
+    uint32 const current = weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT);
+    if (!current)
+        return true;
+    std::vector<uint32> const wanted = ChoicePoisonEnchantIds(word);
+    return std::find(wanted.begin(), wanted.end(), current) == wanted.end();
 }
 
 bool SapCcMarkTrigger::IsActive()

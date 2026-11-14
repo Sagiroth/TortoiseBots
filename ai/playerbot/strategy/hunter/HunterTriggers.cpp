@@ -196,6 +196,11 @@ bool HunterNoStingsActiveTrigger::IsActive()
         !ai->HasAura("viper sting", target);
 }
 
+bool ChoiceStingTrigger::IsActive()
+{
+    return !ai::OrderedStingFor(ai).empty() && HunterNoStingsActiveTrigger::IsActive();
+}
+
 bool HuntersPetDeadTrigger::IsActive()
 {
     return AI_VALUE(bool, "pet dead") && !AI_VALUE2(bool, "mounted", "self target");
