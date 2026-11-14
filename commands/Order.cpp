@@ -121,6 +121,15 @@ bool IsOrderBot(Player* bot, ObjectGuid guid)
     return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
 }
 
+bool RefuseOthersAlt(ChatHandler* handler, Player* requester, ObjectGuid guid)
+{
+    uint32_t requesterAccount = requester && requester->GetSession() ? requester->GetSession()->GetAccountId() : 0;
+    if (!GuildOrders::IsOthersAlt(guid.GetCounter(), requesterAccount))
+        return false;
+    OrderError(handler, "forbidden", "Only its owner may give an order to an alt.");
+    return true;
+}
+
 uint32_t GuildOf(Player* bot, ObjectGuid guid)
 {
     if (bot)
@@ -382,6 +391,8 @@ bool HandleOrderEnchantGive(ChatHandler* handler, Player* requester, std::string
         OrderError(handler, "no-bot", "That character is not a bot.");
         return true;
     }
+    if (RefuseOthersAlt(handler, requester, guid))
+        return true;
     uint32_t guildId = GuildOf(bot, guid);
     if (!guildId)
     {
@@ -643,6 +654,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         OrderError(handler, "no-bot", "That character is not a bot.");
         return true;
     }
+    if (RefuseOthersAlt(handler, requester, guid))
+        return true;
     uint32_t guildId = GuildOf(bot, guid);
     if (!guildId)
     {
@@ -874,7 +887,9 @@ bool HandleOrderCancel(ChatHandler* handler, Player* requester, std::string cons
         OrderError(handler, "no-bot", "No such bot.");
         return true;
     }
-    if (!IsOrderBot(bot, guid))
+    // An alt keeps its order after its bot session ends (logout, or the
+    // owner playing it), so its order stays visible and cancellable.
+    if (!IsOrderBot(bot, guid) && !GuildOrders::Find(guid.GetCounter()))
     {
         OrderError(handler, "no-bot", "That character is not a bot.");
         return true;
@@ -997,7 +1012,9 @@ bool HandleOrderSteps(ChatHandler* handler, Player* requester, std::string const
         OrderError(handler, "no-bot", "No such bot.");
         return true;
     }
-    if (!IsOrderBot(bot, guid))
+    // An alt keeps its order after its bot session ends (logout, or the
+    // owner playing it), so its order stays visible and cancellable.
+    if (!IsOrderBot(bot, guid) && !GuildOrders::Find(guid.GetCounter()))
     {
         OrderError(handler, "no-bot", "That character is not a bot.");
         return true;

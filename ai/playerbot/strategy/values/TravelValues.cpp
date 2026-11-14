@@ -541,9 +541,7 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name == "order vendor")
     {
-        // Issue #872 (B11): autonomous alts never travel to buy reagents.
-        if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
-            return false;
+        // An alt buys order reagents too: its owner gave the order.
         return AI_VALUE(uint32, "guild order vendor reagent") != 0;
     }
     else if (name == "petition")

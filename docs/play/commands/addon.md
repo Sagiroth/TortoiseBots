@@ -81,7 +81,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:ROSTER_BEGIN\|<n>` / `TBM:ROSTER_END` | Delimits the account character roster stream. |
 | `TBM:ROSTER\|<guid>\|<name>\|<class>\|<state>\|<grouped>\|<loc>` | Emits one owned character row (`<loc>` looks like `map:<id>,zone:<id>,area:<id>`, or `-`). |
 | `TBM:CLAIMED_BEGIN\|<n>` / `TBM:CLAIMED_END` | Delimits the claimed guild bots snapshot. |
-| `TBM:CLAIMED\|<guid>\|<name>\|<class>\|<level>\|<state>\|<grouped>\|<loc>\|<locked>\|<profs>` | Emits one claimed bot row (`<profs>` lists `skillId:value` pairs joined by `;`, or `-`; oldest servers send no field). |
+| `TBM:CLAIMED\|<guid>\|<name>\|<class>\|<level>\|<state>\|<grouped>\|<loc>\|<locked>\|<profs>\|<alt>` | Emits one claimed bot row (`<profs>` lists `skillId:value` pairs joined by `;`, or `-`; oldest servers send no field). `<alt>` is `1` for your own alt playing on its own in your guild (it takes guild orders too), `0` for a claimed bot; older servers send no field. |
 | `TBM:BOTSTATE_BEGIN\|<n>` / `TBM:BOTSTATE_END` | Delimits live movement and toggle states for controllable party bots. |
 | `TBM:BOTSTATE\|<bot>\|<fields>` | Emits bot movement mode, 9 behavior toggles, and the sap switch. |
 | `TBM:CC_ASSIGN_BEGIN\|<n>` / `TBM:CC_ASSIGN_END` | Delimits active crowd control assignments. |
