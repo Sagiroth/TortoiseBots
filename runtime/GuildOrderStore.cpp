@@ -3550,6 +3550,15 @@ bool IsDurableOrderBot(uint32_t guidLow)
     return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
 }
 
+bool IsOthersAlt(uint32_t guidLow, uint32_t requesterAccountId)
+{
+    if (!guidLow || ClaimLifecycle::Instance().IsClaimed(guidLow))
+        return false;
+    uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(ObjectGuid(HIGHGUID_PLAYER, guidLow));
+    return accountId && accountId != requesterAccountId &&
+        !RandomBotAccountRegistry::Instance().IsRegistered(accountId);
+}
+
 bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm, bool& gathers)
 {
     canMake = false;

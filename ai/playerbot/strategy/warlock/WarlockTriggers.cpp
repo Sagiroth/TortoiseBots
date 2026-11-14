@@ -580,8 +580,57 @@ bool SoulLinkTrigger::IsActive()
 	return ai->HasSpell(19028) && !ai->HasAura(19028, bot) && AI_VALUE(Unit*, "pet target");
 }
 
+std::string ai::OrderedPetWord(PlayerbotAI* ai)
+{
+    return ChoiceOrderedWord(CHOICE_PET,
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ChoiceOrderKey(CHOICE_PET))->Get());
+}
+
+uint32 ai::ChoicePetEntry(std::string const& word)
+{
+    using TortoiseBots::WarlockPetKind;
+    WarlockPetKind const kind = word == "imp" ? WarlockPetKind::Imp
+        : word == "voidwalker" ? WarlockPetKind::Voidwalker
+        : word == "succubus" ? WarlockPetKind::Succubus
+        : word == "felhunter" ? WarlockPetKind::Felhunter : WarlockPetKind::None;
+    return TortoiseBots::WarlockPetEntry(kind);
+}
+
+bool ChoicePetTrigger::IsActive()
+{
+    std::string const word = OrderedPetWord(ai);
+    if (word.empty())
+    {
+        warnedFor.clear();
+        return false;
+    }
+    if (AI_VALUE2(bool, "mounted", "self target"))
+        return false;
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    bool const currentIsOrdered = pet && pet->GetEntry() == ChoicePetEntry(word);
+    ChoicePetDecision const decision = DecideChoicePet(word, ai->HasSpell(ChoiceSpell(CHOICE_PET, word)),
+        currentIsOrdered, sServerFacade.IsInCombat(bot),
+        bot->GetItemCount(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM) > 0, ai->HasCheat(BotCheatMask::item));
+    if (decision == ChoicePetDecision::NoShard)
+    {
+        if (warnedFor != word)
+        {
+            warnedFor = word;
+            if (Player* master = ai->GetMaster())
+                ai->TellPlayerNoFacing(master, "I need a Soul Shard to summon my " + word + ".");
+        }
+        return false;
+    }
+    if (decision == ChoicePetDecision::Summon || currentIsOrdered)
+        warnedFor.clear();
+    return decision == ChoicePetDecision::Summon;
+}
+
 bool NoSpecificPetTrigger::IsActive()
 {
+    // A `.bot choice pet` order replaces the old "pet <demon>" strategies.
+    if (!OrderedPetWord(ai).empty())
+        return false;
     Unit* pet = AI_VALUE(Unit*, "pet target");
     if (pet)
     {
@@ -613,6 +662,9 @@ TortoiseBots::WarlockSpecPetDecision DecideSpecPet(PlayerbotAI* ai, Player* bot)
 {
     using TortoiseBots::WarlockSpecPetDecision;
     if (!sPlayerbotAIConfig.warlockPetBySpec)
+        return WarlockSpecPetDecision::LeaveAlone;
+    // A `.bot choice pet` order wins; the "choice pet" row owns the demon.
+    if (!ai::OrderedPetWord(ai).empty())
         return WarlockSpecPetDecision::LeaveAlone;
     // A pet the player ordered ("pet imp" ... "pet felhunter" strategies) wins.
     static char const* const manualPets[] = { "pet imp", "pet voidwalker", "pet succubus", "pet felhunter" };
@@ -663,6 +715,8 @@ bool SpecPetTankValue::Calculate()
 
 bool WrongPetTrigger::IsActive()
 {
+    if (!OrderedPetWord(ai).empty())
+        return false;
     // Pool bots only: a real-player master picks the demon themselves.
     if (ai->HasRealPlayerMaster())
         return false;

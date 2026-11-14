@@ -79,10 +79,18 @@ TACTIC_FIELDS = {
     "priority": ("priority", int),
     "param": ("param", float),
     "comment": ("comment", str),
+    "hp_min": ("hpMin", int),
+    "hp_max": ("hpMax", int),
 }
-# The tactic coverage key is (map, boss, kind, target, spell): a row's health band is a per-row gate the coverage
-# projection does not carry, so a DELETE or UPDATE scoped by it applies to the key.
-TACTIC_ROW_GATE_COLUMNS = ("hp_min", "hp_max")
+TACTIC_DEFAULTS = {"hpMin": 0, "hpMax": 100}
+# The tactic coverage key is (map, boss, kind, target, spell, hp_min, hp_max), the table's primary key since
+# 20261103010000: one boss carries the same kind, target and spell once per health band, and the loader keeps both.
+
+
+def _tactic_row_key(row):
+    return (row["map"], row["boss"], row["kind"], row["target"], row["spell"], row["hpMin"], row["hpMax"])
+
+
 STAND_FIELDS = {
     "map": ("map", int),
     "boss_entry": ("boss", int),
@@ -510,9 +518,8 @@ def migration_rows(sql_dir):
                             f"{where}: {len(tuple_values)} values for {len(columns)} columns"
                         )
                     if table == "ai_boss_tactic":
-                        row = _row_from(columns, tuple_values, TACTIC_FIELDS, {}, where)
-                        key = (row["map"], row["boss"], row["kind"], row["target"], row["spell"])
-                        tactics[key] = row
+                        row = _row_from(columns, tuple_values, TACTIC_FIELDS, TACTIC_DEFAULTS, where)
+                        tactics[_tactic_row_key(row)] = row
                     elif table == "ai_boss_stand":
                         row = _row_from(
                             columns, tuple_values, STAND_FIELDS, STAND_DEFAULTS, where
@@ -531,7 +538,7 @@ def migration_rows(sql_dir):
                 if table not in SQL_TABLES:
                     continue
                 if table == "ai_boss_tactic":
-                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where, TACTIC_ROW_GATE_COLUMNS)
+                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where)
                     for key in [k for k, row in tactics.items() if _matches(row, wanted)]:
                         del tactics[key]
                 elif table == "ai_boss_stand":
@@ -553,14 +560,13 @@ def migration_rows(sql_dir):
                     continue
                 if table == "ai_boss_tactic":
                     changes = _set_values(set_text, TACTIC_FIELDS, where)
-                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where, TACTIC_ROW_GATE_COLUMNS)
+                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where)
                     updated = {}
                     for row in tactics.values():
                         if _matches(row, wanted):
                             row = dict(row)
                             row.update(changes)
-                        key = (row["map"], row["boss"], row["kind"], row["target"], row["spell"])
-                        updated[key] = row
+                        updated[_tactic_row_key(row)] = row
                     tactics = updated
                 elif table == "ai_boss_stand":
                     changes = _set_values(set_text, STAND_FIELDS, where)

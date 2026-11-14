@@ -196,7 +196,8 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn('"boss tactics taunt after",\n        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));',
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
-        self.assertIn("TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt, canHold)", ACTIONS)
+        self.assertIn("TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable,\n"
+                      "                        canTaunt, canHold, skipMain)", ACTIONS)
         self.assertIn("TauntAfterTankPick", POLICY)
         self.assertIn("TauntEpisodeTick(tauntable, onNonTank, victimIsTank,", ACTIONS)
         self.assertIn("deadlineMs, victimIsAssigned);", ACTIONS)
@@ -242,7 +243,8 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("int const holderSlot = TankSlotOf(guids, state.holder);", scan)
         self.assertIn("state.holder = guids[assigned];", scan)
         self.assertIn("TauntWindowAdvance(owner, mySlot, nowMs, state.advancedMs, kTauntAfterOwnerSilentMs)", scan)
-        self.assertIn("int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority));", scan)
+        self.assertIn("int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority),\n"
+                      "                    skipMain);", scan)
         # The window's holder is handed over on the one deadline boundary the taunt itself reads, never at the
         # deadline instant.
         self.assertIn("bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);", scan)
@@ -281,6 +283,16 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("CHECK(!TauntAfterTankCanTaunt(false, false, true, true, true, false, true));", POLICY_TEST)
         self.assertIn("CHECK(TankSlotOf(guids, 22) == 1);", POLICY_TEST)
         self.assertIn("CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));", POLICY_TEST)
+
+    def test_taunt_after_skips_main(self):
+        # AiPlayerbot.DungeonRunTauntAfterSkipsMain (walk 2g): an off-tank's until_tank row scans the off-tanks only, so a
+        # window never wraps to the main tank (13 of 26 rows said tank=0 with 3 live tanks); the main tank's own row
+        # (priority 0) is unchanged. The rule itself is the policy test's TauntAfterSkipsMain_NoWrapToFront.
+        scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
+        self.assertIn("bool const skipMain = sPlayerbotAIConfig.dungeonRunTauntAfterSkipsMain &&\n"
+                      "                    row->mode == TacticMode::UntilTank && row->priority >= 1;", scan)
+        self.assertIn("CHECK(TauntAfterTankPick(usable, allCan, allCan, 3, true) == 2);", POLICY_TEST)
+        self.assertIn("CHECK(TauntAfterTankPick(onlyMain, allCan, allCan, 1, true) == -1);", POLICY_TEST)
 
 
 if __name__ == '__main__':

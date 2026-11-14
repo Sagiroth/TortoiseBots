@@ -110,11 +110,12 @@ Off-heals outbid damage, so they fire the moment an ally enters a band; outside 
 
 ### Switching off-spec behavior on and off
 
-Per bot, whisper the bot or use [`.bot strategy`](../play/commands/party-actions.md#bot-strategy):
+Per bot, use [`.bot behavior <bot|party|raid> offheal|offdps <on|off>`](../play/commands/bot-panel.md#bot-behavior) (the addon's bot panel shows the switch that fits the bot's current spec), whisper the bot, or use [`.bot strategy`](../play/commands/party-actions.md#bot-strategy):
 - `/w <BotName> co +offheal` or `/w <BotName> co -offdps` (`co ?` lists active combat strategies).
 - `.bot strategy -offdps @heal` for one bot, a role, or the party.
 - Changes are saved per bot.
-- Server admins change the default for new bots with [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) (`0` leaves the off-spec kit off; players can still toggle it per bot).
+- A spec change (`.bot role <bot> <spec>`, the addon's role buttons, or a talent respec) sets the new spec's default again: a healer spec gets `offdps` and loses `offheal`, a damage spec the other way round, a tank spec neither. The priest `hybrid` spec keeps its own `offdps`.
+- Server admins change the default for new bots with [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) (`0` leaves the off-spec kit off and a spec change turns both off; players can still toggle it per bot).
 
 ### Spell Downranking
 

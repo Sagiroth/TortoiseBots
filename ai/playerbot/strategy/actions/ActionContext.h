@@ -401,6 +401,8 @@ namespace ai
             creators["boss tactics seek totem"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTotemAction(ai); };
             creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterAction(ai); };
             creators["boss tactics tank post"] = [](PlayerbotAI* ai) { return new BossTacticsTankPostAction(ai); };
+            creators["boss tactics tank post healer"] = [](PlayerbotAI* ai) { return new BossTacticsTankPostHealerAction(ai); };
+            creators["boss tactics tank post cooldown"] = [](PlayerbotAI* ai) { return new BossTacticsTankPostCooldownAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };
             creators["enable molten core strategy"] = [](PlayerbotAI* ai) { return new MoltenCoreEnableDungeonStrategyAction(ai); };

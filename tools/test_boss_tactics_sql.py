@@ -42,17 +42,17 @@ MODE_WORDS = {
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
           "hp_min", "hp_max", "bot_aura", "tactic_mode", "window_s", "cycle_spell", "cycle_s", "spot_x", "spot_y",
-          "spot_z")
+          "spot_z", "healers")
 INSERT_COLUMNS = {
     "map": 0, "boss_entry": 0, "kind": "", "target_entry": 0, "spell_id": 0, "priority": 0, "param": 0.0,
     "burn_order": None, "comment": "", "hp_min": 0, "hp_max": 100, "bot_aura": 0, "tactic_mode": "",
-    "window_s": 7.0, "cycle_spell": 0, "cycle_s": 0.0, "spot_x": 0.0, "spot_y": 0.0, "spot_z": 0.0,
+    "window_s": 7.0, "cycle_spell": 0, "cycle_s": 0.0, "spot_x": 0.0, "spot_y": 0.0, "spot_z": 0.0, "healers": 0,
 }
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
     r"(?: AND `boss_entry` IN \(([\d, ]+)\)| AND `boss_entry` = (\d+))?"
     r"(?: AND `kind` IN \('([\w', ]+)'\)| AND `kind` = '(\w+)')?"
-    r"(?: AND `target_entry` = (\d+) AND `spell_id` = (\d+))?"
+    r"(?: AND `target_entry` = (\d+)(?: AND `spell_id` = (\d+))?)?"
     r"(?: AND `hp_min` = (\d+) AND `hp_max` = (\d+))?;?$"
 )
 DELETE_LINE = re.compile(r"DELETE\s+FROM\s+`?ai_boss_tactic`?(?=\s|;|$)", re.IGNORECASE)
@@ -93,6 +93,7 @@ def _row_dict(name, columns, tuple_text):
     row["cycle_s"] = float(row["cycle_s"] or 0.0)
     for column in ("spot_x", "spot_y", "spot_z"):
         row[column] = float(row[column] or 0.0)
+    row["healers"] = int(row["healers"] or 0)
     return row
 
 
@@ -133,6 +134,42 @@ def migration_rows():
     return [row for kind, row in migration_statements() if kind == "insert"]
 
 
+def _set_parts(text):
+    """Split a SET list on the commas outside a quoted value: a comment may carry a comma."""
+    parts = []
+    buffer = []
+    quote = None
+    index = 0
+    size = len(text)
+    while index < size:
+        char = text[index]
+        if quote:
+            buffer.append(char)
+            if char == "\\" and index + 1 < size:
+                buffer.append(text[index + 1])
+                index += 2
+                continue
+            if char == "'":
+                if index + 1 < size and text[index + 1] == "'":
+                    buffer.append(text[index + 1])
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if char == "'":
+            quote = "'"
+        elif char == ",":
+            parts.append("".join(buffer).strip())
+            buffer = []
+            index += 1
+            continue
+        buffer.append(char)
+        index += 1
+    parts.append("".join(buffer).strip())
+    return [part for part in parts if part]
+
+
 def migration_updates(paths=None):
     """The scoped `UPDATE ai_boss_tactic SET ... WHERE ...` statements the replay applies, in file order."""
     updates = []
@@ -147,7 +184,7 @@ def migration_updates(paths=None):
             if not match:
                 continue
             changes = {}
-            for part in re.split(r"\s*,\s*", match.group(1).strip()):
+            for part in _set_parts(match.group(1)):
                 found = re.fullmatch(r"`(\w+)`\s*=\s*(.+)", part, re.S)
                 if not found:
                     raise AssertionError("unparsable SET in %s: %s" % (name, part))
@@ -400,13 +437,17 @@ def new_kind_problem(row):
             return "cycle columns on another kind"
         return None
     if kind == "tank_post":
-        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-100 yd)
-        # and the longest hold (window_s 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
+        # The awaited unit (target_entry), the tank slot (priority 1-7; slot 0 is the main tank, which holds a post on
+        # the row's own boss only), the wait spot, the arrival radius (5-100 yd) and the longest hold (window_s
+        # 10-120 s). No cycle columns; the one mode word is hold_spot, and only a hold_spot row names the boss spell
+        # whose aura marks the cast (spell_id) and the healers it holds on its tank (healers, 0-4).
         if not row["target_entry"]:
             return "tank_post without its awaited unit"
-        if row["spell_id"]:
+        if row["spell_id"] and row["tactic_mode"] != "hold_spot":
             return "tank_post with a spell"
-        if not 1 <= row["priority"] <= 7:
+        if row["priority"] < 1 and row["target_entry"] != row["boss_entry"]:
+            return "tank_post tank slot outside 1-7"
+        if row["priority"] > 7:
             return "tank_post tank slot outside 1-7"
         if not has_spot:
             return "tank_post without its spot"
@@ -414,6 +455,10 @@ def new_kind_problem(row):
             return "tank_post arrival radius outside [5, 100]"
         if not 10.0 <= row["window_s"] <= 120.0:
             return "tank_post window outside [10, 120]"
+        if row["healers"] > 4:
+            return "tank_post healers above 4"
+        if row["healers"] and row["tactic_mode"] != "hold_spot":
+            return "tank_post healers outside hold_spot"
         if row["cycle_spell"] or row["cycle_s"]:
             return "cycle columns on another kind"
         return None
@@ -444,6 +489,8 @@ def new_kind_problem(row):
         if row["tactic_mode"]:
             return "a mode word on needs_aura"
         return None
+    if row["healers"]:
+        return "healers on another kind"
     if row["cycle_spell"] or row["cycle_s"] or has_spot:
         return "cycle or spot columns on another kind"
     return None
@@ -777,27 +824,39 @@ class BossTacticsSql(unittest.TestCase):
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
     def test_hakkar_seek_pull_row(self):
-        # 20261107230000_world.sql: the seek walk-out gets one Son per cycle's rules (walk 51). target_entry the
-        # source, priority 3 walk-outs a cycle, window_s the 60 s last start; 20261108100000_world.sql replaces the
-        # 45 s kill lead with 75 s, so the pulled Son is burned on arrival.
-        name = "20261108100000_world.sql"
+        # 20261107230000_world.sql wrote the row (walk 51): target_entry the source, window_s the 60 s last start.
+        # 20261108100000_world.sql replaced the 45 s kill lead with 75 s (burned on arrival); 20261113220000_world.sql
+        # moves it to Son-timing variant A (walks 93 + 94): priority 1 walk-out a cycle and a 45 s kill lead, so the
+        # engaged Son is fought and held until the raid gathers instead of burned on arrival.
+        source = "20261108100000_world.sql"
+        source_path = os.path.join(ROOT, "data/sql/world", source)
+        self.assertTrue(os.path.isfile(source_path), "the seek_pull migration is missing")
+        name = "20261113220000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
-        self.assertTrue(os.path.isfile(path), "the seek_pull migration is missing")
+        self.assertTrue(os.path.isfile(path), "the seek_pull variant A migration is missing")
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         pull = live.get((309, 14834, "seek_pull", 11357, 0))
         self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
-        self.assertEqual(name, pull["file"], "the seek_pull migration owns the row")
-        self.assertEqual((3, 75.0, 60.0, "", 0, 0.0, 0, 100),
+        self.assertEqual(source, pull["file"], "the seek_pull INSERT's migration owns the row")
+        self.assertEqual((1, 45, 60.0, "", 0, 0.0, 0, 100),
                          (pull["priority"], pull["param"], pull["window_s"], pull["tactic_mode"],
                           pull["cycle_spell"], pull["cycle_s"], pull["hp_min"], pull["hp_max"]),
                          "the Hakkar seek_pull row drifted")
         self.assertIsNone(new_kind_problem(pull))
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
-        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+        self.assertIn("UPDATE `ai_boss_tactic` SET `priority` = 1, `param` = 45,", text)
+        self.assertIn("WHERE `map` = 309 AND `boss_entry` = 14834 "
                       "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
-        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("Hakkar: one Son walk-out per siphon cycle, burn from 45 s "
+                      "(walks 93+94: 50/80 kills vs 12/112)", text)
+        with open(source_path, encoding="utf-8") as handle:
+            source_text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", source_text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", source_text)))
 
     def test_hakkar_heal_reserve_row(self):
         # 20261111140000_world.sql: r11-3, the healer top-up reserve. 85 % of mana, released 60 s before each Blood
@@ -822,27 +881,40 @@ class BossTacticsSql(unittest.TestCase):
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
 
-    def test_hakkar_seek_pull_burns_on_arrival(self):
-        # 20261108100000_world.sql: the 75 s kill lead forces the burn as soon as the pulled Son is engaged
-        # (SeekLateEngagedBurnWithin), and the forced burn marks the gather ready, so the 30 % hold and the 8 s
-        # gather wait drop out. The lead's ceiling: Poisonous Blood lasts 90 s, the siphon strips it only at its own
-        # 8 s aura's end, and the 24320 cloud lasts 3 s, so 79 s is the most a Son killed now can still dose with.
-        name = "20261108100000_world.sql"
-        path = os.path.join(ROOT, "data/sql/world", name)
-        self.assertTrue(os.path.isfile(path), "the burn-on-arrival migration is missing")
+    def test_hakkar_seek_pull_one_walkout_late_burn(self):
+        # 20261113220000_world.sql: variant A. priority 1 makes WalkoutCycleRules::maxPerCycle 1, so
+        # WalkoutRetryAllowed is false after the first start and a failed walk-out leaves the cycle to the fallback
+        # take. param 45 starts the forced burn 45 s before the siphon instead of on arrival, so the 30 % hold and
+        # the 4 yd gather run and the cloud lands on the gathered raid. The lead's ceiling: Poisonous Blood lasts
+        # 90 s, the siphon strips it only at its own 8 s aura's end, and the 24320 cloud lasts 3 s, so 79 s is the
+        # most a Son killed now can still dose with. window_s stays 60 (50 s at run time under the siphon clock).
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         pull = live.get((309, 14834, "seek_pull", 11357, 0))
         self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
-        self.assertEqual(75.0, pull["param"], "the kill lead is not 75 s")
+        self.assertEqual(1, pull["priority"], "the cycle is not limited to one walk-out")
+        self.assertEqual(45, pull["param"], "the kill lead is not 45 s")
         self.assertLessEqual(pull["param"], 90.0 - 8.0 - 3.0, "the kill lead outlives the poison's 79 s")
-        self.assertEqual((3, 60.0), (pull["priority"], pull["window_s"]))
+        self.assertEqual(60.0, pull["window_s"])
         self.assertIsNone(new_kind_problem(pull))
-        with open(path, encoding="utf-8") as handle:
+
+    def test_hakkar_seek_pull_rollback_restores_the_arrival_burn(self):
+        # tools/sql/rollback/20261113220000_world.rollback.sql (outside data/sql, so the runner never applies it) is
+        # the inverse UPDATE: priority 3, param 75 and the comment 20261108100000 wrote. Replay every migration,
+        # then the rollback.
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261113220000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the variant A rollback script is missing")
+        self.assertNotIn(rollback, migration_paths())
+        rolled = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row)
+                  for row in effective_rows(migration_paths() + [rollback])}
+        pull = rolled.get((309, 14834, "seek_pull", 11357, 0))
+        self.assertIsNotNone(pull, "the rollback lost the Hakkar seek_pull row")
+        self.assertEqual((3, 75, 60.0), (pull["priority"], pull["param"], pull["window_s"]),
+                         "the rollback does not restore the burn-on-arrival row")
+        self.assertIsNone(new_kind_problem(pull))
+        with open(rollback, encoding="utf-8") as handle:
             text = handle.read()
-        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
-                      "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
-                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
-        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("burned at once (75 s lead", text)
+        self.assertIn("SET `priority` = 3, `param` = 75,", text)
 
     def test_hakkar_anchor_rows(self):
         # 20261106030000_world.sql: the fight stays on his platform. The anchor centre is his spawn (tw_world creature
@@ -976,10 +1048,11 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
                       "AND `kind` IN ('tank_post', 'gate_hold', 'anchor');", text)
         self.assertEqual(3, len(re.findall(r"(?m)^\(249, 10184, '", text)))
-        # The 50143/50144 rows of 20261109200100 stay.
+        # The 50143/50144 rows of 20261109200100 stay, except the Hatcher kill_first walk 2h removes
+        # (20261112200100_world.sql, pinned in test_onyxia_walk2h_burn_order).
         for key in ((249, 50143, "taunt_after_cast", 0, 0), (249, 50143, "interrupt", 0, 33439),
                     (249, 50143, "behind", 0, 33439), (249, 50143, "kill_first", 50143, 0),
-                    (249, 50144, "kill_first", 50144, 0), (249, 50144, "taunt_after_cast", 0, 0),
+                    (249, 50144, "taunt_after_cast", 0, 0),
                     (249, 50144, "behind", 0, 33441)):
             self.assertIn(key, live, "the Cindarion/Hatcher rows must stay: %s" % (key,))
 
@@ -1032,6 +1105,168 @@ class BossTacticsSql(unittest.TestCase):
                           crew["tactic_mode"], crew["hp_min"], crew["hp_max"], crew["bot_aura"]),
                          "the Onyxia add_crew row drifted")
         self.assertIsNone(new_kind_problem(crew))
+
+    def test_onyxia_walk2g_hatcher_posts(self):
+        # 20261112100000_world.sql: walk 2f a-2 reached P3 with the slot-1 post alone, no Hatcher was taunted and 9 of
+        # the P3 deaths went to the two 50144s, so each Hatcher gets its own post: slot 2 at S' (-29.0, -245.7) and
+        # slot 3 at N' (-29.0, -183.8), 12 yd off the spawn points and clear of the eggs. The loader refuses a second
+        # row with the same kind, target, spell and band, so the bands differ (0-41 and 0-40) and both rows load. The
+        # DELETE is target-scoped: the slot-1 row on 50143 must survive it.
+        name = "20261112100000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2g Hatcher post migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(2, text.count("(249, 10184, 'tank_post', 50144,"))
+        posts = [_payload_dict(row) for row in effective_rows()
+                 if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
+        # 20261112200000_world.sql moves the north row from slot 3 to slot 1 and adds slot 0 on Onyxia herself, so
+        # the live rows are keyed by (target, slot): the 50143 row keeps slot 1 and the two bands never overlap.
+        shape = {(post["target_entry"], post["priority"]): post for post in posts}
+        self.assertIn((50143, 1), shape, "the slot-1 Cindarion 50143 post was deleted")
+        cindarion = shape[(50143, 1)]
+        self.assertEqual(("20261111160100_world.sql", 41, 65),
+                         (cindarion["file"], cindarion["hp_min"], cindarion["hp_max"]),
+                         "the slot-1 Cindarion post drifted")
+        self.assertEqual(4, len(posts), "the Onyxia tank_post rows are not exactly four")
+        self.assertEqual([(10184, 0), (50143, 1), (50144, 1), (50144, 2)], sorted(shape),
+                         "the four Onyxia posts do not fill slots 0, 1, 1 and 2 (walk 2h)")
+        for slot, target, band, spot in ((2, 50144, (0, 41), (-29.0, -245.7, -88.5)),
+                                         (1, 50144, (0, 40), (-29.0, -183.8, -88.4))):
+            post = shape[(target, slot)]
+            self.assertEqual(name, post["file"], "the walk 2g migration owns slot %d" % slot)
+            self.assertEqual((target, 0, 90.0, "hold_spot", 120.0, band[0], band[1], 0),
+                             (post["target_entry"], post["spell_id"], post["param"], post["tactic_mode"],
+                              post["window_s"], post["hp_min"], post["hp_max"], post["bot_aura"]),
+                             "the slot-%d Hatcher post drifted" % slot)
+            self.assertEqual(spot, (post["spot_x"], post["spot_y"], post["spot_z"]),
+                             "the slot-%d Hatcher post moved off its spawn point" % slot)
+            self.assertIsNone(new_kind_problem(post), "the loader rules refuse the slot-%d Hatcher post" % slot)
+        # Both 50144 rows pass the loader's duplicate rule: one kind, target and spell, two bands.
+        self.assertEqual(2, len({(post["hp_min"], post["hp_max"]) for post in posts if post["target_entry"] == 50144}),
+                         "the loader drops one of the two Hatcher posts as a duplicate")
+        # The DELETE is scoped to the two 50144 rows: it frees exactly what this file inserts, so a re-run never
+        # doubles them and never takes the slot-1 row on 50143.
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post' AND `target_entry` = 50144;", text)
+
+    def test_onyxia_walk2i_main_tank_row(self):
+        # 20261113200000_world.sql: walk 2g-2h's slot-0 post ran and the main tank still died at +50 s in 15 of 15 P3
+        # pulls. The row now names Bellowing Roar 18431 (the aura that marks the cast the holder answers with its
+        # class's defensive actions) and holds two healers on its tank; the column is added through information_schema
+        # so a database without it upgrades in place, and no other post row gains either column.
+        name = "20261113200000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2i row migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("FROM information_schema.COLUMNS", text)
+        self.assertIn("COLUMN_NAME = 'healers'", text)
+        self.assertIn("ADD COLUMN `healers` tinyint unsigned NOT NULL DEFAULT 0 AFTER `spot_z`", text)
+        posts = [_payload_dict(row) for row in effective_rows()
+                 if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
+        shape = {(post["target_entry"], post["priority"]): post for post in posts}
+        self.assertEqual([(10184, 0), (50143, 1), (50144, 1), (50144, 2)], sorted(shape),
+                         "the Onyxia tank_post rows are not four")
+        main = shape[(10184, 0)]
+        self.assertEqual((18431, 2), (main["spell_id"], main["healers"]),
+                         "the slot-0 Onyxia post does not name the Roar and its two healers")
+        self.assertEqual((0, "hold_spot", 90.0, 0, 40, (20.0, -218.0, -85.3)),
+                         (main["priority"], main["tactic_mode"], main["param"], main["hp_min"], main["hp_max"],
+                          (main["spot_x"], main["spot_y"], main["spot_z"])),
+                         "the slot-0 Onyxia post moved")
+        # The row itself stays the 2h INSERT; the 2i file sets its spell, healers and comment.
+        self.assertEqual("20261112200000_world.sql", main["file"])
+        self.assertIn("UPDATE `ai_boss_tactic` SET `spell_id` = 18431, `healers` = 2,", text)
+        self.assertIsNone(new_kind_problem(main), "the loader mirror refuses the slot-0 Onyxia post")
+        # The other three posts keep both columns at 0.
+        for key in ((50143, 1), (50144, 1), (50144, 2)):
+            post = shape[key]
+            self.assertEqual((0, 0), (post["spell_id"], post["healers"]),
+                             "the post on %u gained a spell or healers" % key[0])
+        # No stand row and no other 2i row changed.
+        self.assertNotIn("ai_boss_stand", text)
+
+    def test_onyxia_walk2h_burn_order(self):
+        # 20261112200100_world.sql (lead decision 1): the Hatchers lost 9-25 % in 56-83 s of P3 (466k health
+        # together) while P1 takes 39 % off Onyxia in 83-97 s, so the kill-first order spent the phase on adds. The
+        # `hold_kill` row goes with it and the damage dealers fight her from the first pull; Cindarion's kill_first
+        # stays, and the 50143 gate_hold row still holds them off her while he fights.
+        name = "20261112200100_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2h burn-order migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'hold_kill' AND `target_entry` = 50144;", text)
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 50144 "
+                      "AND `kind` = 'kill_first';", text)
+        self.assertEqual(0, text.count("INSERT INTO `ai_boss_tactic`"))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        self.assertNotIn((249, 10184, "hold_kill", 50144, 0), live, "the Onyxia hold_kill row is back")
+        self.assertFalse([key for key in live if key[:2] == (249, 50144) and key[2] == "kill_first"],
+                         "a Hatcher kill_first row is back")
+        self.assertIn((249, 50143, "kill_first", 50143, 0), live, "the Cindarion kill_first row was deleted")
+        self.assertIn((249, 10184, "gate_hold", 50143, 0), live,
+                      "the 50143 gate_hold row was deleted with the Hatcher kill order")
+
+    def test_onyxia_walk2h_p3_rows(self):
+        # 20261112200000_world.sql: walk 2g's four P3 pulls (109 deaths) lost 47 to Onyxia (Flame Breath 17,
+        # Cleave 15; 28 of those 32 non-tanks) while the slot-0 tank targeted a whelp in 42 % of its frames, and
+        # only 4 of the 8 Hatchers had a post (the rows name slots 2 and 3; the live tanks at the landings were
+        # 2, 4, 3, 3). Slot 0 holds her at the spot E (20.0, -218.0, -85.3), the north Hatcher row moves to slot 1
+        # (the 50143 row keeps slot 1 in the 41-65 band, so the two slot-1 bands never overlap) and a `behind` row
+        # keeps the non-tanks out of her front in P3. The slot-0 row needs AiPlayerbot.DungeonRunTankPostMain.
+        name = "20261112200000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2h row migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(2, text.count("(249, 10184, '"))
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post' AND `target_entry` = 10184;", text)
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'behind';", text)
+        posts = [_payload_dict(row) for row in effective_rows()
+                 if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
+        shape = {(post["target_entry"], post["priority"]): post for post in posts}
+        self.assertEqual([(10184, 0), (50143, 1), (50144, 1), (50144, 2)], sorted(shape),
+                         "the Onyxia tank_post rows are not slots 0, 1, 1 and 2")
+        main = shape[(10184, 0)]
+        self.assertEqual(name, main["file"], "the walk 2h migration owns the slot-0 row")
+        # Walk 2i sets the slot-0 row's spell (Bellowing Roar 18431) and its healers (2); the rest of the 2h row holds.
+        self.assertEqual((18431, 90.0, "hold_spot", 120.0, 0, 40, 0, (20.0, -218.0, -85.3)),
+                         (main["spell_id"], main["param"], main["tactic_mode"], main["window_s"],
+                          main["hp_min"], main["hp_max"], main["bot_aura"],
+                          (main["spot_x"], main["spot_y"], main["spot_z"])),
+                         "the slot-0 Onyxia post drifted")
+        self.assertIsNone(new_kind_problem(main), "the loader refuses the slot-0 Onyxia post")
+        # Slot 1 is Cindarion 50143 from 65-41 % and the north Hatcher 50144 from 40 % down: the bands never
+        # overlap, so one of the two slot-1 posts is armed at a time.
+        cindarion, north = shape[(50143, 1)], shape[(50144, 1)]
+        self.assertEqual((41, 65), (cindarion["hp_min"], cindarion["hp_max"]))
+        self.assertEqual((0, 40), (north["hp_min"], north["hp_max"]))
+        self.assertLess(north["hp_max"], cindarion["hp_min"], "the slot-1 health bands overlap")
+        self.assertEqual((-29.0, -183.8, -88.4), (north["spot_x"], north["spot_y"], north["spot_z"]),
+                         "the slot-1 Hatcher post is not the north spot N'")
+        # One `behind` row, Flame Breath 18435, 40 yd of front, P3 only.
+        behind = [_payload_dict(row) for row in effective_rows()
+                  if row[1] == 249 and row[2] == 10184 and row[3] == "behind"]
+        self.assertEqual(1, len(behind), "the Onyxia `behind` row is not exactly one")
+        front = behind[0]
+        self.assertEqual(name, front["file"], "the walk 2h migration owns the `behind` row")
+        self.assertEqual((0, 18435, 0, 40.0, "", 0, 40, 0),
+                         (front["target_entry"], front["spell_id"], front["priority"], front["param"],
+                          front["tactic_mode"], front["hp_min"], front["hp_max"], front["bot_aura"]),
+                         "the Onyxia `behind` row drifted")
+        self.assertIsNone(new_kind_problem(front), "the loader rules refuse the Onyxia `behind` row")
+        # The 50144 Hatcher taunt window is renumbered off the main tank, 2 -> 1 (with 3 live tanks slot 3 read
+        # 3 % 3 = 0, the main tank). The second window under Onyxia (10184, target 50144) arrives with walk 2f and is
+        # not this branch's row, so the same UPDATE has nothing to renumber here.
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        self.assertEqual(1, live.get((249, 50144, "taunt_after_cast", 0, 0))["priority"],
+                         "the 50144 taunt window is not on slot 1")
 
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
@@ -1121,8 +1356,9 @@ class BossTacticsSql(unittest.TestCase):
     def test_onyxia_walk2e_post_radius(self):
         # 20261111160100_world.sql: the post's arrival radius goes 40 -> 90, the whole floor the
         # `anchor` row allows (walk 2d a-2: Cindarion stood 41-60 yd from T, 8 leash walks, the
-        # latch came at +107 s). One (249, 10184) tank_post row, mode hold_spot, the walk 2c band,
-        # window and spot; the loader's cap (5-100 yd) accepts 90.
+        # latch came at +107 s). One (249, 10184) tank_post row on Cindarion 50143, mode hold_spot,
+        # the walk 2c band, window and spot; the loader's cap (5-100 yd) accepts 90. The two 50144
+        # Hatcher posts arrive in walk 2g (test_onyxia_walk2g_hatcher_posts) and are not this file's.
         name = "20261111160100_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Onyxia walk 2e post radius migration is missing")
@@ -1132,8 +1368,8 @@ class BossTacticsSql(unittest.TestCase):
                       "AND `kind` = 'tank_post';", text)
         self.assertEqual(1, len(re.findall(r"(?m)^\(249, 10184, '", text)))
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
-        posts = [key for key in live if key[:3] == (249, 10184, "tank_post")]
-        self.assertEqual(1, len(posts), "the Onyxia tank_post rows are not exactly one")
+        posts = [key for key in live if key[:4] == (249, 10184, "tank_post", 50143)]
+        self.assertEqual(1, len(posts), "the Onyxia slot-1 Cindarion tank_post row is not exactly one")
         post = live[posts[0]]
         self.assertEqual(name, post["file"], "the walk 2e migration owns the tank_post row")
         self.assertEqual((50143, 0, 1, 90.0, 41, 65, 120.0, 8.0, -200.0, -85.8, "hold_spot"),
@@ -1889,6 +2125,10 @@ class BossTacticsSql(unittest.TestCase):
             (531, 15275, "interrupt", 0, 7393, 0, 100),
             (531, 15276, "interrupt", 0, 7393, 0, 100),
             (532, 61224, "interrupt", 0, 57094, 0, 100),
+            # Walk 2h (lead decision 1): the Hatchers lost only 9-25 % in 56-83 s, so the P3 kill order goes with
+            # no replacement and the damage dealers fight Onyxia (20261112200100_world.sql).
+            (249, 10184, "hold_kill", 50144, 0, 0, 100),
+            (249, 50144, "kill_first", 50144, 0, 0, 100),
         }
 
         def key(row):

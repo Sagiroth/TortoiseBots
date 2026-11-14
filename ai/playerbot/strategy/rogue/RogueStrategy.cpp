@@ -123,6 +123,16 @@ void RogueStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     // Instant on the main hand itself. Off hand prefers Deadly with an
     // Instant fallback while Deadly is still trained/held. Trigger-gated, so
     // once any poison lands every path goes quiet until it expires.
+    // A saved `.bot choice poison_mh|poison_oh` order keeps its own poison
+    // on that hand; every automatic poison row for the hand stands down.
+    triggers.push_back(new TriggerNode(
+        "choice poison main hand",
+        NextAction::array(0, new NextAction("choice poison main hand", 21.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "choice poison off hand",
+        NextAction::array(0, new NextAction("choice poison off hand", 21.0f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "main hand weapon no enchant",
         NextAction::array(0, new NextAction("apply instant poison main hand", 20.0f), NULL)));

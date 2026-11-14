@@ -15,8 +15,10 @@
 #include <set>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/CheckedMutex.h"
 #include "playerbot/BossEngagedPolicy.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/SeekAuraPolicy.h"
@@ -40,6 +42,7 @@
 #include "playerbot/EbonrocSwapPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
 #include "ChooseTargetActions.h"
 #include "PositionAction.h"
 #include "FollowActions.h"
@@ -2086,12 +2089,15 @@ Spell* WalkoutCurrentCast(Player* bot, Unit* son, bool& onSon)
 {
     Spell* current = nullptr;
     onSon = false;
+    // The casts' cached unit-target pointers are refreshed only in the caster's next Spell::update, so compare the guids
+    // the casts hold: a target removed earlier in this tick reads as a different guid, never as freed memory.
+    ObjectGuid const sonGuid = son ? son->GetObjectGuid() : ObjectGuid();
     for (CurrentSpellTypes type : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
     {
         Spell* const spell = bot->GetCurrentSpell(type);
         if (spell && !current)
             current = spell;
-        if (son && spell && spell->m_targets.getUnitTarget() == son)
+        if (sonGuid && spell && spell->m_targets.getUnitTargetGuid() == sonGuid)
             onSon = true;
     }
     return current;
@@ -7444,8 +7450,10 @@ bool BossTacticsTankSwapHoldAction::Execute(Event& event)
     bot->AttackStop();
     Spell* generic = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     Spell* melee = bot->GetCurrentSpell(CURRENT_MELEE_SPELL);
-    if ((generic && generic->m_targets.getUnitTarget() == boss) ||
-        (melee && melee->m_targets.getUnitTarget() == boss))
+    // Compare the guids the casts hold: their cached unit-target pointer can point at a unit the map freed this tick.
+    ObjectGuid const bossGuid = boss->GetObjectGuid();
+    if ((generic && generic->m_targets.getUnitTargetGuid() == bossGuid) ||
+        (melee && melee->m_targets.getUnitTargetGuid() == bossGuid))
         bot->CastStop();
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<Unit*>("current target")->Set(nullptr);
@@ -8292,7 +8300,7 @@ namespace
 {
 // What each bot remembers of the window it was seated in (BossStandPolicy.h StandHold), by guid. A mutex guards it:
 // the plan is asked for from the trigger, the action, the reach and the dodge of every bot.
-std::mutex g_standHoldMutex;
+CheckedMutex g_standHoldMutex;
 std::unordered_map<uint64, StandHold> g_standHolds;
 // Seats the mover refused, by bot guid (StandFailure): three in a row for one seat and the bot gets no seat.
 std::unordered_map<uint64, StandFailure> g_standFailures;
@@ -8354,7 +8362,7 @@ void ReleaseStandEpisode(PlayerbotAI* ai, uint64 key, const char* reason)
         return;
     StandEpisode episode;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto it = g_standEpisodes.find(key);
         if (it == g_standEpisodes.end())
             return;
@@ -8373,7 +8381,7 @@ void ForgetStand(uint64 key)
 {
     if (g_standStateCount.load(std::memory_order_relaxed) == 0)
         return;
-    std::lock_guard<std::mutex> lock(g_standHoldMutex);
+    std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
     g_standHolds.erase(key);
     g_standFailures.erase(key);
     g_standEpisodes.erase(key);
@@ -8422,7 +8430,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     StandEpisode episode;
     bool haveEpisode = false;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto it = g_standHolds.find(selfKey);
         if (it != g_standHolds.end())
             hold = it->second;
@@ -8553,7 +8561,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
                     continue;
                 StandHold memberHold;
                 {
-                    std::lock_guard<std::mutex> lock(g_standHoldMutex);
+                    std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
                     auto it = g_standHolds.find(member->GetObjectGuid().GetRawValue());
                     if (it != g_standHolds.end())
                         memberHold = it->second;
@@ -8565,7 +8573,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     }
 
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         // The hold is kept for a bot that takes part (it is what the others read); a bot that does not count leaves
         // none behind. A tick that sees no boss with rows (it dropped off the attacker list for a moment) keeps the
         // hold until its time is up; StandPointsNow clears it itself when a boss is seen and the hold is over.
@@ -8631,7 +8639,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         bool logRelease = false, logAssigned = false, logArrived = false, logUnseated = false;
         uint32 assignedMs = 0;
         {
-            std::lock_guard<std::mutex> lock(g_standHoldMutex);
+            std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
             if (step.release)
             {
                 auto it = g_standEpisodes.find(selfKey);
@@ -8706,7 +8714,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();
     StandSeat seat;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         Group* group = bot->GetGroup();
         // a bot with no group plans alone: its own guid keeps two groupless bots from sharing one plan
         const uint64 groupGuid = group ? group->GetLeaderGuid().GetRawValue() : bot->GetObjectGuid().GetRawValue();
@@ -8738,13 +8746,17 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // reactive dodge.
     if (!seat.valid)
         return finishStandRead(target, false, selfCounts ? "side_full" : "not_counted");
-    // A seat the mover refused three times in a row is given up on: the reach and the dodge take over.
+    // A seat the mover refused three times in a row is given up on: the reach and the dodge take over. The decision is
+    // made under the lock and the read finished after it: finishStandRead takes g_standHoldMutex again for its episode
+    // row, and a non-recursive mutex locked twice on one thread deadlocks it (the World thread freeze of 2026-11-13).
+    bool givenUp = false;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(selfKey);
-        if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
-            return finishStandRead(target, false, "given_up");
+        givenUp = failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y);
     }
+    if (givenUp)
+        return finishStandRead(target, false, "given_up");
     // AiPlayerbot.BossStandWholeRaid: a bot on its seat's side of the lane and at least as far from the lane line as
     // the seats next to it along the lane stays where it stands; the seat is its own position, so the reach, the dodge
     // and the flee see it seated and the stand action sees it arrived. A stay is not a planned seat, so the tank post
@@ -8812,14 +8824,14 @@ bool BossTacticsStandAction::Execute(Event& event)
     if (!MoveTo(bot->GetMapId(), seatX, seatY, z, false, false, false, true))
     {
         // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);
         g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
                                 std::memory_order_relaxed);
         return false;
     }
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(key);
         if (failure != g_standFailures.end())
         {
@@ -11724,7 +11736,13 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 bool const holderAvailable = holderSlot >= 0 &&
                     holderSlot < static_cast<int>(usable.size()) && usable[holderSlot] &&
                     holderSlot < static_cast<int>(available.size()) && available[holderSlot];
-                int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority));
+                // AiPlayerbot.DungeonRunTauntAfterSkipsMain: a row that names an off-tank scans the off-tanks only, so a
+                // window never wraps to the main tank and the main tank never leaves the boss; its own row (priority 0)
+                // still takes it (TauntAfterScanIndex).
+                bool const skipMain = sPlayerbotAIConfig.dungeonRunTauntAfterSkipsMain &&
+                    row->mode == TacticMode::UntilTank && row->priority >= 1;
+                int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority),
+                    skipMain);
                 // One tank advances the window (its holder while it is still an available tank, else the order's first
                 // usable AND available tank, so an incapacitated holder is replaced as writer in the same tick), so a window's transitions and their outcome rows happen once each. A holder nobody
                 // has read for kTauntAfterOwnerSilentMs stands out of the scan and hands the advance over.
@@ -11742,8 +11760,8 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     int const wanted = (opening && state.open && state.taunted && holderSlot >= 0)
                         ? holderSlot + 1
                         : static_cast<int>(row->priority);
-                    int const assigned =
-                        TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt, canHold);
+                    int const assigned = TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable,
+                        canTaunt, canHold, skipMain);
                     if (assigned >= 0 && assigned < static_cast<int>(roles.tanks.size()))
                     {
                         bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
@@ -11864,6 +11882,9 @@ struct TankPostRecord
     std::uint32_t lastReadMs = 0;
     bool arrivedLogged = false;
     std::uint64_t arrivedSubjectGuid = 0;
+    // A waiting post that ended for its band keeps its record (done) until the band closes: the row must not start it
+    // again on the next tick with a fresh window.
+    bool done = false;
     std::uint32_t looseSinceMs = 0;
     std::uint32_t unhittableSinceMs = 0;
     bool lapseLogged = false;
@@ -11871,6 +11892,17 @@ struct TankPostRecord
     std::uint8_t lastStep = 0;
     // The taunt rows' throttle per word (TankPostTaunt, indexed by its value; 0 = never written), read under the lock.
     std::array<std::uint32_t, 6> tauntLogMs{};
+    // AiPlayerbot.DungeonRunTankPostHealers: the healers held on this post's tank (`event=healers`, in pick order) and
+    // the last scan; the row is written when this set changes.
+    std::array<std::uint64_t, 4> healers{};
+    std::uint8_t healerCount = 0;
+    std::uint32_t healerScanMs = 0;
+    // Walk 2i C: the unit was on this tank at least once, the first sighting of the row's spell (0: not seen), the
+    // actions tried since and whether the window is over.
+    bool heldOnce = false;
+    std::uint32_t cooldownSeenMs = 0;
+    std::uint8_t cooldownTried = 0;
+    bool cooldownClosed = false;
 };
 
 std::mutex g_tankPostMutex;
@@ -11882,6 +11914,20 @@ constexpr std::uint32_t kTankPostTauntLogGapMs = 5000;
 // The dead-tank sweep runs at most this often, whatever asks.
 constexpr std::uint32_t kTankPostSweepMs = 1000;
 std::atomic<std::uint32_t> g_tankPostSweepMs{0};
+// The records that hold healers right now (AiPlayerbot.DungeonRunTankPostHealers): a heal pick off every post reads it
+// without the lock, and the ticks that change a record adjust it under g_tankPostMutex.
+std::atomic<std::uint32_t> g_tankPostHealersLive{0};
+
+// Under g_tankPostMutex: the record with `prior` healers now holds `next`, so the count moves with it.
+void TankPostHealersNote(std::uint8_t prior, std::uint8_t next)
+{
+    if ((prior != 0) == (next != 0))
+        return;
+    if (next != 0)
+        g_tankPostHealersLive.fetch_add(1, std::memory_order_relaxed);
+    else
+        g_tankPostHealersLive.fetch_sub(1, std::memory_order_relaxed);
+}
 
 bool TankPostSameRow(const TankPostRecord& record, const BossTacticRow& row)
 {
@@ -11965,6 +12011,20 @@ void LogTankPostStep(PlayerbotAI* ai, const BossTacticRow& row, TankPostDecision
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
+// One BossTacticsTankPost row when a post's Engage step starts walking to its subject
+// (AiPlayerbot.DungeonRunTankPostWalks), never while it stays on the walk.
+void LogTankPostWalk(PlayerbotAI* ai, const BossTacticRow& row, float subjectYd)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[48];
+    snprintf(info2, sizeof(info2), "event=walk,subject_yd=%.1f", subjectYd);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
 // One BossTacticsTankPost row for the Engage step's taunt (AiPlayerbot.DungeonRunTankPostTaunts). A cast is always
 // written; any other word that was not `none` at most once per bot and word in kTankPostTauntLogGapMs, so a taunt held
 // off by its stance or its radius does not fill the log at the action's tick rate.
@@ -12012,6 +12072,63 @@ void LogTankPostLapse(PlayerbotAI* ai, std::uint32_t bossEntry, std::uint32_t ta
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
+// One BossTacticsTankPost row with a caller-built second field: the post's held healers (`event=healers`) and the
+// holder's cooldown events (`event=cd_seen|cd_cast|cd_none`). The first field is the post's, as on every other row.
+void LogTankPostNote(PlayerbotAI* ai, const BossTacticRow& row, const char* info2)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// One BossTacticsTankPost row for the holder's cooldown (Walk 2i C): the post's own first field from its record and the
+// caller's second one, so the action needs no fight scan of its own.
+void LogTankPostCooldown(PlayerbotAI* ai, Player* bot, const char* info2)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    std::uint32_t bossEntry = 0;
+    std::uint32_t targetEntry = 0;
+    std::uint8_t priority = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+        if (it == g_tankPost.end())
+            return;
+        bossEntry = it->second.bossEntry;
+        targetEntry = it->second.targetEntry;
+        priority = it->second.priority;
+    }
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", bossEntry, targetEntry,
+             static_cast<int>(priority));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// Whether the post's tank or a living group member within 60 yd of it carries the row's spell aura. A triggered cast
+// never shows as the boss's current spell, so the aura is the sighting.
+bool TankPostAuraOnRaid(Player* bot, std::uint32_t mapId, std::uint32_t spellId)
+{
+    if (!bot || spellId == 0)
+        return false;
+    if (bot->HasAura(spellId))
+        return true;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member || !sServerFacade.IsAlive(member) || member->GetMapId() != mapId)
+            continue;
+        if (TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()) > 60.0f)
+            continue;
+        if (member->HasAura(spellId))
+            return true;
+    }
+    return false;
+}
+
 // The end word of a post that the step closed: the first closed input in the step's own order.
 const char* TankPostEndReason(const TankPostIn& in)
 {
@@ -12019,6 +12136,124 @@ const char* TankPostEndReason(const TankPostIn& in)
         in.subjectAlive, in.subjectEvading);
 }
 }  // namespace
+
+// AiPlayerbot.DungeonRunTankPostKeepsUnit: the unit this bot's live post latched at its arrival, 0 when the bot holds
+// no post or its record was not read within kTankPostLiveMs (a post that ended, went stale or whose tank died names
+// nothing). Read under the same lock as every other post record, and only the guid leaves it.
+std::uint64_t ai::TankPostLatchedUnit(Player* bot)
+{
+    if (!bot)
+        return 0;
+    std::lock_guard<std::mutex> lock(g_tankPostMutex);
+    auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_tankPost.end() || it->second.done ||
+        WorldTimer::getMSTime() - it->second.lastReadMs >= kTankPostLiveMs)
+        return 0;
+    return it->second.arrivedSubjectGuid;
+}
+
+// AiPlayerbot.DungeonRunTankPostHealers: the live post this healer is held on (see the header). The heal target pick
+// runs on every healer tick, so a counter of the records that hold healers answers the common case without the lock.
+ai::TankPostHealDuty ai::FindTankPostHealDuty(PlayerbotAI* ai, Player* bot)
+{
+    TankPostHealDuty duty;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunTankPostHealers || !PlayerbotAI::IsHeal(bot))
+        return duty;
+    if (!GetBossTactics().HasTankPostMap(bot->GetMapId()))
+        return duty;
+    if (g_tankPostHealersLive.load(std::memory_order_relaxed) == 0)
+        return duty;
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint64_t holderGuid = 0;
+    std::uint64_t unitGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        for (std::pair<std::uint64_t const, TankPostRecord> const& entry : g_tankPost)
+        {
+            if (entry.first == self || entry.second.map != bot->GetMapId() || entry.second.done ||
+                nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
+                continue;
+            bool listed = false;
+            for (std::size_t i = 0; i < entry.second.healerCount && i < entry.second.healers.size(); ++i)
+            {
+                if (entry.second.healers[i] == self)
+                    listed = true;
+            }
+            if (!listed)
+                continue;
+            holderGuid = entry.first;
+            unitGuid = entry.second.arrivedSubjectGuid;
+            break;
+        }
+    }
+    if (holderGuid == 0)
+        return duty;
+    Player* const holder = sObjectMgr.GetPlayer(ObjectGuid(holderGuid));
+    if (!holder || !holder->IsInWorld() || holder->GetMapId() != bot->GetMapId() ||
+        !sServerFacade.IsAlive(holder))
+        return duty;
+    duty.holder = holder;
+    duty.unit = unitGuid != 0 ? ai->GetUnit(ObjectGuid(unitGuid)) : nullptr;
+    return duty;
+}
+
+// Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder's cooldown clock as the action reads it. False when
+// nothing was seen, the window is over, or the record is not live (the post ended, went stale or its tank died).
+bool ai::TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs)
+{
+    tried = 0;
+    seenMs = 0;
+    if (!bot)
+        return false;
+    std::lock_guard<std::mutex> lock(g_tankPostMutex);
+    auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_tankPost.end())
+        return false;
+    TankPostRecord const& record = it->second;
+    if (record.done || WorldTimer::getMSTime() - record.lastReadMs >= kTankPostLiveMs ||
+        record.cooldownSeenMs == 0 || record.cooldownClosed)
+        return false;
+    tried = record.cooldownTried;
+    seenMs = record.cooldownSeenMs;
+    return true;
+}
+
+bool ai::TankPostCooldownDue(Player* bot)
+{
+    std::uint8_t tried = 0;
+    std::uint32_t seenMs = 0;
+    return TankPostCooldownRead(bot, tried, seenMs);
+}
+
+// One spent name moves the window past it; the last one, or a cast, closes the window.
+void ai::TankPostCooldownNote(Player* bot, std::size_t index, bool cast)
+{
+    if (!bot)
+        return;
+    std::lock_guard<std::mutex> lock(g_tankPostMutex);
+    auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_tankPost.end())
+        return;
+    TankPostRecord& record = it->second;
+    const TankPostCooldownAttempt next = TankPostCooldownAfter(index,
+        TankPostCooldownActions(bot->GetClass()).size(),
+        cast ? TankPostCooldownOutcome::Cast : TankPostCooldownOutcome::Spent);
+    record.cooldownTried = next.tried;
+    record.cooldownClosed = next.closed;
+}
+
+// The window is over with nothing left to try: no action of the class's list, or its time is up.
+void ai::TankPostCooldownClose(Player* bot)
+{
+    if (!bot)
+        return;
+    std::lock_guard<std::mutex> lock(g_tankPostMutex);
+    auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_tankPost.end())
+        return;
+    it->second.cooldownClosed = true;
+}
 
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
 // a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again. The
@@ -12040,8 +12275,10 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
         std::uint32_t const nowMs = WorldTimer::getMSTime();
         for (std::pair<std::uint64_t const, TankPostRecord>& entry : g_tankPost)
         {
-            if (entry.first == self || entry.second.map != bot->GetMapId() ||
+            if (entry.first == self || entry.second.done || entry.second.map != bot->GetMapId() ||
                 entry.second.targetEntry != target->GetEntry() ||
+                !TankPostRecordCovers(sPlayerbotAIConfig.dungeonRunTankPostOwnsUnit,
+                    entry.second.arrivedSubjectGuid, target->GetObjectGuid().GetRawValue()) ||
                 nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
                 continue;
             others.push_back(entry.first);
@@ -12141,24 +12378,12 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     const std::uint32_t mapId = bot->GetMapId();
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    // The row this bot's slot holds now, if any.
-    const BossTacticRow* row = nullptr;
-    Unit* boss = nullptr;
-    for (const BossTacticRow* candidate : fight.rows)
-    {
-        if (candidate->kind != BossTacticKind::TankPost || candidate->priority != roles.botIndex)
-            continue;
-        Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
-        if (!candidateBoss)
-            continue;
-        row = candidate;
-        boss = candidateBoss;
-        break;
-    }
-
+    // The bot's own record first: the kept-row rule below and the row pick both read it. Another tank's live record
+    // comes along: a row another live post holds is no row for this bot.
     TankPostRecord record;
     bool haveRecord = false;
     bool sweepDue = false;
+    std::vector<std::pair<std::uint64_t, TankPostRecord> > others;
     {
         std::lock_guard<std::mutex> lock(g_tankPostMutex);
         auto const mine = g_tankPost.find(self);
@@ -12171,6 +12396,82 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         sweepDue = lastSweep == 0 || nowMs - lastSweep >= kTankPostSweepMs;
         if (sweepDue)
             g_tankPostSweepMs.store(nowMs, std::memory_order_relaxed);
+        for (std::pair<std::uint64_t const, TankPostRecord> const& entry : g_tankPost)
+        {
+            if (entry.first == self || entry.second.map != mapId ||
+                nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
+                continue;
+            others.push_back(entry);
+        }
+    }
+    // Only the keys leave the lock: resolving a tank does not happen under it. The records that stay are the live
+    // posts of tanks that can act; their rows are no row for this bot.
+    std::vector<TankPostRecord> otherPosts;
+    for (std::pair<std::uint64_t, TankPostRecord> const& other : others)
+    {
+        if (other.second.done)
+            continue;
+        Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(other.first));
+        if (!tank || tank->GetInstanceId() != bot->GetInstanceId() ||
+            !TankPostRowHeldByOther(true, TankPostTankCanAct(tank)))
+            continue;
+        otherPosts.push_back(other.second);
+    }
+    auto const rowHeldByOther = [&](const BossTacticRow& candidate)
+    {
+        for (const TankPostRecord& other : otherPosts)
+            if (TankPostSameRow(other, candidate))
+                return true;
+        return false;
+    };
+
+    // The row this bot's slot holds now, if any: the first open row of its slot that no other live post holds.
+    // AiPlayerbot.DungeonRunTankPostMain: slot 0 (the main tank) holds a post only with the key on.
+    const BossTacticRow* slotRow = nullptr;
+    Unit* slotBoss = nullptr;
+    for (const BossTacticRow* candidate : fight.rows)
+    {
+        if (candidate->kind != BossTacticKind::TankPost ||
+            !TankPostSlotRow(sPlayerbotAIConfig.dungeonRunTankPostMain, candidate->priority, roles.botIndex))
+            continue;
+        Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
+        if (!candidateBoss || rowHeldByOther(*candidate))
+            continue;
+        slotRow = candidate;
+        slotBoss = candidateBoss;
+        break;
+    }
+
+    // The row this bot's post holds. AiPlayerbot.DungeonRunTankPostKeepsUnit: a post that latched a living unit keeps
+    // the row it started with, whatever slot index the raid tank order moved this bot to, so a renumbering no longer
+    // ends it at its `slot` word; the kept row is the record's own row (no priority test), and the pick runs as today
+    // when it is gone, when another live post holds it, or when this bot is now the main tank and its slot-0 row is
+    // open (nobody else can take that row, so the boss would be left without a posted tank).
+    const BossTacticRow* row = nullptr;
+    Unit* boss = nullptr;
+    Unit* const latchedUnit = record.arrivedSubjectGuid != 0 ? ai->GetUnit(ObjectGuid(record.arrivedSubjectGuid))
+                                                             : nullptr;
+    if (TankPostKeepsRow(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit, haveRecord, record.arrivedSubjectGuid,
+            latchedUnit && sServerFacade.IsAlive(latchedUnit)) &&
+        !TankPostKeptRowYields(roles.botIndex == 0, slotRow != nullptr))
+    {
+        for (const BossTacticRow* candidate : fight.rows)
+        {
+            if (candidate->kind != BossTacticKind::TankPost || !TankPostSameRow(record, *candidate) ||
+                rowHeldByOther(*candidate))
+                continue;
+            Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
+            if (!candidateBoss)
+                continue;
+            row = candidate;
+            boss = candidateBoss;
+            break;
+        }
+    }
+    if (!row && slotRow)
+    {
+        row = slotRow;
+        boss = slotBoss;
     }
 
     // A post whose tank died, was charmed or logged out ends wherever its record is read from, and a record nobody
@@ -12184,6 +12485,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
             {
                 if (nowMs - it->second.lastReadMs > kTankPostIdleMs)
                 {
+                    TankPostHealersNote(it->second.healerCount, 0);
                     it = g_tankPost.erase(it);
                     continue;
                 }
@@ -12196,7 +12498,9 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
                 Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(it->first));
                 if (tank && !TankPostTankCanAct(tank))
                 {
-                    ended.push_back(std::make_pair(it->first, it->second));
+                    if (!it->second.done)
+                        ended.push_back(std::make_pair(it->first, it->second));
+                    TankPostHealersNote(it->second.healerCount, 0);
                     it = g_tankPost.erase(it);
                     continue;
                 }
@@ -12240,29 +12544,66 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         }
     }
 
-    // An open post ends when its row is gone (the band closed) or another row of this bot's slot took over.
+    // An open post ends when its row is gone (the band closed) or another row of this bot's slot took over. A done
+    // record goes the same way, without a second end row: its post already wrote one when it ended. A renumbering is no
+    // band close, though: the record's row still stands for another slot index, so its done record stays until the band
+    // itself goes.
     if (haveRecord && (!row || record.map != mapId || !TankPostSameRow(record, *row) ||
             record.bossGuid != boss->GetObjectGuid().GetRawValue()))
     {
+        // The band is open while the record's row is in the fight and the boss the post started on still lives.
+        bool bandOpen = false;
+        if (record.done && record.map == mapId)
+        {
+            Unit* const recordBoss = record.bossGuid != 0 ? ai->GetUnit(ObjectGuid(record.bossGuid)) : nullptr;
+            if (recordBoss && sServerFacade.IsAlive(recordBoss))
+            {
+                for (const BossTacticRow* candidate : fight.rows)
+                {
+                    if (candidate->kind == BossTacticKind::TankPost && TankPostSameRow(record, *candidate))
+                    {
+                        bandOpen = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (TankPostDoneRecordStays(record.done, bandOpen))
+        {
+            // The renumbering moved the row, not the band: keep the record live, and the row cannot start it again.
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            auto const it = g_tankPost.find(self);
+            if (it != g_tankPost.end())
+                it->second.lastReadMs = nowMs;
+            return out;
+        }
         {
             std::lock_guard<std::mutex> lock(g_tankPostMutex);
-            g_tankPost.erase(self);
+            auto const mine = g_tankPost.find(self);
+            if (mine != g_tankPost.end())
+            {
+                TankPostHealersNote(mine->second.healerCount, 0);
+                g_tankPost.erase(mine);
+            }
         }
-        BossTacticRow closed;
-        closed.map = record.map;
-        closed.bossEntry = record.bossEntry;
-        closed.targetEntry = record.targetEntry;
-        closed.kind = BossTacticKind::TankPost;
-        closed.hpMin = record.hpMin;
-        closed.hpMax = record.hpMax;
-        closed.param = record.param;
-        closed.spotX = record.spotX;
-        closed.spotY = record.spotY;
-        closed.spotZ = record.spotZ;
-        closed.priority = record.priority;
-        LogTankPost(ai, closed, "end",
-            TankPostEndsAsSlot(row != nullptr, slotMoved, sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
-                ? "slot" : "band");
+        if (!record.done)
+        {
+            BossTacticRow closed;
+            closed.map = record.map;
+            closed.bossEntry = record.bossEntry;
+            closed.targetEntry = record.targetEntry;
+            closed.kind = BossTacticKind::TankPost;
+            closed.hpMin = record.hpMin;
+            closed.hpMax = record.hpMax;
+            closed.param = record.param;
+            closed.spotX = record.spotX;
+            closed.spotY = record.spotY;
+            closed.spotZ = record.spotZ;
+            closed.priority = record.priority;
+            LogTankPost(ai, closed, "end",
+                TankPostEndsAsSlot(row != nullptr, slotMoved, sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
+                    ? "slot" : "band");
+        }
         return out;
     }
     if (!row || !boss)
@@ -12271,7 +12612,24 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
 
     std::vector<TankPostUnit> const candidates =
         AI_VALUE2(std::vector<TankPostUnit>, "tank post units", static_cast<int32>(row->targetEntry));
-    const int pick = PickTankPostUnit(candidates, row->spotX, row->spotY, row->spotZ);
+    // AiPlayerbot.DungeonRunTankPostOwnsUnit: the unit this post latched wins the pick, and a unit another live post
+    // latched is no candidate, so two posts on one entry each keep their own Hatcher.
+    std::unordered_set<std::uint64_t> otherLatched;
+    if (sPlayerbotAIConfig.dungeonRunTankPostOwnsUnit)
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        for (std::pair<std::uint64_t const, TankPostRecord>& entry : g_tankPost)
+        {
+            if (entry.first == self || entry.second.done || entry.second.map != mapId ||
+                entry.second.targetEntry != row->targetEntry || entry.second.arrivedSubjectGuid == 0 ||
+                nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
+                continue;
+            otherLatched.insert(entry.second.arrivedSubjectGuid);
+        }
+    }
+    const std::uint64_t ownLatched = haveRecord ? record.arrivedSubjectGuid : 0;
+    const int pick = PickTankPostUnit(candidates, row->spotX, row->spotY, row->spotZ,
+        sPlayerbotAIConfig.dungeonRunTankPostOwnsUnit, ownLatched, otherLatched);
     TankPostUnit const* subjectUnit = pick < 0 ? nullptr : &candidates[pick];
     Unit* const subject = subjectUnit ? ai->GetUnit(ObjectGuid(subjectUnit->guid)) : nullptr;
     if (subjectUnit && !subject)
@@ -12300,9 +12658,24 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     in.arrivedBefore = haveRecord &&
         TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
     in.subjectOnTank = subject && subject->GetVictim() == bot;
-    const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();
+    // Walk 2i C: the unit counts as held only on a tick without the row's aura on the raid. A cast at the landing
+    // shows the aura and the tank on the same tick (the Roar as she turns), and that tick must not spend the window.
+    const bool cooldownLive = sPlayerbotAIConfig.dungeonRunTankPostHealers && row->spellId != 0 &&
+        !record.cooldownClosed && record.cooldownSeenMs == 0;
+    const bool auraOnRaid = cooldownLive && TankPostAuraOnRaid(bot, mapId, row->spellId);
+    record.heldOnce = record.heldOnce || TankPostCooldownHolds(in.subjectOnTank, auraOnRaid);
+    // The walk key reads the stand for plain posts too: a breath seat, a stay included, stops the Engage walk.
+    const BossStandTarget stand = (holdSpot || sPlayerbotAIConfig.dungeonRunTankPostWalks)
+        ? FindBossStand(ai, bot) : BossStandTarget();
     in.seated = TankPostSeated(stand.valid, stand.stay);
     in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;
+    // AiPlayerbot.DungeonRunTankPostWaits: a hold_spot post runs before its unit exists, from its first tick until
+    // the arrival latches (a record without a latched unit keeps waiting; a latched unit's death still ends it).
+    in.waits = sPlayerbotAIConfig.dungeonRunTankPostWaits && holdSpot &&
+        (!haveRecord || record.arrivedSubjectGuid == 0);
+    // The row's wait key: an ending post of this kind keeps a done record so the band does not start it again.
+    in.waitRow = sPlayerbotAIConfig.dungeonRunTankPostWaits && holdSpot;
+    in.done = haveRecord && record.done;
     in.slotMoved = slotMoved;
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
     if (holdSpot && currentTarget == subject)
@@ -12312,11 +12685,13 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
 
     // A post starts once there is a living subject to wait for: no record before that, so an idle row costs nothing,
     // and an add the tank holds does not spend the post's window. A hold_spot post also starts while the tank holds
-    // another hostile (the post waits on it until the subject arrives).
+    // another hostile (the post waits on it until the subject arrives). AiPlayerbot.DungeonRunTankPostWaits: a
+    // waiting hold_spot post starts with no subject at all and walks to its spot.
     bool startedNow = false;
     if (!haveRecord)
     {
-        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading || (!holdSpot && in.holdingOtherHostile))
+        if (!in.waits && (!in.subjectFound || !in.subjectAlive || in.subjectEvading ||
+                (!holdSpot && in.holdingOtherHostile)))
             return out;
         record.map = row->map;
         record.bossEntry = row->bossEntry;
@@ -12341,15 +12716,127 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     const TankPostDecision step = TankPostStep(in);
     if (step == TankPostDecision::End)
     {
+        if (TankPostKeepsDoneRecord(in.waitRow, step))
+        {
+            // A waiting post keeps a done record until its band closes, or it would start again with a fresh window
+            // the tick after its unit died.
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            TankPostRecord& stored = g_tankPost[self];
+            stored = record;
+            stored.done = true;
+            stored.lastReadMs = nowMs;
+        }
+        else
         {
             std::lock_guard<std::mutex> lock(g_tankPostMutex);
-            g_tankPost.erase(self);
+            auto const mine = g_tankPost.find(self);
+            if (mine != g_tankPost.end())
+            {
+                TankPostHealersNote(mine->second.healerCount, 0);
+                g_tankPost.erase(mine);
+            }
         }
         LogTankPost(ai, *row, "end", TankPostEndReason(in));
         return out;
     }
     if (step == TankPostDecision::None)
+    {
+        // A done record stays live while its band is open, or the idle sweep would drop it and the row would restart
+        // the post inside the same band.
+        if (in.done)
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            auto const it = g_tankPost.find(self);
+            if (it != g_tankPost.end())
+                it->second.lastReadMs = nowMs;
+        }
         return out;
+    }
+
+    // AiPlayerbot.DungeonRunTankPostHealers: a `hold_spot` post holds its row's healers on this tank
+    // (`ai_boss_tactic.healers`). The scan runs at most once a second and outside the record lock: the group read and
+    // the seat lookups are the expensive part. `others` is the map's other live records, so a healer another post
+    // holds is no candidate here.
+    if (sPlayerbotAIConfig.dungeonRunTankPostHealers && holdSpot && row->healers > 0 &&
+        (record.healerScanMs == 0 || nowMs - record.healerScanMs >= 1000))
+    {
+        std::vector<std::uint64_t> current;
+        current.reserve(record.healerCount);
+        for (std::size_t i = 0; i < record.healerCount && i < record.healers.size(); ++i)
+            current.push_back(record.healers[i]);
+        std::unordered_set<std::uint64_t> otherHeld;
+        for (std::pair<std::uint64_t const, TankPostRecord> const& other : others)
+        {
+            if (other.second.done)
+                continue;
+            for (std::size_t i = 0; i < other.second.healerCount && i < other.second.healers.size(); ++i)
+                otherHeld.insert(other.second.healers[i]);
+        }
+        std::vector<TankPostHealerCandidate> healerCandidates;
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        {
+            if (!member || member == bot || !sServerFacade.IsAlive(member) || !member->IsInWorld() ||
+                member->GetMapId() != mapId || !member->GetCharmerGuid().IsEmpty() || !PlayerbotAI::IsHeal(member))
+                continue;
+            PlayerbotAI* const memberAi = GET_PLAYERBOT_AI(member);
+            if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+                continue;
+            const std::uint64_t memberGuid = member->GetObjectGuid().GetRawValue();
+            if (otherHeld.count(memberGuid) != 0)
+                continue;
+            TankPostHealerCandidate candidate;
+            candidate.guid = memberGuid;
+            // The raid layout's tank seat ranks it: on this holder, no seat, another tank's seat (2).
+            const TortoiseBots::BotCommands::RaidTankSeat seat =
+                TortoiseBots::BotCommands::RaidTankHealerSeat(member);
+            if (seat.seated)
+                candidate.seatRank = seat.tank == bot->GetObjectGuid() ? 0 : 2;
+            const std::uint32_t maxMana = member->GetMaxPower(POWER_MANA);
+            candidate.manaPct = maxMana == 0 ? 100.0f : 100.0f * member->GetPower(POWER_MANA) / maxMana;
+            const float dx = member->GetPositionX() - bot->GetPositionX();
+            const float dy = member->GetPositionY() - bot->GetPositionY();
+            candidate.ydToHolder = std::sqrt(dx * dx + dy * dy);
+            healerCandidates.push_back(candidate);
+        }
+        const std::vector<std::uint64_t> picked = PickTankPostHealers(current, healerCandidates, row->healers);
+        record.healerScanMs = nowMs;
+        record.healerCount = static_cast<std::uint8_t>(picked.size());
+        record.healers = {};
+        for (std::size_t i = 0; i < picked.size() && i < record.healers.size(); ++i)
+            record.healers[i] = picked[i];
+        if (picked != current)
+        {
+            char info2[128];
+            std::size_t used = static_cast<std::size_t>(std::snprintf(info2, sizeof(info2), "event=healers,n=%u",
+                static_cast<unsigned>(picked.size())));
+            if (used >= sizeof(info2))
+                used = sizeof(info2) - 1;
+            for (std::size_t i = 0; i < picked.size() && i < record.healers.size(); ++i)
+            {
+                Player* const healer = sObjectMgr.GetPlayer(ObjectGuid(picked[i]));
+                const int written = std::snprintf(info2 + used, sizeof(info2) - used, ",h%u=%s",
+                    static_cast<unsigned>(i + 1), healer ? healer->GetName() : "gone");
+                if (written > 0)
+                    used = std::min(used + static_cast<std::size_t>(written), sizeof(info2) - 1);
+            }
+            LogTankPostNote(ai, *row, info2);
+        }
+    }
+
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the first sighting of the row's spell after a held tick opens
+    // the holder's cooldown window. The aura read above is the same one the hold gate used.
+    if (cooldownLive && record.heldOnce)
+    {
+        if (TankPostCooldownSeen(sPlayerbotAIConfig.dungeonRunTankPostHealers, row->spellId, record.heldOnce,
+                record.cooldownSeenMs != 0, auraOnRaid))
+        {
+            record.cooldownSeenMs = nowMs;
+            char info2[128];
+            std::snprintf(info2, sizeof(info2), "event=cd_seen,spell=%u,s=%.1f", row->spellId,
+                (nowMs - record.startMs) / 1000.0f);
+            LogTankPostNote(ai, *row, info2);
+        }
+    }
 
     bool arrivedNow = false;
     bool stepEntered = false;
@@ -12359,8 +12846,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         std::uint32_t const priorLoose = stored.looseSinceMs;
         std::uint32_t const priorUnhittable = stored.unhittableSinceMs;
         std::array<std::uint32_t, 6> const priorTauntLog = stored.tauntLogMs;
+        std::uint8_t const priorHealers = stored.healerCount;
         bool lapseLogged = stored.lapseLogged;
         stored = record;
+        TankPostHealersNote(priorHealers, stored.healerCount);
         stored.tauntLogMs = priorTauntLog;
         stored.lastReadMs = nowMs;
         TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, in.subjectOnTank,
@@ -12399,6 +12888,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     const bool subjectOutranks = holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag ||
                                                step == TankPostDecision::Leash);
     out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;
+    out.standActive = stand.valid;
     out.step = step;
     out.boss = boss;
     out.subject = subject;
@@ -12504,11 +12994,17 @@ bool BossTacticsTankPostAction::Execute(Event& event)
 {
     (void)event;
     const BossTankPost task = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
-    if (!task.valid || !task.row || !task.subject)
+    // A waiting post has no unit yet (AiPlayerbot.DungeonRunTankPostWaits): its leash walk and its hold at the spot
+    // run off the row alone, so only the steps that need a subject are refused here.
+    if (!TankPostActionRuns(task.valid, task.row != nullptr, task.subject != nullptr, task.step))
     {
         hasLast = false;
+        walkLogged = false;
         return false;
     }
+    // The Engage walk's row is written once per walk episode: any other step, or a subject in reach, ends it.
+    if (task.step != TankPostDecision::Engage)
+        walkLogged = false;
     // Drag: the arrived subject is on this tank and it drifted from the spot. Leash: before the arrival the tank is
     // past 8 yd from the spot on a whelp. Both walk back keeping the target (no AttackStop, no target change), so the
     // subject follows on a drag and whatever the tank fights follows on a leash; the same spline guard as the walk.
@@ -12536,9 +13032,63 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     Unit* const current = AI_VALUE(Unit*, "current target");
     if (task.step == TankPostDecision::Engage)
     {
-        hasLast = false;
+        // AiPlayerbot.DungeonRunTankPostWalks: the step walks to the subject while it is out of melee reach, instead of
+        // ending the tick on the attack (walk 2f a-2: slot 1 stood on the post 40 yd from Cindarion and the attack
+        // returned true every tick, so `reach melee` never ran).
         if (sPlayerbotAIConfig.dungeonRunTankPostTaunts && TakeSubject(task, current))
+        {
+            // With the walk off a taunt that cast resets the launch point as before; with it on a spline in flight
+            // survives the taunt tick.
+            if (!sPlayerbotAIConfig.dungeonRunTankPostWalks)
+                hasLast = false;
             return true;
+        }
+        bool walkPoint = TankPostEngageWalks(sPlayerbotAIConfig.dungeonRunTankPostWalks, false,
+            bot->CanReachWithMeleeAutoAttack(task.subject), task.standActive);
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = task.subject->GetPositionZ();
+        if (walkPoint && TankPostMeleePoint(bot->GetPositionX(), bot->GetPositionY(),
+                task.subject->GetPositionX(), task.subject->GetPositionY(),
+                bot->GetCombatReach(task.subject, false, 0.0f), x, y))
+        {
+            // The point is on a floor under the unit's height; one with no ground under it is no walk.
+            Map* const map = bot->GetMap();
+            float const floor = map ? map->GetHeight(x, y, z + 5.0f) : INVALID_HEIGHT;
+            walkPoint = floor > INVALID_HEIGHT;
+            if (walkPoint)
+                z = floor + 0.05f;
+        }
+        else
+        {
+            walkPoint = false;
+        }
+        if (!walkPoint)
+            walkLogged = false;
+        else
+        {
+            // The same spline guard as the walk: already on its way to that point, leave the spline alone.
+            if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+                std::fabs(lastX - x) < 3.0f && std::fabs(lastY - y) < 3.0f)
+                return true;
+            if (current != task.subject)
+                Attack(bot, task.subject);
+            if (!walkLogged)
+            {
+                LogTankPostWalk(ai, *task.row,
+                    TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                        task.subject->GetPositionX(), task.subject->GetPositionY(),
+                        task.subject->GetPositionZ()));
+                walkLogged = true;
+            }
+            if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+                return false;
+            lastX = x;
+            lastY = y;
+            hasLast = true;
+            return true;
+        }
+        hasLast = false;
         if (current == task.subject)
             return false;
         return Attack(bot, task.subject);
@@ -12574,6 +13124,106 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     lastX = task.x;
     lastY = task.y;
     hasLast = true;
+    return true;
+}
+
+// AiPlayerbot.DungeonRunTankPostHealers: a post healer the post's tank left behind walks back. It aims beside the unit
+// the post latched while that unit stands near the holder (kTankPostHealerFlankYd at a right angle, so the healers do
+// not gather in the boss's front), else at a point kTankPostHealerWalkYd from the holder toward the healer. A flank
+// point the mover refuses (no floor under it) falls back to the line point.
+bool BossTacticsTankPostHealerAction::Execute(Event& event)
+{
+    (void)event;
+    const TankPostHealDuty duty = FindTankPostHealDuty(ai, bot);
+    if (!duty.holder)
+    {
+        hasLast = false;
+        return false;
+    }
+    Unit* const unit = duty.unit && sServerFacade.IsAlive(duty.unit) ? duty.unit : nullptr;
+    const float holderX = duty.holder->GetPositionX();
+    const float holderY = duty.holder->GetPositionY();
+    float x = 0.0f;
+    float y = 0.0f;
+    TankPostHealerPoint(unit != nullptr, unit ? unit->GetPositionX() : 0.0f, unit ? unit->GetPositionY() : 0.0f,
+        holderX, holderY, bot->GetPositionX(), bot->GetPositionY(), x, y);
+    float lineX = 0.0f;
+    float lineY = 0.0f;
+    TankPostHealerPoint(false, 0.0f, 0.0f, holderX, holderY, bot->GetPositionX(), bot->GetPositionY(), lineX, lineY);
+    auto const walk = [&](float targetX, float targetY) -> bool
+    {
+        // Already on its way to this point: leave the spline alone (the stand action's guard).
+        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+            std::fabs(lastX - targetX) < 3.0f && std::fabs(lastY - targetY) < 3.0f)
+            return true;
+        float z = duty.holder->GetPositionZ();
+        if (!ClampMoveToBossAnchor(ai, bot, targetX, targetY, z))
+            return false;
+        bot->UpdateGroundPositionZ(targetX, targetY, z);
+        if (!MoveTo(bot->GetMapId(), targetX, targetY, z, false, false, false, true))
+            return false;
+        lastX = targetX;
+        lastY = targetY;
+        hasLast = true;
+        return true;
+    };
+    if (walk(x, y))
+        return true;
+    return walk(lineX, lineY);
+}
+
+// Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder casts the first of its class's defensive actions that
+// accepts it inside the window the first sighting opened. An action its own isUseful/isPossible refuses is not an
+// attempt: the tick passes it unspent and asks the next name, so an entry the tank's form locks out cannot hold the
+// window. An action that accepts but whose cast does not go out (on cooldown) spends its name, so the next tick tries
+// the next one, writing `cd_skip`; at the window's end with names left the action writes one `cd_none` row and closes
+// the window; a class with no action closes at once.
+bool BossTacticsTankPostCooldownAction::Execute(Event& event)
+{
+    std::uint8_t tried = 0;
+    std::uint32_t seenMs = 0;
+    if (!TankPostCooldownRead(bot, tried, seenMs))
+        return false;
+    const std::vector<const char*> names = TankPostCooldownActions(bot->GetClass());
+    if (names.empty())
+    {
+        LogTankPostCooldown(ai, bot, "event=cd_none,left=0");
+        TankPostCooldownClose(bot);
+        return false;
+    }
+    const TankPostCooldown step =
+        TankPostCooldownStep(true, tried, names.size(), WorldTimer::getMSTime() - seenMs);
+    if (step == TankPostCooldown::GiveUp)
+    {
+        char info2[64];
+        std::snprintf(info2, sizeof(info2), "event=cd_none,left=%u",
+            static_cast<unsigned>(names.size() - tried));
+        LogTankPostCooldown(ai, bot, info2);
+        TankPostCooldownClose(bot);
+        return false;
+    }
+    if (step != TankPostCooldown::Cast)
+        return false;
+    std::size_t const pick = TankPostCooldownPick(tried, names.size(),
+        [&](std::size_t i) { return ai->CanDoSpecificAction(names[i]); });
+    if (pick >= names.size())
+        return false; // every name left refuses: nothing to spend, the window runs to its end
+
+    std::string spellName(names[pick]);
+    std::replace(spellName.begin(), spellName.end(), ' ', '_');
+    if (!ai->DoSpecificAction(names[pick], event, true))
+    {
+        char info2[128];
+        std::snprintf(info2, sizeof(info2), "event=cd_skip,spell=%s", spellName.c_str());
+        LogTankPostCooldown(ai, bot, info2);
+        TankPostCooldownNote(bot, pick, false);
+        return false;
+    }
+    char info2[128];
+    std::snprintf(info2, sizeof(info2), "event=cd_cast,spell=%s,hp=%.0f", spellName.c_str(),
+        bot->GetHealthPercent());
+    LogTankPostCooldown(ai, bot, info2);
+    TankPostCooldownNote(bot, pick, true);
     return true;
 }
 

@@ -830,7 +830,8 @@ bool SuccessorWhiteCapTrigger::IsActive()
     Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
     const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
     const bool meleeOnSuccessor = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;
-    const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;
+    // Compare the guid the cast holds: its cached unit-target pointer can point at a unit the map freed this tick.
+    const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTargetGuid() == target->GetObjectGuid();
     const bool whiteRunning = SuccessorWhiteOnTarget(meleeOnSuccessor, true, autoRepeatOnSuccessor, true);
     const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;
     const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true,
@@ -863,7 +864,8 @@ bool ThreatResetWhiteStopTrigger::IsActive()
     Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
     const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
     const bool meleeOnTarget = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;
-    const bool autoRepeatOnTarget = repeating && autoRepeat->m_targets.getUnitTarget() == target;
+    // Compare the guid the cast holds: its cached unit-target pointer can point at a unit the map freed this tick.
+    const bool autoRepeatOnTarget = repeating && autoRepeat->m_targets.getUnitTargetGuid() == target->GetObjectGuid();
     const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(true, meleeOnTarget, autoRepeatOnTarget);
     if (stops.melee)
         bot->AttackStop();
@@ -1903,8 +1905,9 @@ bool TargetOfCastedAuraTypeTrigger::IsActive()
 
             if (auraTypeSpell)
             {
-                Unit* spellTarget = auraTypeSpell->m_targets.getUnitTarget();
-                if (spellTarget == bot)
+                // Compare the guid the cast holds: an attacker's cached unit-target pointer can point at a unit the map
+                // freed this tick, and the bot itself is never freed while it reads.
+                if (auraTypeSpell->m_targets.getUnitTargetGuid() == bot->GetObjectGuid())
                 {
                     return true;
                 }

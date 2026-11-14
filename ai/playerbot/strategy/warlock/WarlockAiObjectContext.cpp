@@ -260,6 +260,7 @@ namespace ai
                 creators["no succubus"] = [](PlayerbotAI* ai) { return new NoSuccubusTrigger(ai); };
                 creators["no felhunter"] = [](PlayerbotAI* ai) { return new NoFelhunterTrigger(ai); };
                 creators["wrong pet"] = [](PlayerbotAI* ai) { return new WrongPetTrigger(ai); };
+                creators["choice pet"] = [](PlayerbotAI* ai) { return new ChoicePetTrigger(ai); };
                 creators["spec pet imp"] = [](PlayerbotAI* ai) { return new SpecPetTrigger(ai, "spec pet imp", TortoiseBots::WarlockSpecPetDecision::SummonImp); };
                 creators["spec pet voidwalker"] = [](PlayerbotAI* ai) { return new SpecPetTrigger(ai, "spec pet voidwalker", TortoiseBots::WarlockSpecPetDecision::SummonVoidwalker); };
                 creators["spec pet succubus"] = [](PlayerbotAI* ai) { return new SpecPetTrigger(ai, "spec pet succubus", TortoiseBots::WarlockSpecPetDecision::SummonSuccubus); };
@@ -300,6 +301,7 @@ namespace ai
                 creators["summon succubus"] = [](PlayerbotAI* ai) { return new CastSummonSuccubusAction(ai); };
                 creators["summon felhunter"] = [](PlayerbotAI* ai) { return new CastSummonFelhunterAction(ai); };
                 creators["summon imp"] = [](PlayerbotAI* ai) { return new CastSummonImpAction(ai); };
+                creators["choice pet"] = [](PlayerbotAI* ai) { return new CastChoicePetAction(ai); };
                 creators["summon inferno"] = [](PlayerbotAI* ai) { return new CastSummonInfernoAction(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new CastImmolateAction(ai); };
                 creators["immolate on attacker"] = [](PlayerbotAI* ai) { return new CastImmolateOnAttackerAction(ai); };

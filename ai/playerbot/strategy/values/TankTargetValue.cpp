@@ -189,6 +189,19 @@ public:
         // switching the tank off would leave the Son on the healer (M3).
         if (oldUnit && ::ai::IsSeekSourceForTankPickup(ai, bot, oldUnit))
             return false;
+        // AiPlayerbot.DungeonRunTankPostKeepsUnit: a latched `tank_post` keeps its unit, even when the raid tank order
+        // moved the post's row to another slot index (its record still names the unit it arrived on), and no other
+        // loose add pulls the tank off it. Neither candidate latched: the ranking below is unchanged.
+        std::uint64_t const oldGuid = oldUnit ? oldUnit->GetObjectGuid().GetRawValue() : 0;
+        // The record's lock is taken only with the key on: off, the pick is the pre-key comparison.
+        std::uint64_t const postLatched =
+            sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit ? ::ai::TankPostLatchedUnit(bot) : 0;
+        int const postPick = ::ai::TankPostUnitPick(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit, postLatched,
+            newUnit->GetObjectGuid().GetRawValue(), oldGuid);
+        if (postPick > 0)
+            return true;
+        if (postPick < 0)
+            return false;
         // A loose add a tank_hold row lists, on a non-tank, outranks the explicit main tank's stickiness below (a ZG
         // Mad Voidwalker shocks the raid while a non-tank holds it): only when exactly one of the two candidates is
         // such a pickup, so a tank holding its pickup keeps it. Without the row or the strategy both are false and the
@@ -308,7 +321,7 @@ Unit* TankTargetValue::Calculate()
     // tournament instead of peeling the main tank's skull.
     // (A tank never holds a creature aura set-aside; a non-tank on "tank
     // assist" does, and its set-aside mark falls through like a dps pick.)
-    Unit* rti = RtiTargetValue::Calculate();
+    Unit* rti = RtiTargetValue::CalculateFocus();
     if (rti && AttackersValue::IsKeepoutSetAside(rti, bot))
         rti = nullptr;
     // A ranged_only subject is out of the melee tanks' reach: they take the adds and the boss's threat stays with the
@@ -349,7 +362,9 @@ Unit* TankTargetValue::Calculate()
                 if (!ai->IsTank(victimPlayer))
                     return rti;
                 PlayerbotAI* victimAi = PlayerbotAIStorage::Instance().GetAI(victimPlayer);
-                std::string myRti = ai->GetAiObjectContext()->GetValue<std::string>("rti")->Get();
+                // The mark this tank is on, which is Skull after the focus
+                // fallback even when its own setting names another mark.
+                std::string myRti = MarkOn(rti);
                 if (!victimAi || victimAi->GetAiObjectContext()->GetValue<std::string>("rti")->Get() != myRti)
                     return rti;
             }

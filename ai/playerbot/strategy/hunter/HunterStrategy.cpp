@@ -500,6 +500,12 @@ void HunterCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigge
 
 void HunterStingStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A saved `.bot choice sting` order: above the manual "sting <x>" rows
+    // (ACTION_HIGH); the automatic sting actions refuse while it is set.
+    triggers.push_back(new TriggerNode(
+        "choice sting",
+        NextAction::array(0, new NextAction("choice sting", ACTION_HIGH + 1), NULL)));
+
     if (ai->HasStrategy("aoe", BotState::BOT_STATE_COMBAT))
     {
         triggers.push_back(new TriggerNode(

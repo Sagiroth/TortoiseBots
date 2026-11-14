@@ -6,6 +6,7 @@
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
 #include "playerbot/strategy/values/CcMarkHoldPolicy.h"
+#include "../generic/ClassChoicePolicy.h"
 
 namespace ai
 {
@@ -629,39 +630,55 @@ namespace ai
             return false;
         }
 
-    private:
+    protected:
         bool mainHand;
         std::vector<uint32> poisonItemIds;
+    };
+
+    // Applies the poison the saved `.bot choice poison_mh|poison_oh` order
+    // names. An explicit order skips the Windfury courtesy check above.
+    class ChoicePoisonAction : public ApplyPoisonAction
+    {
+    public:
+        ChoicePoisonAction(PlayerbotAI* ai, bool inMainHand)
+        : ApplyPoisonAction(ai, inMainHand, {}, inMainHand ? "choice poison main hand" : "choice poison off hand") {}
+
+        bool isUseful() override { return LoadOrder(); }
+        bool isPossible() override { return LoadOrder() && ApplyPoisonAction::isPossible(); }
+        bool Execute(Event& event) override { return LoadOrder() && ApplyPoisonAction::Execute(event); }
+
+    private:
+        bool LoadOrder();
     };
 
     class ApplyDeadlyPoisonAction : public ApplyPoisonAction
     {
     public:
-        ApplyDeadlyPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 2892, 2893, 8984, 8985, 20844, 22053, 22054 }, "apply deadly poison") {}
+        ApplyDeadlyPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, ChoicePoisonItemIds("deadly"), "apply deadly poison") {}
     };
 
     class ApplyCripplingPoisonAction : public ApplyPoisonAction
     {
     public:
-        ApplyCripplingPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 3775, 3776 }, "apply crippling poison") {}
+        ApplyCripplingPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, ChoicePoisonItemIds("crippling"), "apply crippling poison") {}
     };
 
     class ApplyMindPoisonAction : public ApplyPoisonAction
     {
     public:
-        ApplyMindPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 5237, 6951, 9186 }, "apply mind poison") {}
+        ApplyMindPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, ChoicePoisonItemIds("mind"), "apply mind poison") {}
     };
 
     class ApplyInstantPoisonAction : public ApplyPoisonAction
     {
     public:
-        ApplyInstantPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 6947, 6949, 6950, 8926, 8927, 8928, 21927 }, "apply instant poison") {}
+        ApplyInstantPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, ChoicePoisonItemIds("instant"), "apply instant poison") {}
     };
 
     class ApplyWoundPoisonAction : public ApplyPoisonAction
     {
     public:
-        ApplyWoundPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 10918, 10920, 10921, 10922, 22055 }, "apply wound poison") {}
+        ApplyWoundPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, ChoicePoisonItemIds("wound"), "apply wound poison") {}
     };
 
     class UpdateRoguePveStrategiesAction : public UpdateStrategyDependenciesAction

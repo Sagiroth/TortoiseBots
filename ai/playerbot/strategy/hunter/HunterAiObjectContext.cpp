@@ -202,6 +202,7 @@ namespace ai
                 creators["rapid fire"] = [](PlayerbotAI* ai) { return new RapidFireTrigger(ai); };
                 creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new AspectOfTheHawkTrigger(ai); };
                 creators["choice aspect"] = [](PlayerbotAI* ai) { return new ChoiceAspectTrigger(ai); };
+                creators["choice sting"] = [](PlayerbotAI* ai) { return new ChoiceStingTrigger(ai); };
                 creators["aspect of the viper low mana"] = [](PlayerbotAI* ai) { return new AspectOfTheViperLowManaTrigger(ai); };
                 creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new AspectOfTheWildTrigger(ai); };
                 creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new AspectOfTheMonkeyTrigger(ai); };
@@ -276,6 +277,7 @@ namespace ai
                 creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new CastAspectOfTheMonkeyAction(ai); };
                 creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new CastAspectOfTheHawkAction(ai); };
                 creators["choice aspect"] = [](PlayerbotAI* ai) { return new CastChoiceAspectAction(ai); };
+                creators["choice sting"] = [](PlayerbotAI* ai) { return new CastChoiceStingAction(ai); };
                 creators["aspect of the wolf"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWolfAction(ai); };
                 creators["aspect of the viper"] = [](PlayerbotAI* ai) { return new CastAspectOfTheViperAction(ai); };
                 creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWildAction(ai); };

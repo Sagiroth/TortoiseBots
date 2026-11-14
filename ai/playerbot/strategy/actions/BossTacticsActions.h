@@ -203,6 +203,31 @@ namespace ai
     // single-target taunt reads it through the gate above.
     bool TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target);
 
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit: the unit this bot's live `tank_post` latched at its arrival, or 0 when
+    // the bot holds no post or its record was not read within the reservation's liveness window. The tank pick keeps
+    // that unit while it lives, so a renumbering of the raid tank order does not move the post off it.
+    std::uint64_t TankPostLatchedUnit(Player* bot);
+
+    // AiPlayerbot.DungeonRunTankPostHealers: the live post this healer is held on. `holder` is the post's tank (the
+    // only member this healer may heal) and `unit` the unit the post latched (null before the arrival). Both null when
+    // the key is off, the bot is no healer, the map has no post rows, or no live record lists the bot. The record
+    // must have been read within kTankPostLiveMs and not be done; the holder must be alive and on the bot's map.
+    struct TankPostHealDuty
+    {
+        Player* holder = nullptr;
+        Unit* unit = nullptr;
+    };
+    TankPostHealDuty FindTankPostHealDuty(PlayerbotAI* ai, Player* bot);
+
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post holder's cooldown at the first cast the row's spell
+    // marks. `Due` is the trigger's read (seen, not closed, the record live); `Read` hands the action the same
+    // record's tried count and sighting clock; `Note` records one spent name (the cast went out, or the action
+    // accepted and the spell was on cooldown); `Close` ends the window with nothing left to try.
+    bool TankPostCooldownDue(Player* bot);
+    bool TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs);
+    void TankPostCooldownNote(Player* bot, std::size_t index, bool cast);
+    void TankPostCooldownClose(Player* bot);
+
     // The area taunts' own scan: whether any hostile within kAreaTauntRadiusYd of the bot is another live post's
     // reserved subject, so Challenging Shout or Challenging Roar must not cast (the selected target alone is the gate's
     // read). Logs the refusal row for the first such unit.
@@ -916,6 +941,7 @@ namespace ai
     {
         bool valid = false;
         bool holdingOtherHostile = false;
+        bool standActive = false; // a boss stand seat (a stay included) owns the tank: the Engage walk stays put
         TankPostDecision step = TankPostDecision::None;
         Unit* boss = nullptr;
         Unit* subject = nullptr;
@@ -942,6 +968,35 @@ namespace ai
         // the single taunt cannot go out. True when it acted this tick.
         bool TakeSubject(const BossTankPost& task, Unit* current);
         // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+        // The Engage step's walk row (AiPlayerbot.DungeonRunTankPostWalks) is written once per walk episode, not on
+        // every tick the tank stays on it.
+        bool walkLogged = false;
+    };
+
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post's tank casts its class's defensive actions, in
+    // order, inside the window the first sighting of the row's spell opened. Above the post's own node, so the cast
+    // goes out before the post's move.
+    class BossTacticsTankPostCooldownAction : public Action
+    {
+    public:
+        BossTacticsTankPostCooldownAction(PlayerbotAI* ai) : Action(ai, "boss tactics tank post cooldown") {}
+        bool Execute(Event& event) override;
+    };
+
+    // AiPlayerbot.DungeonRunTankPostHealers: the post healer's walk back to its holder, or beside the unit the post
+    // holds. The heal target pick is PartyMemberToHeal's (FindTankPostHealDuty); this action only closes a distance the
+    // trigger saw open.
+    class BossTacticsTankPostHealerAction : public MovementAction
+    {
+    public:
+        BossTacticsTankPostHealerAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics tank post healer") {}
+        bool Execute(Event& event) override;
+
+    private:
+        // The walk was started for this point: MoveTo relaunches the spline on every call (the stand action's guard).
         float lastX = 0.0f;
         float lastY = 0.0f;
         bool hasLast = false;

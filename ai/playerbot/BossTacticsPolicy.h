@@ -242,6 +242,8 @@ namespace ai
         std::uint32_t cycleSpell = 0;
         float cycleSec = 0.0f;
         float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
+        // tank_post (a `hold_spot` post): the healers held on the post's tank (`healers`, 0-4). 0 for every other kind.
+        std::uint8_t healers = 0;
 
         bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
@@ -469,6 +471,9 @@ namespace ai
         std::uint8_t crewSize = 0;
     };
 
+    // A `hold_spot` tank_post row's healers: the most the rule takes (`healers`, 0-4).
+    constexpr std::uint8_t kTankPostHealersMax = 4;
+
     class BossTacticTable
     {
     public:
@@ -628,14 +633,20 @@ namespace ai
                     row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
                     row.mode != TacticMode::Default))
                 return false;
-            // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7), the wait spot, the arrival
-            // radius, 5-100 yd: a subject that lands and runs after a healer across the room, and the longest hold. A
-            // fight-scan kind, so its health band arms the post. No spell, no cycle columns; the only mode word is
-            // `hold_spot`.
+            // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7; slot 0 is the main tank, which
+            // holds a post on the row's own boss only), the wait spot, the arrival radius, 5-100 yd: a subject that
+            // lands and runs after a healer across the room, and the longest hold. A fight-scan kind, so its health
+            // band arms the post. No cycle columns; the only mode word is `hold_spot`. A `hold_spot` row may name the
+            // boss spell whose aura marks the cast the tank answers (`spell_id`) and the healers it holds on its tank
+            // (`healers`, 0-4); a plain post names neither.
             if (row.kind == BossTacticKind::TankPost &&
-                (row.targetEntry == 0 || row.priority < 1 || row.priority > 7 || !row.HasSpot() ||
+                (row.targetEntry == 0 || (row.priority < 1 && row.targetEntry != row.bossEntry) ||
+                    row.priority > 7 || !row.HasSpot() ||
                     row.param < 5.0f || row.param > 100.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
-                    row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
+                    (row.spellId != 0 && row.mode != TacticMode::HoldSpot) ||
+                    row.healers > kTankPostHealersMax ||
+                    (row.healers != 0 && row.mode != TacticMode::HoldSpot) ||
+                    (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
                 return false;
             // heal_reserve: the boss itself (target_entry 0, no spell, priority 0), the reserve percent (`param`,
             // 10-100) and the release lead in seconds (`window_s`, 0-120). A fight-scan kind, so its health band
@@ -653,9 +664,11 @@ namespace ai
                     row.priority > 5 || row.param != 0.0f || RowGateSet(row) || row.mode != TacticMode::Default))
                 return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
-            // the spot columns the seek_aura, anchor and tank_post kinds'.
+            // the spot columns the seek_aura, anchor and tank_post kinds', the healers count the tank_post kind's.
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
                 (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+                return false;
+            if (row.kind != BossTacticKind::TankPost && row.healers != 0)
                 return false;
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor &&
                 row.kind != BossTacticKind::TankPost && row.HasSpot())
@@ -2485,19 +2498,38 @@ namespace ai
         return -1;
     }
 
+    // The index one step of an until_tank scan reads (AiPlayerbot.DungeonRunTauntAfterSkipsMain): with the key on and a
+    // row that names an off-tank (`wanted >= 1`), the scan runs over the off-tanks only, so a window never wraps past the
+    // last tank to the main tank and the main tank never leaves the boss (walk 2g: 13 of 26 rows said `tank=0` with 3
+    // live tanks). A slot past the live count starts at the last tank and still wraps to 1; `wanted < 1` (the main
+    // tank's own row) keeps today's index even with one tank, since that row is the main tank himself. An off-tank row
+    // with fewer than two tanks alive has no off-tank to name, so it answers -1 and the caller finds no window owner
+    // rather than falling back to the main tank. The loops still step `count` times: the off-tank indices repeat past
+    // the last one, so a scan that finds nothing answers -1.
+    inline int TauntAfterScanIndex(bool skipMain, int wanted, int step, int count)
+    {
+        if (!skipMain || wanted < 1)
+            return (wanted + step) % count;
+        if (count < 2)
+            return -1;
+        int const first = std::min(wanted, count - 1);
+        return 1 + (first - 1 + step) % (count - 1);
+    }
+
     // taunt_after_cast (mode until_tank), the `priority` tank of the raid order: the first ALIVE tank at or after it,
     // wrapping to the front, so a dead first off-tank hands the taunt to the next one instead of leaving the subject
-    // loose. -1 when no tank is alive or the row names no index. `tankAlive` is the raid order (GetRaidTankRoles), so
-    // its own list already drops a tank that is dead or out of the group.
-    inline int TauntAfterTankIndex(const std::vector<bool>& tankAlive, int wanted)
+    // loose. `skipMain` keeps the main tank out of the wrap (TauntAfterScanIndex). -1 when no tank is alive or the row
+    // names no index. `tankAlive` is the raid order (GetRaidTankRoles), so its own list already drops a tank that is
+    // dead or out of the group.
+    inline int TauntAfterTankIndex(const std::vector<bool>& tankAlive, int wanted, bool skipMain = false)
     {
         int const count = static_cast<int>(tankAlive.size());
         if (count == 0 || wanted < 0)
             return -1;
         for (int step = 0; step < count; ++step)
         {
-            int const index = (wanted + step) % count;
-            if (tankAlive[index])
+            int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
+            if (index >= 0 && tankAlive[index])
                 return index;
         }
         return -1;
@@ -2542,24 +2574,24 @@ namespace ai
     // one past the previous holder for a window whose taunt was cast and failed, so a resisted taunt hands the next
     // one to another tank. -1 when no tank is usable.
     inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt,
-        const std::vector<bool>& canHold, int wanted)
+        const std::vector<bool>& canHold, int wanted, bool skipMain = false)
     {
         int const count = static_cast<int>(usable.size());
         if (count == 0 || wanted < 0)
             return -1;
         for (int step = 0; step < count; ++step)
         {
-            int const index = (wanted + step) % count;
-            if (usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
+            int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
+            if (index >= 0 && usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
                 return index;
         }
         for (int step = 0; step < count; ++step)
         {
-            int const index = (wanted + step) % count;
-            if (usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
+            int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
+            if (index >= 0 && usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
                 return index;
         }
-        return TauntAfterTankIndex(usable, wanted);
+        return TauntAfterTankIndex(usable, wanted, skipMain);
     }
 
     // The tank a window's read assigns: its holder while the window runs and that tank is still available (in
@@ -2567,11 +2599,12 @@ namespace ai
     // `wanted`. The glue's advance and the policy tests read this one expression, so a holder that loses control
     // hands the window over at once while one whose taunt is cooling keeps it.
     inline int TauntWindowAssign(bool opening, bool holderAvailable, int holderSlot, int wanted,
-        const std::vector<bool>& usable, const std::vector<bool>& canTaunt, const std::vector<bool>& canHold)
+        const std::vector<bool>& usable, const std::vector<bool>& canTaunt, const std::vector<bool>& canHold,
+        bool skipMain = false)
     {
         if (!opening && holderAvailable)
             return holderSlot;
-        return TauntAfterTankPick(usable, canTaunt, canHold, wanted);
+        return TauntAfterTankPick(usable, canTaunt, canHold, wanted, skipMain);
     }
 
     // The slot of `guid` in the raid order, -1 when it is no tank of it any more: a window's holder is kept by guid,
@@ -2594,7 +2627,7 @@ namespace ai
     // therefore not the writer any more, so another tank hands the window over in the same tick instead of waiting for
     // the silent-writer timeout. -1 when no tank is usable.
     inline int TauntWindowOwner(const std::vector<bool>& usable, const std::vector<bool>& available, int holder,
-        int wanted)
+        int wanted, bool skipMain = false)
     {
         auto const ready = [&](int index) {
             return index >= 0 && index < static_cast<int>(usable.size()) && usable[index] &&
@@ -2607,12 +2640,12 @@ namespace ai
         {
             for (int step = 0; step < count; ++step)
             {
-                int const index = (wanted + step) % count;
+                int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
                 if (ready(index))
                     return index;
             }
         }
-        return TauntAfterTankIndex(usable, wanted);
+        return TauntAfterTankIndex(usable, wanted, skipMain);
     }
 
     // Whether one tank's read is the window's single writer: the owner's own read, or any read once the owner has not
@@ -3664,6 +3697,14 @@ namespace ai
         return keyOn && otherPostLive && otherTankCanAct && !botOwnsPost;
     }
 
+    // AiPlayerbot.DungeonRunTankPostOwnsUnit: a live post owns the one unit it latched at its arrival, so another
+    // tank's record reserves no unit of the row's entry but that one. A record that latched nothing yet (`latchedGuid`
+    // 0) covers every unit of the entry as before, and with the key off every record does.
+    inline bool TankPostRecordCovers(bool keyOn, std::uint64_t latchedGuid, std::uint64_t targetGuid)
+    {
+        return !keyOn || latchedGuid == 0 || latchedGuid == targetGuid;
+    }
+
     // The post's reservation also needs its tank able to take the unit back: the tank within kTankPostReserveRangeYd
     // of the subject (3D), and the subject still on it or loose (not its victim) for less than
     // kTankPostReserveGraceMs. A tank stranded across the room, or one that lost the unit past the grace, reserves
@@ -3921,9 +3962,48 @@ namespace ai
     // With the row's `hold_spot` mode and AiPlayerbot.DungeonRunTankPostHoldSpot, the post also starts while the tank
     // holds another hostile, latches its arrival, drags the subject back to the spot, outlives its window once arrived
     // and yields to a boss stand seat. AiPlayerbot.DungeonRunTankPostLeash adds the pre-arrival walk back.
+    // AiPlayerbot.DungeonRunTankPostMain lets the main tank hold the row's own boss;
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit keeps a latched post's row through a renumbering, but the main tank gives
+    // its kept row up for an open slot-0 row;
+    // AiPlayerbot.DungeonRunTankPostWaits starts a `hold_spot` post before its unit exists and leaves a done record when
+    // it ends, so it does not start again inside the band.
     constexpr float kTankPostSpotYd = 3.0f;    // the tank holds within this of the spot
     constexpr float kTankPostSearchYd = 200.0f; // the awaited unit's grid search radius
     constexpr float kTankPostDragYd = 8.0f;     // hold_spot: past this from the spot with the subject on the tank, walk back
+
+    // AiPlayerbot.DungeonRunTankPostMain: whether the main tank may hold a post (slot 0). The loader accepts a slot-0
+    // row only on the row's own boss, so the key is the whole gate: off, slot 0 is no post and the boss is taken by
+    // the ordinary pick, exactly as before the key.
+    inline bool TankPostRowUsable(bool mainKeyOn, std::uint32_t priority) { return priority != 0 || mainKeyOn; }
+
+    // Whether a row is the row this bot's tank slot names: its own slot index, and slot 0 only with the main key on,
+    // so a priority-0 row is never matched without the key.
+    inline bool TankPostSlotRow(bool mainKeyOn, std::uint32_t priority, int botIndex)
+    {
+        return botIndex >= 0 && priority == static_cast<std::uint32_t>(botIndex) &&
+            TankPostRowUsable(mainKeyOn, priority);
+    }
+
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit: whether a post keeps the row it started with. A latched, living unit is
+    // the post's own: the raid tank order may renumber the row to another slot index (a tank died, GetRaidTankRoles
+    // moved this bot) and the post still holds it, instead of ending at its `slot` word and leaving the unit loose.
+    inline bool TankPostKeepsRow(bool keyOn, bool haveRecord, std::uint64_t latchedGuid, bool latchedAlive)
+    {
+        return keyOn && haveRecord && latchedGuid != 0 && latchedAlive;
+    }
+
+    // Whether a kept row gives way to the row this bot's slot names now: only the main tank does. When a tank ahead
+    // dies the raid order makes this bot index 0, and nobody else can hold the slot-0 row (Onyxia's post), so the
+    // off-tank row it kept must not keep it away from the boss.
+    inline bool TankPostKeptRowYields(bool botIsMain, bool slotRowOpen) { return botIsMain && slotRowOpen; }
+
+    // Whether another live post holds a row: a record read within kTankPostLiveMs whose tank can act, with no done flag
+    // (a post that ended for its band holds nothing). A tank must not start or keep a post on a row another live post
+    // holds, or two posts would trade the boss read by read.
+    inline bool TankPostRowHeldByOther(bool liveRecord, bool otherTankCanAct)
+    {
+        return liveRecord && otherTankCanAct;
+    }
 
     enum class TankPostDecision : std::uint8_t
     {
@@ -3957,6 +4037,9 @@ namespace ai
         bool subjectOnTank = false;       // the subject's victim is this tank
         bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
         bool leash = false;               // hold_spot and its leash key: walk back before the arrival
+        bool waits = false;               // hold_spot and its wait key: the post runs before its unit exists
+        bool waitRow = false;             // the row's wait key and `hold_spot` mode: an ended post keeps a done record
+        bool done = false;                // the post already ended for this band: nothing starts it again until it closes
         bool slotMoved = false;           // the post's row is still in the fight, for another slot index (read by the end word only)
         std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
     };
@@ -3993,6 +4076,28 @@ namespace ai
             in.arrivalRadiusYd);
     }
 
+    // AiPlayerbot.DungeonRunTankPostWaits: whether an ending post keeps a done record until its band closes. A waiting
+    // post starts with no subject, so erasing it makes the next tick start a fresh one (its window reset) for as long
+    // as the band stands; a kept done record stops that. Any other post needs a living unit of the entry to restart, so
+    // it leaves nothing behind.
+    inline bool TankPostKeepsDoneRecord(bool waitRow, TankPostDecision step)
+    {
+        return waitRow && step == TankPostDecision::End;
+    }
+
+    // Whether a done record survives this read. A raid tank renumbering moves its row to another slot index, so the row
+    // pick no longer names it; the band still stands, and erasing the record there would let the band start the waiting
+    // post again with a fresh window. The record goes when its row leaves the fight.
+    inline bool TankPostDoneRecordStays(bool done, bool bandOpen) { return done && bandOpen; }
+
+    // The action's entry guard: a valid post runs when its step needs no subject (the waiting post's Leash walk back
+    // and its Hold at the spot run off the row alone), else only with the awaited unit.
+    inline bool TankPostActionRuns(bool valid, bool haveRow, bool haveSubject, TankPostDecision step)
+    {
+        return valid && haveRow &&
+            (haveSubject || step == TankPostDecision::Leash || step == TankPostDecision::Hold);
+    }
+
     // One creature of the awaited entry as the grid search saw it ("tank post units" value).
     struct TankPostUnit
     {
@@ -4008,15 +4113,29 @@ namespace ai
     inline bool TankPostSeated(bool standValid, bool stay) { return standValid && !stay; }
 
     // The unit the post waits for: the nearest living one to the spot (the nearest dead one when none lives, so its
-    // death still ends the post). -1 for an empty list.
-    inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ)
+    // death still ends the post). -1 for an empty list. With `ownsUnit` (AiPlayerbot.DungeonRunTankPostOwnsUnit) the
+    // unit this post latched wins while it lives, and a unit another live post latched is no candidate, so two posts
+    // on one entry (two Hatchers, say) each keep their own unit instead of trading them read by read.
+    inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ,
+                                bool ownsUnit, std::uint64_t latchedGuid,
+                                const std::unordered_set<std::uint64_t>& otherLatched)
     {
+        if (ownsUnit && latchedGuid != 0)
+        {
+            for (std::size_t i = 0; i < units.size(); ++i)
+            {
+                if (units[i].guid == latchedGuid && units[i].alive)
+                    return static_cast<int>(i);
+            }
+        }
         int best = -1;
         float bestYd = 0.0f;
         bool bestAlive = false;
         for (std::size_t i = 0; i < units.size(); ++i)
         {
             const TankPostUnit& unit = units[i];
+            if (ownsUnit && unit.guid != latchedGuid && otherLatched.count(unit.guid) != 0)
+                continue;
             const float dx = unit.x - spotX;
             const float dy = unit.y - spotY;
             const float dz = unit.z - spotZ;
@@ -4031,19 +4150,251 @@ namespace ai
         return best;
     }
 
+    // AiPlayerbot.DungeonRunTankPostHealers: the healers a `hold_spot` post holds on its tank.
+    constexpr float kTankPostHealerYd = 30.0f;      // a post healer stays within this of the holder (2D)
+    constexpr float kTankPostHealerWalkYd = 25.0f;  // its walk back ends this far from the holder
+    constexpr float kTankPostHealerFlankYd = 20.0f; // or this far beside the held unit
+    constexpr float kTankPostHealerUnitYd = 15.0f;  // the held unit counts while it is this near the holder
+    constexpr float kTankPostHealerMinManaPct = 10.0f;
+    // An incumbent keeps its seat unless a candidate clears one of these: a better tank seat, this much more mana, or
+    // (with the mana inside the same margin both ways) this much less distance. Without the margin two near-equal
+    // healers trade the seat on every scan.
+    constexpr float kTankPostHealerSwapManaPct = 20.0f;
+    constexpr float kTankPostHealerSwapYd = 10.0f;
+    struct TankPostHealerCandidate
+    {
+        std::uint64_t guid = 0;
+        std::uint8_t seatRank = 1; // 0: the raid layout seats it on this holder, 1: no tank seat, 2: a seat on another tank
+        float manaPct = 100.0f;    // of its maximum; under kTankPostHealerMinManaPct it is no candidate
+        float ydToHolder = 0.0f;
+    };
+    inline bool TankPostHealerHasMana(const TankPostHealerCandidate& candidate)
+    {
+        return candidate.manaPct >= kTankPostHealerMinManaPct;
+    }
+    // Seat rank, then more mana, then the shorter walk, then guid.
+    inline bool TankPostHealerOutranks(const TankPostHealerCandidate& a, const TankPostHealerCandidate& b)
+    {
+        if (a.seatRank != b.seatRank)
+            return a.seatRank < b.seatRank;
+        if (a.manaPct != b.manaPct)
+            return a.manaPct > b.manaPct;
+        if (a.ydToHolder != b.ydToHolder)
+            return a.ydToHolder < b.ydToHolder;
+        return a.guid < b.guid;
+    }
+    // Whether a challenger takes an incumbent's seat: a better tank seat outright, else the mana margin, else the walk
+    // margin while the mana stays inside its own margin (a healer far behind on mana is not closer by default).
+    inline bool TankPostHealerDisplaces(const TankPostHealerCandidate& challenger,
+                                        const TankPostHealerCandidate& incumbent)
+    {
+        if (challenger.seatRank != incumbent.seatRank)
+            return challenger.seatRank < incumbent.seatRank;
+        if (challenger.manaPct - incumbent.manaPct >= kTankPostHealerSwapManaPct)
+            return true;
+        if (incumbent.manaPct - challenger.manaPct >= kTankPostHealerSwapManaPct)
+            return false;
+        return incumbent.ydToHolder - challenger.ydToHolder >= kTankPostHealerSwapYd;
+    }
+    // The post's healers: every candidate with the mana for it, the incumbents among them, ranked together on each
+    // scan by seat rank, mana, distance, guid; an incumbent under kTankPostHealerMinManaPct is out at once. The
+    // ranking fills the free seats; a full set takes a candidate only where it displaces the weakest holder by a
+    // clear margin. Never more than kTankPostHealersMax.
+    inline std::vector<std::uint64_t> PickTankPostHealers(const std::vector<std::uint64_t>& current,
+        const std::vector<TankPostHealerCandidate>& candidates, std::size_t want)
+    {
+        std::vector<std::uint64_t> picked;
+        std::size_t const cap = std::min<std::size_t>(want, kTankPostHealersMax);
+        if (cap == 0)
+            return picked;
+        std::vector<TankPostHealerCandidate> ranked;
+        for (const TankPostHealerCandidate& candidate : candidates)
+        {
+            if (TankPostHealerHasMana(candidate))
+                ranked.push_back(candidate);
+        }
+        std::sort(ranked.begin(), ranked.end(), TankPostHealerOutranks);
+        std::vector<TankPostHealerCandidate> holders;
+        for (const std::uint64_t guid : current)
+        {
+            const auto found = std::find_if(ranked.begin(), ranked.end(),
+                [guid](const TankPostHealerCandidate& candidate) { return candidate.guid == guid; });
+            if (found != ranked.end() && holders.size() < cap)
+                holders.push_back(*found);
+        }
+        std::sort(holders.begin(), holders.end(), TankPostHealerOutranks);
+        for (const TankPostHealerCandidate& candidate : ranked)
+        {
+            const auto held = std::find_if(holders.begin(), holders.end(),
+                [&candidate](const TankPostHealerCandidate& holder) { return holder.guid == candidate.guid; });
+            if (held != holders.end())
+                continue;
+            if (holders.size() < cap)
+            {
+                holders.push_back(candidate);
+                continue;
+            }
+            std::size_t weakest = 0;
+            for (std::size_t i = 1; i < holders.size(); ++i)
+            {
+                if (TankPostHealerOutranks(holders[weakest], holders[i]))
+                    weakest = i;
+            }
+            if (!TankPostHealerDisplaces(candidate, holders[weakest]))
+                continue;
+            holders[weakest] = candidate;
+        }
+        std::sort(holders.begin(), holders.end(), TankPostHealerOutranks);
+        for (const TankPostHealerCandidate& holder : holders)
+            picked.push_back(holder.guid);
+        return picked;
+    }
+    enum class TankPostHealPick : std::uint8_t { Normal, Holder, None };
+    inline TankPostHealPick TankPostHealPickOf(bool onDuty, bool holderHealable)
+    {
+        return !onDuty ? TankPostHealPick::Normal : holderHealable ? TankPostHealPick::Holder : TankPostHealPick::None;
+    }
+    inline bool TankPostHealerFar(float ydToHolder) { return ydToHolder > kTankPostHealerYd; }
+    // Where a post healer walks: beside the held unit (kTankPostHealerFlankYd from it, at a right angle to the line
+    // from the unit to the holder, on the healer's side) while the unit stands within kTankPostHealerUnitYd of the
+    // holder; else kTankPostHealerWalkYd from the holder toward the healer.
+    inline void TankPostHealerPoint(bool haveUnit, float unitX, float unitY, float holderX, float holderY,
+                                    float botX, float botY, float& x, float& y)
+    {
+        if (haveUnit)
+        {
+            const float dx = holderX - unitX;
+            const float dy = holderY - unitY;
+            const float line = std::sqrt(dx * dx + dy * dy);
+            const float ux = unitX - holderX;
+            const float uy = unitY - holderY;
+            if (line >= 0.1f && std::sqrt(ux * ux + uy * uy) <= kTankPostHealerUnitYd)
+            {
+                const float side = dx * (botY - unitY) - dy * (botX - unitX) >= 0.0f ? 1.0f : -1.0f;
+                x = unitX - side * dy / line * kTankPostHealerFlankYd;
+                y = unitY + side * dx / line * kTankPostHealerFlankYd;
+                return;
+            }
+        }
+        const float bx = botX - holderX;
+        const float by = botY - holderY;
+        const float botYd = std::sqrt(bx * bx + by * by);
+        if (botYd >= 0.1f)
+        {
+            x = holderX + bx / botYd * kTankPostHealerWalkYd;
+            y = holderY + by / botYd * kTankPostHealerWalkYd;
+            return;
+        }
+        x = holderX;
+        y = holderY + kTankPostHealerWalkYd;
+    }
+
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder's defensive cooldown at the first cast the row's
+    // spell marks. The window is long enough for a feared tank (the Roar's own fear lasts 3 s).
+    constexpr std::uint32_t kTankPostCooldownTryMs = 10000;
+    // The first sighting that counts: the key, a row spell, the unit was on this tank at least once (so a cast at the
+    // landing, before the tank has her, spends nothing), nothing seen yet, and a raid member carries the aura now.
+    inline bool TankPostCooldownSeen(bool keyOn, std::uint32_t rowSpell, bool heldOnce, bool seenBefore,
+                                     bool auraOnRaid)
+    {
+        return keyOn && rowSpell != 0 && heldOnce && !seenBefore && auraOnRaid;
+    }
+    // Whether a tick counts as the unit being held on this tank: it is on the tank and no raid member carries the row's
+    // aura. A landing cast shows both at once (the Roar as she turns to the tank), and only a tick without the aura
+    // makes the next sighting a fresh application.
+    inline bool TankPostCooldownHolds(bool onTank, bool auraOnRaid) { return onTank && !auraOnRaid; }
+    // The defensive actions of a tank class, in cast order; empty for a class with none. By class id only: the code
+    // names no boss and no spell id. A druid tank stands in bear or dire bear form, where CastBarkskinAction refuses,
+    // so Frenzied Regeneration is its only entry.
+    inline std::vector<const char*> TankPostCooldownActions(std::uint8_t classId)
+    {
+        if (classId == 1) // CLASS_WARRIOR
+            return {"shield wall", "last stand"};
+        if (classId == 11) // CLASS_DRUID
+            return {"frenzied regeneration"};
+        return {};
+    }
+    enum class TankPostCooldown : std::uint8_t { None, Cast, GiveUp };
+    // Cast while an action is left inside the window; GiveUp once at its end with actions left; else None.
+    inline TankPostCooldown TankPostCooldownStep(bool seen, std::size_t tried, std::size_t total,
+                                                 std::uint32_t msSinceSeen)
+    {
+        if (!seen || tried >= total)
+            return TankPostCooldown::None;
+        return msSinceSeen >= kTankPostCooldownTryMs ? TankPostCooldown::GiveUp : TankPostCooldown::Cast;
+    }
+    // The name this tick asks for: the first at or past `tried` that its own action accepts now (isUseful and
+    // isPossible both true). A name the action refuses (a form, an empty resource, a standing buff) is passed over
+    // without spending it, so an entry the tank cannot run can never hide the one behind it. `total` when every name
+    // left is refused: nothing to cast, nothing spent.
+    template <typename UsableFn>
+    inline std::size_t TankPostCooldownPick(std::size_t tried, std::size_t total, UsableFn usable)
+    {
+        for (std::size_t i = tried; i < total; ++i)
+            if (usable(i))
+                return i;
+        return total;
+    }
+    struct TankPostCooldownAttempt
+    {
+        std::uint8_t tried = 0;
+        bool closed = false;
+    };
+    // What the tick spent. `cast`: the name's cast went out and the window is over. `spent`: the action accepted but
+    // the cast did not go out (on cooldown), so the next tick goes on past it, and the window closes once nothing is
+    // left. A refused action is neither and never reaches this.
+    enum class TankPostCooldownOutcome : std::uint8_t { Cast, Spent };
+    inline TankPostCooldownAttempt TankPostCooldownAfter(std::size_t index, std::size_t total,
+                                                         TankPostCooldownOutcome outcome)
+    {
+        std::size_t const nextIndex = index + 1 < 255 ? index + 1 : 255;
+        TankPostCooldownAttempt next;
+        next.tried = static_cast<std::uint8_t>(nextIndex);
+        next.closed = outcome == TankPostCooldownOutcome::Cast || nextIndex >= total;
+        return next;
+    }
+
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit, for the tank's own target pick: whether the post's latched unit decides
+    // this comparison. 1: the new candidate is the latched unit (keep it), -1: the old one is (do not switch off it),
+    // 0: the key is off, nothing is latched, or both or neither candidate is it (the ordinary ranking decides).
+    inline int TankPostUnitPick(bool keyOn, std::uint64_t latched, std::uint64_t newGuid, std::uint64_t oldGuid)
+    {
+        if (!keyOn || latched == 0)
+            return 0;
+        bool const newIs = newGuid == latched;
+        bool const oldIs = oldGuid == latched;
+        if (newIs == oldIs)
+            return 0;
+        return newIs ? 1 : -1;
+    }
+
     // What the post's tank does this tick. A post that was held and can no longer be held ends; a row that is not
     // open (or has nothing to wait for) and holds no post does nothing. Another hostile on a group member keeps the
     // tank on it and the post waits, except in hold_spot once the subject arrives, where the subject outranks it.
     // In hold_spot the window closes only before the arrival, the arrival stays latched while the subject is alive and
-    // selectable, and a stand seat yields the post (the record is kept).
+    // selectable, and a stand seat yields the post (the record is kept). A waiting hold_spot post (its wait key on,
+    // nothing latched yet) walks to its spot and holds there with no unit at all; once it ends (its unit died, its
+    // window closed) its done record keeps the row from starting it again until the band closes.
     inline TankPostDecision TankPostStep(const TankPostIn& in)
     {
+        // A post that already ended for its band (a done record) does nothing: the row cannot start it again, and the
+        // record goes when the band closes.
+        if (in.done)
+            return TankPostDecision::None;
         if (!in.live || !in.tankCanAct)
             return in.started ? TankPostDecision::End : TankPostDecision::None;
         if (in.windowExpired && !(in.holdSpot && in.arrivedBefore))
             return in.started ? TankPostDecision::End : TankPostDecision::None;
         if (!in.subjectFound || !in.subjectAlive || in.subjectEvading)
+        {
+            if (in.waits)
+            {
+                if (in.seated)
+                    return TankPostDecision::Yield;
+                return in.botToSpotYd > kTankPostDragYd ? TankPostDecision::Leash : TankPostDecision::Hold;
+            }
             return in.started ? TankPostDecision::End : TankPostDecision::None;
+        }
         if (in.holdSpot && in.seated)
             return TankPostDecision::Yield;
         bool const arrived = TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,
@@ -4062,6 +4413,33 @@ namespace ai
         if (in.holdingOtherHostile)
             return TankPostDecision::Hold;
         return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
+    }
+
+    // The Engage walk's destination: a point at melee distance on the line from the tank to the subject. The action
+    // walks there itself because MoveTo(Unit*) aims a hostile unit at the stance's formation spot (or refuses the move
+    // when there is none), not at the unit. `reachYd` is the combined melee reach; the point stands 80 % of it from the
+    // subject, so the next tick's reach test passes without hugging the body. False when the two stand on one spot.
+    inline bool TankPostMeleePoint(float botX, float botY, float subjectX, float subjectY, float reachYd, float& x,
+                                   float& y)
+    {
+        float const dx = botX - subjectX;
+        float const dy = botY - subjectY;
+        float const len = std::sqrt(dx * dx + dy * dy);
+        if (len < 0.1f)
+            return false;
+        float const stop = std::min(len, std::max(0.5f, reachYd * 0.8f));
+        x = subjectX + dx / len * stop;
+        y = subjectY + dy / len * stop;
+        return true;
+    }
+
+    // AiPlayerbot.DungeonRunTankPostWalks: the Engage step walks to the subject while it is out of melee reach and no
+    // taunt went out (a taunt that cast ends the tick; a subject in reach is attacked where it stands). A boss stand
+    // seat, a stay included, owns the tank: the step does not walk out of a breath lane. Walk 2f a-2: slot 1 stood on
+    // the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the step never walked.
+    inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach, bool standActive)
+    {
+        return keyOn && !tauntWentOut && !inMeleeReach && !standActive;
     }
 
     // The end word of a post (the step's own order). `slotMoved`: the post's row is still in the fight, but for another

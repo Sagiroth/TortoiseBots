@@ -83,15 +83,9 @@ bool MarkRtiAction::Execute(Event& event)
 
     if (!target) return false;
 
-    std::string rti = AI_VALUE(std::string, "rti");
-
-    // Add the default rti if the bot is setup to ignore rti targets
-    if (rti == "none")
-    {
-        rti = "skull";
-    }
-
-    int index = RtiTargetValue::GetRtiIndex(rti);
+    // Auto mark always places Skull, never the bot's own focus mark: the
+    // other marks are the player's to hand out.
+    int index = RtiTargetValue::GetRtiIndex("skull");
     group->SetTargetIcon(index, target->getObjectGuid());
     return true;
 }

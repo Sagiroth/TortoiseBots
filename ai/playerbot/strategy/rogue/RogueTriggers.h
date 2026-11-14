@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "../generic/ClassChoicePolicy.h"
 
 namespace ai
 {
@@ -319,14 +320,24 @@ namespace ai
         return false;
     }
 
+    // The poison word the saved `.bot choice poison_mh|poison_oh` order wants
+    // for that hand; empty on auto.
+    inline std::string OrderedPoisonWord(PlayerbotAI* ai, bool mainHand)
+    {
+        int const kind = mainHand ? CHOICE_POISON_MH : CHOICE_POISON_OH;
+        return ChoiceOrderedWord(kind,
+            ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ChoiceOrderKey(kind))->Get());
+    }
+
     class ApplyPoisonTrigger : public Trigger
     {
     public:
-        ApplyPoisonTrigger(PlayerbotAI* ai, bool inMainHand, const std::vector<uint32>& inPoisonEnchantIds, const std::vector<uint32>& inPoisonItemIds, std::string name = "apply poison")
+        ApplyPoisonTrigger(PlayerbotAI* ai, bool inMainHand, const std::string& inPoisonWord, std::string name = "apply poison")
         : Trigger(ai, name, 5)
         , mainHand(inMainHand)
-        , poisonEnchantIds(inPoisonEnchantIds)
-        , poisonItemIds(inPoisonItemIds) {}
+        , poisonWord(inPoisonWord)
+        , poisonEnchantIds(ChoicePoisonEnchantIds(inPoisonWord))
+        , poisonItemIds(ChoicePoisonItemIds(inPoisonWord)) {}
 
         bool HasPoisonItem() const
         {
@@ -335,6 +346,10 @@ namespace ai
 
         bool IsActive() override
         {
+            // A saved order for this hand lets only its own poison through,
+            // else this row and the order would overwrite each other forever.
+            if (!ChoiceRowAllowed(OrderedPoisonWord(ai, mainHand), poisonWord))
+                return false;
             if (!HasPoisonItem())
                 return false;
 
@@ -356,38 +371,54 @@ namespace ai
 
     private:
         bool mainHand;
+        std::string poisonWord;
         std::vector<uint32> poisonEnchantIds;
         std::vector<uint32> poisonItemIds;
+    };
+
+    // The ordered poison for one hand is missing from the weapon (or another
+    // poison sits there) and the bot can apply it.
+    class ChoicePoisonTrigger : public Trigger
+    {
+    public:
+        ChoicePoisonTrigger(PlayerbotAI* ai, bool inMainHand)
+        : Trigger(ai, inMainHand ? "choice poison main hand" : "choice poison off hand", 5)
+        , mainHand(inMainHand) {}
+
+        bool IsActive() override;
+
+    private:
+        bool mainHand;
     };
 
     class ApplyDeadlyPoisonTrigger : public ApplyPoisonTrigger
     {
     public:
-        ApplyDeadlyPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 7, 8, 626, 627, 2630, 2642, 2643, 3770, 3771 }, { 2892, 2893, 8984, 8985, 20844, 22053, 22054 }, "apply deadly poison main hand") {}
+        ApplyDeadlyPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, "deadly", "apply deadly poison main hand") {}
     };
 
     class ApplyCripplingPoisonTrigger : public ApplyPoisonTrigger
     {
     public:
-        ApplyCripplingPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 22, 603 }, { 3775, 3776 }, "apply crippling poison main hand") {}
+        ApplyCripplingPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, "crippling", "apply crippling poison main hand") {}
     };
 
     class ApplyMindPoisonTrigger : public ApplyPoisonTrigger
     {
     public:
-        ApplyMindPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 35, 23, 643 }, { 5237, 6951, 9186 }, "apply mind poison main hand") {}
+        ApplyMindPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, "mind", "apply mind poison main hand") {}
     };
 
     class ApplyInstantPoisonTrigger : public ApplyPoisonTrigger
     {
     public:
-        ApplyInstantPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 323, 324, 325, 623, 624, 625, 2641, 3768, 3769 }, { 6947, 6949, 6950, 8926, 8927, 8928, 21927 }, "apply instant poison main hand") {}
+        ApplyInstantPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, "instant", "apply instant poison main hand") {}
     };
 
     class ApplyWoundPoisonTrigger : public ApplyPoisonTrigger
     {
     public:
-        ApplyWoundPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 703, 704, 705, 706, 2644, 3772, 3773 }, { 10918, 10920, 10921, 10922, 22055 }, "apply wound poison main hand") {}
+        ApplyWoundPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, "wound", "apply wound poison main hand") {}
     };
 
     // Donor parity (mod-playerbots RogueTriggers.h): plain "is the weapon

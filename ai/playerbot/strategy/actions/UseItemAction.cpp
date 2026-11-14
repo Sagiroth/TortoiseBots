@@ -120,15 +120,16 @@ bool BotUseItemSpell::OpenLockCheck()
                     return false;
 
                 // we need a go target in case of TARGET_GAMEOBJECT (for other targets acceptable GO and items)
-                if (m_spellInfo->EffectImplicitTargetA[i] == TARGET_GAMEOBJECT)
-                {
-                    if (!m_targets.getGOTarget())
-                        return false;
-                }
+                // cached-target-allow: this is this spell's own cast target, read while its own prepare/cast validates
+                // it and the core reads the same pointer in the same pass (Spell::EffectOpenLock); it is not a
+                // current-spell pointer left over from an earlier tick.
+                GameObject* const go = m_targets.getGOTarget();
+                if (m_spellInfo->EffectImplicitTargetA[i] == TARGET_GAMEOBJECT && !go)
+                    return false;
 
                 // get the lock entry
                 uint32 lockId;
-                if (GameObject* go = m_targets.getGOTarget())
+                if (go)
                 {
                     // In BattleGround players can use only flags and banners
                     if (((Player*)m_caster)->InBattleGround() &&

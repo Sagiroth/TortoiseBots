@@ -86,7 +86,8 @@ bool HandleOrderWhoEnchantSearch(ChatHandler* handler, Player* requester, std::s
     std::unordered_map<uint32_t, Match> matches;
     for (Player* bot : BotManager::Instance().GetAllBots())
     {
-        if (!bot || !bot->IsInWorld() || bot->GetGuildId() != guildId)
+        if (!bot || !bot->IsInWorld() || bot->GetGuildId() != guildId ||
+            GuildOrders::IsOthersAlt(bot->GetGUIDLow(), requester->GetSession()->GetAccountId()))
             continue;
         std::vector<EnchantSnapshot> spells = OrderableEnchantSpells(bot, aliased);
         if (spells.empty())
@@ -200,7 +201,8 @@ bool HandleOrderWhoSearch(ChatHandler* handler, Player* requester, std::string c
     std::unordered_map<uint32_t, Match> matches;
     for (Player* bot : BotManager::Instance().GetAllBots())
     {
-        if (!bot || !bot->IsInWorld() || bot->GetGuildId() != guildId)
+        if (!bot || !bot->IsInWorld() || bot->GetGuildId() != guildId ||
+            GuildOrders::IsOthersAlt(bot->GetGUIDLow(), requester->GetSession()->GetAccountId()))
             continue;
         std::vector<CraftRecipeSnapshot> recipes = OrderableCraftRecipes(bot, words);
         if (recipes.empty())

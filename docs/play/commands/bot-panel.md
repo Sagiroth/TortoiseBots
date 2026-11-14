@@ -305,7 +305,11 @@ Alias: `.bot behaviour`. Settings are persisted per bot across sessions.
 - `spread`: Opt-in tactical spacing to avoid stacking in combat.
 - `hold`: Hold position (off by default). The bot keeps following and fighting but never moves away from enemies on its own: no panic or outnumbered flee, no kiting, no stepping back for casting or shooting room (a hunter stays in melee range too), no mage *Blink* away from a mob in melee range. Stepping out of ground effects and boss mechanics still happen.
 - `noblink`: Mage only. The bot never casts *Blink* inside a dungeon or raid, neither to escape a root or stun nor to jump away from a mob in melee range; outside instances *Blink* works as usual (off by default).
+- `offheal`: Paladin, priest, shaman and druid only. A damage-spec bot heals hurt allies between its own attacks (on by default for Shadow, Elemental, Enhancement, Retribution, Feral Cat and Balance).
+- `offdps`: Paladin, priest, shaman and druid only. A healer attacks while nobody needs healing (on by default for Holy, Discipline and Restoration). Bots of other classes refuse both keys with `TBM:ACTION_ERR|behavior offheal|class|<message>` (a `party`/`raid` scope skips them), and their `TBM:BOTSTATE` line has neither key.
 - `mimic`: Mimics consumable usage out of combat (food, elixirs, flasks, scrolls, and more, but not plain water). The bot resolves a class-, spec-, and level-appropriate equivalent and casts it virtually (no inventory item needed). When more than 4 bots mimic at once, individual chat confirmations are suppressed in favor of a single `[Raid Mimic]` summary. Supports party-wide toggles: `.bot behavior party mimic on`.
+
+A spec change (`.bot role <bot> <spec>` or a talent respec) puts every key back to the new spec's default, the off-spec keys included: a healer spec turns `offdps` on and `offheal` off, a damage spec the other way round, and a tank spec turns both off. With `AiPlayerbot.EnableOffSpecStrategies = 0` a spec change turns both off. `.bot choice` orders and the focus mark are kept.
 
 </details>
 
@@ -374,23 +378,26 @@ Assigns, per paladin bot, the blessing each class gets, plus optional per-charac
 
 ### `.bot choice` <a id="bot-choice"></a>
 
-Orders, per bot, one paladin aura, hunter aspect, or warlock curse. Kinds left on `auto` keep the automatic pick.
+Orders, per bot, one paladin aura, hunter aspect and sting, warlock curse and demon, or rogue poison per hand. Kinds left on `auto` keep the automatic pick.
 
 ```text
-.bot choice <bot|party|raid> <aura|aspect|curse> <value|auto>
+.bot choice <bot|party|raid> <aura|aspect|curse|poison_mh|poison_oh|sting|pet> <value|auto>
 .bot choice <bot|party|raid> status
 ```
 
 <details>
 <summary>Choice rules</summary>
 
-- **Values:** `aura`: `devotion`, `retribution`, `concentration`, `sanctity`, `shadow`, `fire`, `frost` (`shadow`/`fire`/`frost` mean the resistance auras). `aspect`: `hawk`, `monkey`, `cheetah`, `pack`, `wild`, `beast`, `wolf`, `viper`. `curse`: `agony`, `elements`, `shadow`, `recklessness`, `weakness`, `tongues`, `doom`, `exhaustion`. `auto` clears the order; anything else answers `TBM:ACTION_ERR|choice|invalid|<usage>` and changes nothing.
-- **One Per Bot:** The order is saved with the bot (a paladin holds an aura order, a hunter an aspect order, a warlock a curse order). Bots of another class in scope are skipped. An order the bot no longer knows after a respec is ignored (automatic pick) until it is trained again.
+- **Values:** `aura`: `devotion`, `retribution`, `concentration`, `sanctity`, `shadow`, `fire`, `frost` (`shadow`/`fire`/`frost` mean the resistance auras). `aspect`: `hawk`, `monkey`, `cheetah`, `pack`, `wild`, `beast`, `wolf`, `viper`. `curse`: `agony`, `elements`, `shadow`, `recklessness`, `weakness`, `tongues`, `doom`, `exhaustion`. `poison_mh` / `poison_oh` (rogue main hand / off hand): `instant`, `deadly`, `crippling`, `mind` (Mind-numbing), `wound`. `sting` (hunter): `serpent`, `scorpid`, `viper`. `pet` (warlock): `imp`, `voidwalker`, `succubus`, `felhunter`. `auto` clears the order; anything else answers `TBM:ACTION_ERR|choice|invalid|<usage>` and changes nothing.
+- **One Per Kind:** The order is saved with the bot, one per kind: a paladin holds an aura order, a hunter an aspect and a sting order, a warlock a curse and a demon order, a rogue one poison order per hand. Bots of another class in scope are skipped. Orders survive relog, `.bot role` and a respec. An order the bot no longer knows after a respec is ignored (automatic pick) until it is trained again.
 - **Aura Wins:** The ordered aura replaces the spec upkeep (which otherwise keeps the spec aura up) and the single-aura fallback. The raid resist swap and its out-of-combat restore stand down while an order is set. Travel auras are not automated, so there is nothing to fight there.
 - **Aspect Wins:** The ordered aspect replaces the Hawk upkeep in and out of combat (its own upkeep row casts it, above Hawk). The low-mana Viper switch (opt-in `AiPlayerbot.HunterViperOnLowMana`) stands down while an order is set, including a `viper` order itself. An ordered travel aspect (`cheetah`, `pack`) keeps the no-attackers rule, so it never lands in a fight. PvP flag play removes Cheetah when attacked and the order only puts it back out of combat.
 - **Curse Wins:** The ordered curse replaces the automatic curse pick on the bot's targets (spec rows and the raid Recklessness/Shadow assignment stand down); the same row still fires when the chat `curse <x>` manual row for another curse is set, so mixed manual play keeps working. A target that already carries that curse from another warlock is left alone (the curse slot refuses the overwrite). `doom` keeps no extra sanity rules here: if ordered, it is cast.
-- **Untrained Choice:** A bot that has not trained the ordered spell answers `TBM:ACTION_ERR|choice|unknown-spell|<message>` and keeps its setting. A scope with no bot of the kind's class answers `TBM:ACTION_ERR|choice|no-bot|<message>`.
-- **Replies:** An order answers one fresh `TBM:CHOICE` record per bot changed, then `TBM:ACTION_ACK|choice|<scope>|<n>|<kind>=<value>`. `status` answers one record per bot in scope that has the kind, then `TBM:ACTION_ACK|choice status|<scope>|<n>|-`.
-- **`TBM:CHOICE` Record:** `TBM:CHOICE|<bot>|<kind>=<value|auto>,known=<v>+<v>+...`. `known` lists the values the bot has trained (short words, `+`-separated) and may be empty.
+- **Poison Wins:** Out of combat the rogue keeps the ordered poison on that hand. Every automatic poison row for that hand stands down while the order is set (the spec poison kit, the open-world upkeep and the chat `poison main|off <x>` rows), so nothing overwrites the order. The higher-level shaman Windfury courtesy does not apply to an order. A rogue that runs out of the poison keeps whatever is on the weapon; a bot with the item cheat (hired companions, pool bots and autonomous alts) needs no poison in its bags.
+- **Sting Wins:** In combat the hunter puts the ordered sting on a target that carries no sting, above the chat `sting <x>` rows; the automatic Serpent and Viper rows (and their AoE "on attacker" rows) stand down while an order is set, so a fallen-off Scorpid is renewed as Scorpid. A `viper` order skips the own-mana gate, a `serpent` order the Viper preference. Boss tactics that burn a boss's mana with Viper Sting still do so with any order.
+- **Demon Wins:** Out of combat the warlock summons the ordered demon when another one is out (the new summon replaces it) or none is. The automatic demon picks stand down while an order is set: `AiPlayerbot.WarlockPetBySpec`, the solo Voidwalker upgrade and the chat `pet <demon>` rows. In combat it waits. Every demon but the Imp needs a Soul Shard unless the bot has the item cheat; without one the bot keeps its current demon and says so once. Note that the dungeon run uses a live Succubus for Seduce: a warlock ordered to another demon offers no Seduce.
+- **Untrained Choice:** A bot that has not trained the ordered spell answers `TBM:ACTION_ERR|choice|unknown-spell|<message>` and keeps its setting; a rogue without a usable poison item (bags or item cheat, never above its level) answers `TBM:ACTION_ERR|choice|no-item|<message>`. A scope with no bot of the kind's class answers `TBM:ACTION_ERR|choice|no-bot|<message>`.
+- **Replies:** An order answers one fresh `TBM:CHOICE` record per bot changed, then `TBM:ACTION_ACK|choice|<scope>|<n>|<kind>=<value>`. `status` answers one record per kind each bot in scope has (a hunter sends `aspect` and `sting`, a rogue `poison_mh` and `poison_oh`), then `TBM:ACTION_ACK|choice status|<scope>|<n>|-`.
+- **`TBM:CHOICE` Record:** `TBM:CHOICE|<bot>|<kind>=<value|auto>,known=<v>+<v>+...`. `known` lists the values the bot can use (trained spells; for poisons, usable poison items) as short words, `+`-separated, and may be empty.
 
 </details>

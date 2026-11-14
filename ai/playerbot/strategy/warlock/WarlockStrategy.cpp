@@ -513,6 +513,12 @@ void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A saved `.bot choice pet` order: above the manual "pet <demon>" rows
+    // (ACTION_HIGH) and the spec-pet rows; those stand down while it is set.
+    triggers.push_back(new TriggerNode(
+        "choice pet",
+        NextAction::array(0, new NextAction("choice pet", ACTION_HIGH + 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("blood pact", ACTION_NORMAL), NULL)));

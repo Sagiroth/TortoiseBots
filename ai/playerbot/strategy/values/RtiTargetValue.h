@@ -7,6 +7,7 @@
 #include "Group/Group.h"
 #include "TargetValue.h"
 #include "PossibleAttackTargetsValue.h"
+#include "FocusMarkPolicy.h"
 
 namespace ai
 {
@@ -33,11 +34,41 @@ namespace ai
 
         Unit *Calculate() override
         {
+            return CalculateMark(AI_VALUE(std::string, type));
+        }
+
+        // The bot's own focus mark, or Skull when the own mark is on no
+        // reachable mob. Only the damage and tank picks use the fallback; the
+        // CC mark (RtiCcTargetValue) never does.
+        Unit* CalculateFocus()
+        {
+            std::string const own = AI_VALUE(std::string, type);
+            if (Unit* unit = CalculateMark(own))
+                return unit;
+            std::string const fallback = FocusFallbackMark(own, false);
+            return fallback.empty() ? nullptr : CalculateMark(fallback);
+        }
+
+    protected:
+        // The mark word on this unit in the bot's group, or "" when unmarked.
+        std::string MarkOn(Unit* unit)
+        {
+            static char const* const words[] = { "star", "circle", "diamond", "triangle", "moon", "square", "cross", "skull" };
+            Group* group = bot->GetGroup();
+            if (!group || !unit)
+                return std::string();
+            for (uint8 i = 0; i < 8; ++i)
+                if (group->GetTargetIcon(i) == unit->GetObjectGuid())
+                    return words[i];
+            return std::string();
+        }
+
+        Unit* CalculateMark(std::string const& rti)
+        {
             Group *group = bot->GetGroup();
             if(!group)
                 return NULL;
 
-            std::string rti = AI_VALUE(std::string, type);
             int index = GetRtiIndex(rti);
 
             if (index == -1)

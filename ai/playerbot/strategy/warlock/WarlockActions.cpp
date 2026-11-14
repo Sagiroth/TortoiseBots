@@ -1,10 +1,46 @@
 
 #include "playerbot/playerbot.h"
 #include "WarlockActions.h"
+#include "WarlockTriggers.h"
+#include "../generic/ClassChoicePolicy.h"
 #include "playerbot/strategy/actions/EquipAction.h"
 #include "../../../runtime/policy/class/WarlockStonePolicy.h"
 
 using namespace ai;
+
+bool CastChoicePetAction::LoadOrder()
+{
+    std::string const word = OrderedPetWord(ai);
+    if (word.empty())
+        return false;
+    SetSpellName(ChoiceSpell(CHOICE_PET, word));
+    return true;
+}
+
+bool CastChoicePetAction::isUseful()
+{
+    if (!LoadOrder() || sServerFacade.IsInCombat(bot))
+        return false;
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    return !pet || pet->GetEntry() != ChoicePetEntry(OrderedPetWord(ai));
+}
+
+bool CastChoicePetAction::isPossible()
+{
+    if (!LoadOrder())
+        return false;
+    // The core cast check wants the Soul Shard in the bags even under the
+    // item cheat, so a cheat bot gets the one shard the summon consumes.
+    if (OrderedPetWord(ai) != "imp" && ai->HasCheat(BotCheatMask::item) &&
+        bot->GetItemCount(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM) == 0)
+        bot->StoreNewItemInInventorySlot(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM, 1);
+    return CastSpellAction::isPossible();
+}
+
+bool CastChoicePetAction::Execute(Event& event)
+{
+    return LoadOrder() && CastSpellAction::Execute(event);
+}
 
 bool EquipFirestoneAction::Execute(Event& /*event*/)
 {
