@@ -668,7 +668,8 @@ bool FindCorpseAction::Execute(Event& event)
             WorldPosition ghostBefore(bot);
             float ghostDistBefore = ghostBefore.distance(moveToPos);
             int32 movegenBefore = bot->GetMotionMaster() ? (int32)bot->GetMotionMaster()->GetCurrentMovementGeneratorType() : -1;
-            moved = MoveTo(moveToPos.GetMapId(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), false, false);
+            moved = MoveTo(moveToPos.GetMapId(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(),
+                false, false, false, false, "move_revive");
             int32 movegenAfter = bot->GetMotionMaster() ? (int32)bot->GetMotionMaster()->GetCurrentMovementGeneratorType() : -1;
             bool started = bot->IsMoving() || (bot->GetMotionMaster() && !bot->GetMotionMaster()->empty() && movegenAfter != (int32)IDLE_MOTION_TYPE);
             float ghostDistAfter = WorldPosition(bot).distance(moveToPos);
@@ -847,7 +848,8 @@ bool SpiritHealerAction::Execute(Event& event)
         }
         if (now - stepStart < 15 && WorldPosition(bot).fDist(stepSpot) > 3.0f &&
             MoveTo(stepSpot.getMapId(), stepSpot.getX(), stepSpot.getY(),
-                bot->GetMap()->GetHeight(stepSpot.getX(), stepSpot.getY(), stepSpot.getZ() + 5.0f), false, false, false, true))
+                bot->GetMap()->GetHeight(stepSpot.getX(), stepSpot.getY(), stepSpot.getZ() + 5.0f), false, false, false,
+                true, "move_revive"))
             return true;
 
         sLog.outDetail("Bot #%d %s:%d <%s> revives at spirit healer", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
@@ -971,7 +973,8 @@ bool SpiritHealerAction::Execute(Event& event)
     }
     else
     {
-        return MoveTo(grave.GetMapId(), grave.getX(), grave.getY(), grave.getZ(), false, false);
+        return MoveTo(grave.GetMapId(), grave.getX(), grave.getY(), grave.getZ(), false, false, false, false,
+            "move_revive");
     }
 }
 

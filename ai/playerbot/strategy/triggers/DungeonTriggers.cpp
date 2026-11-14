@@ -556,13 +556,16 @@ bool RaidSpreadNeededTrigger::IsActive()
     Group* group = bot->GetGroup();
     if (!group)
         return false;
-    // A slot bot holds its fixed point: the old step-away would undo the walk back to it (and the hold).
+    // A slot bot holds its fixed point: the old step-away would undo the walk back to it (and the hold). A hunter
+    // whose only points lie inside the shot's dead zone keeps her step-out's position, so the step-away stays off
+    // for that verdict too.
     if (sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive)
     {
         const BossSpreadSlotTask slot = FindBossSpreadSlot(ai, bot);
         if (slot.slotBot && (slot.verdict == SpreadSlotVerdict::SlotMove ||
                              slot.verdict == SpreadSlotVerdict::SlotHold ||
-                             slot.verdict == SpreadSlotVerdict::Cast))
+                             slot.verdict == SpreadSlotVerdict::Cast ||
+                             slot.verdict == SpreadSlotVerdict::DeadZone))
             return false;
     }
     float const spreadYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);

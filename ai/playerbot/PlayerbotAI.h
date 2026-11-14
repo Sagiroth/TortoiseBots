@@ -532,7 +532,9 @@ public:
     // (StartRecoveryCategory 133); the core keeps the real one private.
     // Set right after a successful prepare, a few ms after the core's own.
     uint32 SpellGlobalCooldownRemainingMs() const;
-    void InterruptSpell(bool withMeleeAndAuto = true);
+    // `site` names the caller in the CastCancel row (null: the choke point's own "ai"), `movedYd` the distance its
+    // cancel moves the bot.
+    void InterruptSpell(bool withMeleeAndAuto = true, const char* site = nullptr, float movedYd = 0.0f);
     bool RemoveAura(const std::string& name);
     void RemoveShapeshift();
     void WaitForSpellCast(Spell *spell);

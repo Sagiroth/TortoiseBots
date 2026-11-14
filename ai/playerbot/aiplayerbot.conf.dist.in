@@ -1619,6 +1619,15 @@ AiPlayerbot.DungeonRunBossProtectionPotion = 0
 # rose 12 points. The reserve waits for a redesign (no reserve in the opening, released when raid health drops).
 AiPlayerbot.DungeonRunHealReserve = 0
 
+# A minimum range for the spread ring slots of a class that shoots from a dead zone (a hunter's Auto Shot cannot
+# hit nearer than 8 yd): each such bot's slot never lands nearer the boss than the boss's own reach plus 8 plus 2 yd,
+# and never within the row's spacing of another member's slot (it steps sideways along that circle until clear).
+# Without it a hunter's slot lands inside the dead zone, the dead-zone step-out walks to about 15 yd and the slot
+# pulls her back in a loop. Casters and healers keep the plain rings either way. Needs DungeonRunBossSpreadSlots.
+# 0 - off: the rings as they are (Default)
+# 1 - on (recommended on)
+AiPlayerbot.SpreadRangedMinRange = 0
+
 # An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
 # tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).
 # With the key off the row behaves like a default row (a tank the caster is on still holds it). This is its own

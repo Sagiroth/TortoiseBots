@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "HeiganDungeonActions.h"
+#include "playerbot/CastCancelLog.h"
 #include "playerbot/policy/raid/HeiganDancePolicy.h"
 #include "../../policy/raid/HeiganDungeonHelper.h"
 
@@ -45,16 +46,19 @@ bool HeiganDanceMoveAction::Execute(Event& event)
         elapsed = 0;
 
     const int area = HeiganSafeAreaNow(elapsed);
+    const float spotYd = bot->GetDistance2d(kHeiganSafeSpots[area][0], kHeiganSafeSpots[area][1]);
     if (area != lastArea)
     {
         // New safe spot: stop the current cast so the move starts now
         // (donor HeiganDanceAction::MoveToWaypoint).
         lastArea = area;
+        ai::LogCastCancelStop(ai, "heigan_dance", spotYd);
         bot->CastStop();
     }
-    if (bot->GetDistance2d(kHeiganSafeSpots[area][0], kHeiganSafeSpots[area][1]) < 4.0f)
+    if (spotYd < 4.0f)
         return false;
-    return MoveTo(bot->GetMapId(), kHeiganSafeSpots[area][0], kHeiganSafeSpots[area][1], kHeiganSafeSpots[area][2]);
+    return MoveTo(bot->GetMapId(), kHeiganSafeSpots[area][0], kHeiganSafeSpots[area][1], kHeiganSafeSpots[area][2],
+                  false, false, false, false, "heigan_dance");
 }
 
 float HeiganDanceSuppressionMultiplier::GetValue(Action* action)
@@ -92,5 +96,5 @@ bool HeiganHoldPlatformAction::Execute(Event& event)
 {
     if (bot->GetDistance2d(2794.26f, -3706.67f) < 4.0f)
         return false;
-    return MoveTo(bot->GetMapId(), 2794.26f, -3706.67f, 276.54f);
+    return MoveTo(bot->GetMapId(), 2794.26f, -3706.67f, 276.54f, false, false, false, false, "heigan_platform");
 }

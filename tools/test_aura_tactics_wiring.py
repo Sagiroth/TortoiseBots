@@ -837,7 +837,7 @@ class FreezeFleeWiring(unittest.TestCase):
         flee = body(ACTIONS, "bool BossTacticsFleeAction::Execute(")
         self.assertIn("RunOutFromGroup(*this, ai, bot, radius, true)", flee)
         self.assertIn("GetRaidTankRoles(ai).MainTank()", flee)
-        self.assertIn("MoveTo(tank, radius)", flee)
+        self.assertIn('MoveTo(tank, radius, "flee")', flee)
         self.assertIn("PlayerbotAI::IsTank(bot)", flee)
         # The healer list is the row path's own: the hard-coded runout passes false and keeps its old step.
         self.assertIn("if (requireHealer && PlayerbotAI::IsHeal(member))", DUNGEON_ACTIONS)

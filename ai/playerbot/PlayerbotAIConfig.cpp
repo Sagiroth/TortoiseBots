@@ -190,6 +190,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunBossSpreadSlots = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpreadSlots", false);
     dungeonRunBossProtectionPotion = config.GetBoolDefault("AiPlayerbot.DungeonRunBossProtectionPotion", false);
     dungeonRunHealReserve = config.GetBoolDefault("AiPlayerbot.DungeonRunHealReserve", false);
+    spreadRangedMinRange = config.GetBoolDefault("AiPlayerbot.SpreadRangedMinRange", false);
     dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);
     dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);
     bossStandOutranksBreathDodge = config.GetBoolDefault("AiPlayerbot.BossStandOutranksBreathDodge", false);

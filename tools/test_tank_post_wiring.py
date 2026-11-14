@@ -114,7 +114,7 @@ class TankPostWiring(unittest.TestCase):
         # the leash rides the same branch (a pre-arrival walk back with the tank's own target kept).
         drag = action[action.index("if (task.step == TankPostDecision::Drag || task.step == TankPostDecision::Leash)"):]
         drag = drag[:drag.index("// Walk or hold")]
-        self.assertIn("MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true)", drag)
+        self.assertIn('MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true, "tank_post_drag")', drag)
         self.assertNotIn("AttackStop", drag)
         # One row per post event, named as the spec has it.
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', ACTIONS)

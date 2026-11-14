@@ -1,4 +1,5 @@
 #include "playerbot/strategy/actions/ViscidusActions.h"
+#include "playerbot/CastCancelLog.h"
 #include <vector>
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
@@ -546,6 +547,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             if (Spell* channel = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
                 if (channel->m_spellInfo && std::string(channel->m_spellInfo->SpellName[0]).find("Fishing") == 0)
                 {
+                    ai::LogCastCancel(this, "fishing", CURRENT_CHANNELED_SPELL);
                     bot->InterruptSpell(CURRENT_CHANNELED_SPELL);
                     isCasting = bot->IsNonMeleeSpellCasted(true);
                 }
@@ -948,7 +950,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(slot)))
                     if (PatchwerkOpeningBlocksSpell(this, spell->m_spellInfo->Id,
                         aiObjectContext->GetValue<Unit*>("current target")->Get()))
+                    {
+                        ai::LogCastCancel(this, "patchwerk_opening", CurrentSpellTypes(slot));
                         bot->InterruptSpell(CurrentSpellTypes(slot));
+                    }
             if (Pet* pet = bot->GetPet())
                 if (pet->GetVictim() && pet->GetVictim()->GetEntry() == 16028)
                     pet->AttackStop();
@@ -978,6 +983,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         {
             if (!soakWasStaging)
             {
+                ai::LogCastCancelNonMelee(this, "patchwerk_soak_stage", false);
                 bot->InterruptNonMeleeSpells(false);
                 ResetAIInternalUpdateDelay();
                 if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
@@ -1005,6 +1011,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             if (!soakWasActive)
             {
                 WakePatchwerkPullMain(this);
+                ai::LogCastCancelNonMelee(this, "patchwerk_soak_engage", false);
                 bot->InterruptNonMeleeSpells(false);
                 ResetAIInternalUpdateDelay();
                 if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
@@ -1088,7 +1095,8 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
         {
             if(reaction->ShouldInterruptCast())
             {
-                InterruptSpell();
+                // The reaction engine's own cancel: the label splits it from the target picks and the walks.
+                InterruptSpell(true, "reaction_cast");
             }
 
             if (reaction->ShouldInterruptMovement())
@@ -2659,7 +2667,7 @@ void PlayerbotAI::Reset(bool full)
         RESET_AI_VALUE2(std::string, "manual string", "future travel purpose");
         RESET_AI_VALUE2(int, "manual int", "future travel relevance");
 
-        InterruptSpell();
+        InterruptSpell(true, "ai_reset");
 
         StopMoving();
 
@@ -3903,7 +3911,7 @@ void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
 
 void PlayerbotAI::ReInitCurrentEngine()
 {
-    InterruptSpell();
+    InterruptSpell(true, "engine_reinit");
     currentEngine->Init();
 }
 

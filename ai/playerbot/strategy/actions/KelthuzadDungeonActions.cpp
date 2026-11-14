@@ -135,7 +135,8 @@ bool KelthuzadPositionAction::Execute(Event& event)
             return false;
         if (bot->GetDistance2d(kKtCenterX, kKtCenterY) < 3.0f)
             return false;
-        return MoveTo(bot->GetMapId(), kKtCenterX, kKtCenterY, bot->GetPositionZ());
+        return MoveTo(bot->GetMapId(), kKtCenterX, kKtCenterY, bot->GetPositionZ(), false, false, false, false,
+                      "kelthuzad_gather");
     }
 
     if (PlayerbotAI::IsTank(bot))
@@ -148,13 +149,15 @@ bool KelthuzadPositionAction::Execute(Event& event)
         {
             if (bot->GetDistance2d(kKtAssistTankX, kKtAssistTankY) < 3.0f)
                 return false;
-            return MoveTo(bot->GetMapId(), kKtAssistTankX, kKtAssistTankY, bot->GetPositionZ());
+            return MoveTo(bot->GetMapId(), kKtAssistTankX, kKtAssistTankY, bot->GetPositionZ(), false, false, false,
+                          false, "kelthuzad_assist");
         }
         if (AI_VALUE2(bool, "has aggro", "current target"))
         {
             if (bot->GetDistance2d(kKtTankX, kKtTankY) < 3.0f)
                 return false;
-            return MoveTo(bot->GetMapId(), kKtTankX, kKtTankY, bot->GetPositionZ());
+            return MoveTo(bot->GetMapId(), kKtTankX, kKtTankY, bot->GetPositionZ(), false, false, false, false,
+                          "kelthuzad_mt");
         }
         return false;
     }
@@ -181,7 +184,7 @@ bool KelthuzadPositionAction::Execute(Event& event)
         const float y = kKtCenterY + std::sin(angle) * radius;
         if (bot->GetDistance2d(x, y) < 3.0f)
             return false;
-        return MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ());
+        return MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ(), false, false, false, false, "kelthuzad_ring");
     }
 
     return false;

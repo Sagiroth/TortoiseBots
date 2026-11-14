@@ -616,7 +616,8 @@ namespace ai
                 }
             }
 
-            return MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ());
+            return MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ(),
+                false, false, false, false, "move_reach");
         }
 
         // AiPlayerbot.RangedReachHoverTarget: a hostile that hovers (Onyxia in P2, 19-23 yd above
@@ -1062,7 +1063,8 @@ namespace ai
                 // one height query) and let the pull's own aggro start there.
                 float groundZ = 0.0f;
                 if (AirbornePullGround(target, groundZ) &&
-                    MoveTo(target->GetMapId(), target->getPositionX(), target->getPositionY(), groundZ))
+                    MoveTo(target->GetMapId(), target->getPositionX(), target->getPositionY(), groundZ,
+                        false, false, false, false, "move_reach"))
                     return true;
                 return ChaseTo(target, distance, bot->GetAngle(target));
             }
@@ -1085,7 +1087,7 @@ namespace ai
             // out than the puller already stands would walk backwards.
             if (!inLos)
                 return MoveTo(target->GetMapId(), target->getPositionX(),
-                    target->getPositionY(), target->getPositionZ());
+                    target->getPositionY(), target->getPositionZ(), false, false, false, false, "move_reach");
 
             // In sight: walk to a firing position at the pull range, but only
             // after it holds up as a place the bot can stand, path to, and shoot
@@ -1112,13 +1114,14 @@ namespace ai
                 if (sameFloor && IsValidPosition(firingPosition, targetPosition))
                 {
                     if (MoveTo(firingPosition.GetMapId(), firingPosition.getX(),
-                            firingPosition.getY(), firingPosition.getZ()))
+                            firingPosition.getY(), firingPosition.getZ(),
+                            false, false, false, false, "move_reach"))
                         return true;
                 }
             }
 
             return MoveTo(target->GetMapId(), target->getPositionX(),
-                target->getPositionY(), target->getPositionZ());
+                target->getPositionY(), target->getPositionZ(), false, false, false, false, "move_reach");
         }
     };
 

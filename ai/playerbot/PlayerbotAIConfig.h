@@ -860,6 +860,10 @@ public:
     // The fixed ranged slots of a live spread row (each ranged bot and healer owns a ring point and stands on it
     // whenever the seek does not need it): off, today's step-away (default off, recommended on).
     bool dungeonRunBossSpreadSlots = false;
+    // The spread ring slots' minimum range for a class that shoots from a dead zone (a hunter's Auto Shot, 8 yd):
+    // on, such a bot's slot never lands nearer the boss than the boss's reach + 8 + 2 yd; off, the rings as they
+    // are (default off, recommended on).
+    bool spreadRangedMinRange = false;
     // One BossStand row per bot's stand episode (assigned, arrived, unseated, released) into bot_events.csv: off, the
     // stand code writes nothing and reads no episode state (needs the boss stand rows and the bot_events.csv log;
     // default off).

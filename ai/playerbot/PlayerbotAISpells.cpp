@@ -6,6 +6,7 @@
 #include "playerbot/GroupMembers.h"
 #include "../../runtime/RemoteCommanderTasks.h"
 #include "playerbot/InterruptCastingPolicy.h"
+#include "playerbot/CastCancelLog.h"
 #include "playerbot/policy/combat/TargetFacingPolicy.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/values/LastSpellCastValue.h"
@@ -1785,7 +1786,7 @@ void PlayerbotAI::WaitForSpellCast(Spell *spell)
     SetAIInternalUpdateDelay(GetSpellCastDuration(spell));
 }
 
-void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto)
+void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto, const char* site, float movedYd)
 {
     for (int type = CURRENT_MELEE_SPELL; type < CURRENT_CHANNELED_SPELL; type++)
     {
@@ -1797,6 +1798,10 @@ void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto)
         Spell* currentSpell = bot->GetCurrentSpell((CurrentSpellTypes)type);
         if (currentSpell && currentSpell->m_spellInfo && (currentSpell->m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT))
         {
+            // The CastCancel row: this is the one choke point every ai->InterruptSpell() caller's cancel goes through
+            // (the reaction engine, movement, target picks), so a cast lost here is named even when the caller is not.
+            // The slot is the one about to be interrupted, never whichever cast happens to be live first.
+            LogCastCancel(this, site ? site : "ai", (CurrentSpellTypes)type, movedYd);
             bot->InterruptSpell((CurrentSpellTypes)type);
             SpellInterrupted(currentSpell->m_spellInfo->Id);
         }
