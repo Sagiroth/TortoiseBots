@@ -405,6 +405,7 @@ Some raid mechanics are handled in the class/raid AI rather than as `ai_boss_tac
 - **Nefarian class calls:** a priest carrying Corrupted Healing keeps to Renew and Power Word: Shield instead of direct heals; damage dealers kill the corrupted totems first and then the Corrupted Infernals, never bouncing back to Nefarian. An explicit attack order still wins, and tanks and healers keep their jobs.
 - **Solnius adds:** during Call of Nightmare, a damage dealer's `dps assist` target is the live Solnius add (the one it already hits, else the nearest from the cached attackers list), so the add focus is not reset to Solnius every tick. The Araxxna egg check re-reads its nearby list at most once every five seconds.
 - **Area-spell opener gate:** a Frost mage withholds Flamestrike for the first 10 seconds of a fight (the Blizzard opener gate), so it does not open a fresh pack before the tank holds it.
+- **Heal cast guard:** behind `AiPlayerbot.ReactionHealCastGuardPct` (default `0`, recommended on at `1`) the reaction engine no longer breaks a healer's heal for the two positioning reactions that usually pass without a step, `boss tactics seek` and `raid spread`: the cast stands once it is past the key's percent of the way. Every emergency still breaks it, and a seek or a spread that really walks still breaks the cast through the walk. Walk 102's Hakkar fights lost 10.5 heals per healer per fight to it, 74.5 % of the labelled cuts to the seek.
 
 ## Known limits
 

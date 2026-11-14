@@ -72,6 +72,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left. |
 | [`AiPlayerbot.RaidTankHealerAssist`](#aiplayerbotraidtankhealerassist) | `0` | `1`: a layout tank healer's second seat on its tank heals a raid member in sight and in range below 70% while the tank is quiet (not on a boss, 90%+ after incoming damage). |
 | [`AiPlayerbot.RaidReactions`](#aiplayerbotraidreactions) | `0` | `1`: the reaction engine answers the universal raid hazards — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread. |
+| [`AiPlayerbot.ReactionHealCastGuardPct`](#aiplayerbotreactionhealcastguardpct) | `0` | The opening percent of a healer's heal that `boss tactics seek` and `raid spread` may still cut; from it on the heal stands (recommended on at `1`). |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunPullGate`](#aiplayerbotdungeonrunpullgate) | `0` | `1`: the run leader never pulls a boss its `pull_gate` row gates while the boss wears the row's aura, and ends the run after the row's seconds (Hakkar needs all of this, seek, charm yield and boss spread, plus the aura tactics). |
 | [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | Every firing stand the run leader picks (an authored stand-pull step's own pull, this key being what gives that step a stand rule, a generic pull's with `AiPlayerbot.DungeonRunPullStand`) is refused when another live pack (its patrol loop included) can reach it; none clear, the stand the key is off for is used (advisory). |
@@ -741,6 +742,17 @@ Whether the reaction engine answers the universal raid hazards.
 - the four state rows (combat start/end, death, resurrect) are not in `react`: every class strategy keeps them in `ClassStrategy::InitReactionTriggers`, and every class swaps its reaction engine onto its `… pve`/`… pvp`/`… raid` strategy.
 - with the key off the `react` strategy is still registered but empty: it appears in `react ?` and in the engine's strategy signature, and contributes no row. That is expected.
 - not marked "recommended on": that waits for a live walk.
+
+</details>
+
+### `AiPlayerbot.ReactionHealCastGuardPct`
+Whether a positioning reaction may still break a healer's heal once it is under way, and how far into the cast it may.
+**Default:** `0` · **Values:** `0` off (every reaction breaks a cast at pick time, as before), `1` on (recommended on: only the first percent of the cast may be cut), `1`-`100` the opening percent of the cast that may still be cut (clamped) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Cast guard:** the reaction engine breaks a bot's cast the moment it *picks* a reaction whose action asks for it, before that action's own pass can find it has nothing to do. `boss tactics seek` and `raid spread` are both movement actions, so both asked for the break, and both usually pass without a step (the seek already at the gather, a spread slot already held): walk 102 over 25 Hakkar fights measured 10.5 heals cut per healer per fight (a median cut at 4 % of the cast, 79 % of the cuts under 10 %), 74.5 % of the cuts the diagnostics could label going to the seek and most of the rest to `raid spread`. With the key on, those two actions stand down for a bot that heals, casting a spell that heals outright or over time, once the cast is past this percent; below it the cast still breaks. Every other reaction keeps cutting (freeze, flee, bomb runout, avoid aoe, hazard, potions, victim escape, BoP, the dispels), and a seek or spread that really walks still breaks the cast through the walk itself. With the key off, every reaction breaks the cast as it did.
 
 </details>
 

@@ -118,6 +118,10 @@ namespace ai
         // Used when this action is executed as a reaction
         virtual bool ShouldReactionInterruptCast() const { return false; }
         virtual bool ShouldReactionInterruptMovement() const { return false; }
+        // A positioning reaction whose typical pass ends without a step (the seek at the gather, a held spread
+        // slot) stands down for a healer's heal that has not got far instead of breaking it at pick time
+        // (ReactionCastGuardPolicy.h, AiPlayerbot.ReactionHealCastGuardPct). Every emergency keeps cutting.
+        virtual bool ReactionYieldsToHealCast() const { return false; }
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "dummy"; } //Must equal internal name

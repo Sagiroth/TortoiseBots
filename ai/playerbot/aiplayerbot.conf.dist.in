@@ -1813,6 +1813,19 @@ AiPlayerbot.RaidTankHealerAssist = 0
 # 1 - on
 AiPlayerbot.RaidReactions = 0
 
+# The opening of a healer's heal that a positioning reaction may still cut (recommended on at 1). The reaction engine
+# breaks a bot's cast as soon as it PICKS a reaction whose action asks for it, before the action can find it has nothing
+# to do; `boss tactics seek` and `raid spread` are both such actions and both usually pass without a step (the seek at
+# the gather, a held slot). Walk 102: each healer lost 10.5 heals a fight, the cut at a median 4 % of the cast and 79 %
+# of the cuts under 10 %, with 74.5 % of the labelled cuts going to seek. With the key on, only those two actions stand
+# down, and only for a bot that heals, casting a heal, from this percent of the cast on. Every emergency still breaks
+# the cast (freeze, flee, bomb runout, avoid aoe, hazard, potions, victim escape, BoP, the dispels), and a seek or
+# spread that really walks still breaks it once the walk has a path. `.reload config` reads it again.
+# 0 - off: every reaction breaks a cast as before (Default)
+# 1 - on (recommended on): a heal is only broken in its first percent
+# 1-100 - the opening percent of the cast that may still be cut
+AiPlayerbot.ReactionHealCastGuardPct = 0
+
 # Opt-in "fankriss tank" role (.bot strategy +fankriss tank): an assigned tank with no Mortal Wound
 # stacks taunts Fankriss off the current tank at this many stacks (1-9, clamped). Does not enable the role.
 AiPlayerbot.FankrissSwapStacks = 5

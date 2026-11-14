@@ -839,6 +839,11 @@ namespace ai
         bool isUseful() override;
         bool isPossible() override;
         bool Execute(Event& event) override;
+        // The trigger keeps the seek picked for the whole seek window, and its at-spot pass returns false without a
+        // step, so as a reaction it must not break a healer's heal at pick time (walk 102: 74.5 % of the labelled
+        // cuts; ReactionCastGuardPolicy.h, AiPlayerbot.ReactionHealCastGuardPct). A walk it really starts still
+        // breaks the cast (MoveTo).
+        bool ReactionYieldsToHealCast() const override { return true; }
 
     private:
         // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
