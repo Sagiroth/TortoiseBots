@@ -18,7 +18,7 @@ In your own guild you can send a bot to fetch items for real: it farms, buys or 
 ## Quick start
 
 Before you start, you need three things:
-- A bot of yours in the guild: your own alts are already eligible. To add a pool bot, invite it like any player (`/ginvite <name>`); it accepts when it may (see [Guild bots](getting-started.md#guild-bots)). Hired companions always refuse.
+- A bot of yours in the guild. Your own alt counts while it plays on its own (after it leaves your party); only you may give it an order, and the order spends that alt's own gold and sends its items to the guild bank or by mail. To add a pool bot, invite it like any player (`/ginvite <name>`); it accepts when it may (see [Guild bots](getting-started.md#guild-bots)). Hired companions always refuse.
 - Your guild rank allowed to edit officer notes.
 - Bank delivery (optional): an unlocked guild bank with a tab open to the bots' rank (see [Guild bank access](#guild-bank-access)). Without it, finished items go by mail.
 - Bots found guilds of their own only when the server switches it on ([`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild), off by default); invite them into yours.

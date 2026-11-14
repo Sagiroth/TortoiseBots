@@ -8,7 +8,6 @@
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
-#include "runtime/AltBotService.h"
 #include "runtime/policy/provision/CraftOrderPolicy.h"
 
 using namespace ai;
@@ -152,7 +151,6 @@ bool GuildCraftOrderAction::Execute(Event& event)
     // Vendor reagents: only what the bot can fully afford for at least one
     // cast, capped to free bag space. Anything else fails now, not after
     // a trip and partial gold. Real gold only: orders never cheat.
-    bool autonomous = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid());
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
@@ -192,18 +190,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
         }
 
         // The vendor leg below buys this reagent; the craft step only makes
-        // room for it. An autonomous alt never travels to buy: it cannot
-        // reach a vendor, so the player gets the need list. No gold means
-        // the same, never a farm trip or a sub-order for a vendor item.
-        if (autonomous)
-        {
-            ai->TellDebug(ai->GetMaster(), "Guild craft order: autonomous bot cannot buy reagent " + std::to_string(reagentId), "debug travel");
-            if (record)
-                TortoiseBots::GuildOrders::SetNeedItems(botGuidLow,
-                    { TortoiseBots::GuildOrders::NeedItem{ reagentId, shortfall } }, false);
-            return false;
-        }
-
+        // room for it. No gold means the need list, never a farm trip or a
+        // sub-order for a vendor item.
         uint32 oneCast = TortoiseBots::CraftOrderPolicy::ReagentShortfall(pSpellInfo->ReagentCount[i], 1, have);
         uint32 buyCount = reagentProto->BuyCount ? reagentProto->BuyCount : 1;
         uint64_t bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(oneCast, buyCount);

@@ -137,6 +137,10 @@ std::vector<uint32_t> CollectableSubOrderItems(uint32_t botGuidLow);
 // never autonomous alts or hires. Same-guild membership is checked live at
 // each call site (member rows plus GetGuildId()). World thread only.
 bool IsDurableOrderBot(uint32_t guidLow);
+// A character on a real player's account other than the requester's (someone
+// else's alt): it takes orders from its owner only, since an order spends its
+// gold and gives away its items. Claimed and pool-account bots never count.
+bool IsOthersAlt(uint32_t guidLow, uint32_t requesterAccountId);
 // Whether a live bot can take a sub-order for the item: knows the recipe or
 // has a usable farm plan. Reads only the passed player; the world-thread
 // drain and the reassign path share it.

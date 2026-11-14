@@ -483,9 +483,23 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
     handler->PSendSysMessage("TBM:CC_ASSIGN_END");
     // Issue #489: Claimed guild bots snapshot for the player's raid roster
     std::vector<uint32> claimedGuids = ClaimLifecycle::Instance().GetClaimedBotsForPlayer(requester->GetGUIDLow());
+    // Owned alts playing on their own in the player's guild take guild orders
+    // too, so they follow the claimed rows, marked by the last field.
+    size_t const claimedCount = claimedGuids.size();
+    if (requester->GetGuildId())
+        for (OwnedCharacter const& row : rows)
+        {
+            if (!AltBotService::Instance().IsAutonomous(row.characterGuid))
+                continue;
+            Player* alt = sObjectAccessor.FindPlayer(row.characterGuid);
+            if (alt && alt->GetGuildId() == requester->GetGuildId())
+                claimedGuids.push_back(row.characterGuid.GetCounter());
+        }
     handler->PSendSysMessage("TBM:CLAIMED_BEGIN|%u", static_cast<uint32>(claimedGuids.size()));
-    for (uint32 botGuidLow : claimedGuids)
+    for (size_t index = 0; index < claimedGuids.size(); ++index)
     {
+        uint32 botGuidLow = claimedGuids[index];
+        uint32 const isAlt = index >= claimedCount ? 1u : 0u;
         ObjectGuid botGuid(HIGHGUID_PLAYER, botGuidLow);
         Player* player = sObjectAccessor.FindPlayer(botGuid);
         BotRecord* record = BotManager::Instance().FindBot(botGuid);
@@ -528,11 +542,11 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
             }
             profs = ClaimedProfsPolicy::FormatProfs(skills);
         }
-        handler->PSendSysMessage("TBM:CLAIMED|%u|%s|%u|%u|%s|%u|%s|%u|%s",
+        handler->PSendSysMessage("TBM:CLAIMED|%u|%s|%u|%u|%s|%u|%s|%u|%s|%u",
             botGuidLow, ProtocolSafe(name).c_str(), classId, level,
             ProtocolSafe(state).c_str(), grouped,
             ProtocolSafe(RosterLocation(mapId, zoneId, areaId)).c_str(),
-            gearLocked, profs.c_str());
+            gearLocked, profs.c_str(), isAlt);
     }
     handler->PSendSysMessage("TBM:CLAIMED_END");
     // Live behaviour snapshot for the controllable party bots (owned alts
