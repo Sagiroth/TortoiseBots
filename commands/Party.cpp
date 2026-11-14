@@ -907,13 +907,15 @@ bool HandleRole(ChatHandler* handler, char const* args)
     sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
     ai->ResetStrategies();
     if (!specChange.empty())
-    {
         ai->ChangeStrategy(specChange, BotState::BOT_STATE_ALL);
-        // The rows carry the spec only: the talent-based reset may have left
-        // the old spec's off-spec, so set the new spec's default here.
-        // "hybrid" already names its own off-spec.
-        std::string const offSpec = roleToken == "hybrid" ? std::string()
-            : ai::OffSpecChangeForRole(bot->GetClass(), role, sPlayerbotAIConfig.enableOffSpecStrategies);
+    // The talent-based reset leaves the talent spec's off-spec (a disc priest
+    // forced to dps keeps offdps), so set the new role's default here, for a
+    // spec word and a bare role alike. "hybrid" already names its own
+    // off-spec; a cleared role keeps the talent default.
+    if (role != static_cast<uint8>(ai::BOT_ROLE_NONE) && roleToken != "hybrid")
+    {
+        std::string const offSpec =
+            ai::OffSpecChangeForRole(bot->GetClass(), role, sPlayerbotAIConfig.enableOffSpecStrategies);
         if (!offSpec.empty())
             ai->ChangeStrategy(offSpec, BotState::BOT_STATE_COMBAT);
     }
