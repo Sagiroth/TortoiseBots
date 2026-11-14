@@ -785,7 +785,7 @@ class LinkedDeathFightWideScan(unittest.TestCase):
         self.assertLess(fn.index("GetExplicitAttackTarget()"), fn.index("LinkedDeathHoldsMember("))
         # The scan comes before the mark so the mark is judged against the group, and a held mark is dropped.
         self.assertLess(fn.index("linkedScan = ScanBossLinkedDeath(ai, bot);"),
-                        fn.index("RtiTargetValue::Calculate()"))
+                        fn.index("RtiTargetValue::CalculateFocus()"))
         self.assertIn("!(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, "
                       "rti->GetObjectGuid().GetRawValue()))", fn)
         # One scan per pick: the group pick reads the scan the mark was judged against.

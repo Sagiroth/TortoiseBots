@@ -261,6 +261,27 @@ Attacks the Skull mark with all scoped party bots, using normal rotations.
 
 - Applies Skull to your hostile target, or uses the existing Skull mark if you have no target.
 - Healers are not exempted here.
+- Sets every scoped bot's focus mark back to Skull, including bots you sent to another mark with [`.bot focus`](#bot-focus): the newest order wins. The dungeon run's focus order does the same. The addon shows the reset through the `focus=` field.
+
+<a id="bot-focus"></a>
+### `.bot focus`
+
+Sends one bot to its own raid mark instead of Skull.
+
+```text
+.bot focus <bot|party> <skull|cross|square|moon|triangle|diamond|circle|star>
+.bot focus <bot|party> clear
+.bot focus <bot|party> status
+```
+
+- The mark is saved with the bot and survives relog, `.bot role` and a respec. `clear` sets Skull, the default.
+- A damage dealer attacks its own mark first; a tank's target pick reads it too.
+- When the bot's mark is on no mob in reach, it falls back to Skull while Skull is up, and only then to its normal pick.
+- Healers have no focus mark: a `party` scope skips them, and naming one answers `TBM:ACTION_ERR|focus|healer|<message>`.
+- A mark a party bot holds as its CC mark is refused with `TBM:ACTION_ERR|focus|cc-mark|<message>`: the focus fire would break the crowd control. The reverse is refused too (see `.bot action cc`).
+- Focus Skull and the dungeon run's focus put every bot back on Skull.
+- Each changed bot answers a fresh `TBM:BOTSTATE` line (`focus=<mark>`), then `TBM:ACTION_ACK|focus|<scope>|<n>|<mark>`. `status` answers the `TBM:BOTSTATE` lines and `TBM:ACTION_ACK|focus status|<scope>|<n>|-`.
+- Servers that have the command advertise the `focus-mark` capability.
 
 <a id="bot-action-cc"></a><a id="bot-cc"></a>
 ### `.bot action cc`
@@ -276,6 +297,7 @@ Assigns a crowd-control raid mark to a capable bot.
 - The server probes each bot's crowd-control actions and picks the best fit.
 - Probed spells include *Polymorph*, *Sap*, *Banish*, *Fear*, *Shackle Undead*, *Hibernate*, *Entangling Roots*, *Freezing Trap*, *Scare Beast*, *Turn Undead*.
 - One bot owns a mark at a time; reassigning clears the previous owner.
+- A mark a party bot holds as its focus mark ([`.bot focus`](#bot-focus)) is refused with `TBM:ACTION_ERR|cc <mark>|focus-mark|<message>`. The dungeon run's automatic CC pick is not refused: it sends those bots back to Skull instead.
 - Bots avoid area spells near controlled targets.
 - Assigned rogues stealth and Sap suitable targets before the pull by default.
 

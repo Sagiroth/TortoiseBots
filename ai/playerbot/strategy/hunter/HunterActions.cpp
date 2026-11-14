@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "HunterActions.h"
 #include "HunterValues.h"
+#include "../generic/ClassChoicePolicy.h"
 #include "../../../../runtime/policy/class/HunterFeignDeathPolicy.h"
 
 using namespace ai;
@@ -66,27 +67,92 @@ bool ai::HunterSteadyShotFitsAutoShotWindow(PlayerbotAI* playerbotAi, uint32 spe
     return timer > castTime + kAutoShotWindupMs + kResumeMarginMs;
 }
 
+std::string ai::OrderedStingFor(PlayerbotAI* ai)
+{
+    std::string const word = ChoiceOrderedWord(CHOICE_STING,
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ChoiceOrderKey(CHOICE_STING))->Get());
+    if (word.empty())
+        return std::string();
+    std::string const spell = ChoiceSpell(CHOICE_STING, word);
+    return ai->HasSpell(spell) ? spell : std::string();
+}
+
+// A sting row the saved `.bot choice sting` order allows (all of them on auto).
+static bool HunterStingAllowed(PlayerbotAI* ai, char const* spell)
+{
+    std::string const ordered = ai::OrderedStingFor(ai);
+    return ordered.empty() || ordered == spell;
+}
+
 // Viper Sting leeches the target's mana to the hunter, so it is only worth the global when the hunter is
 // the one short on mana (mod-playerbots: own mana < 50) and the target has mana to give. Serpent Sting is the
-// default sting otherwise. An explicit 'sting viper' order bypasses the own-mana gate; an explicit 'sting serpent' order always allows Serpent Sting.
+// default sting otherwise. An explicit viper order ('sting viper' or `.bot choice sting viper`) bypasses the
+// own-mana gate; an explicit serpent order always allows Serpent Sting.
 static bool HunterWantsViperSting(PlayerbotAI* ai, const std::string& targetName)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
     if (!ai->HasSpell("viper sting") || AI_VALUE2(uint8, "mana", targetName) < 10)
         return false;
 
-    return ai->HasStrategy("sting viper", BotState::BOT_STATE_COMBAT) || AI_VALUE2(uint8, "mana", "self target") < 50;
+    return ai->HasStrategy("sting viper", BotState::BOT_STATE_COMBAT) || ai::OrderedStingFor(ai) == "viper sting" ||
+           AI_VALUE2(uint8, "mana", "self target") < 50;
 }
 
 bool CastSerpentStingAction::isUseful()
 {
+    if (!HunterStingAllowed(ai, "serpent sting"))
+        return false;
     return HunterHasRangedAmmo(ai) && CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(uint8, "health", GetTargetName()) > 50 &&
-           (ai->HasStrategy("sting serpent", BotState::BOT_STATE_COMBAT) || !HunterWantsViperSting(ai, GetTargetName()));
+           (ai->HasStrategy("sting serpent", BotState::BOT_STATE_COMBAT) || ai::OrderedStingFor(ai) == "serpent sting" ||
+            !HunterWantsViperSting(ai, GetTargetName()));
 }
 
 bool CastViperStingAction::isUseful()
 {
-    return HunterHasRangedAmmo(ai) && CastRangedDebuffSpellAction::isUseful() && HunterWantsViperSting(ai, GetTargetName());
+    return HunterStingAllowed(ai, "viper sting") && HunterHasRangedAmmo(ai) && CastRangedDebuffSpellAction::isUseful() &&
+           HunterWantsViperSting(ai, GetTargetName());
+}
+
+bool CastScorpidStingAction::isUseful()
+{
+    return HunterStingAllowed(ai, "scorpid sting") && HunterHasRangedAmmo(ai) && CastSpellAction::isUseful();
+}
+
+bool CastSerpentStingOnAttackerAction::isUseful()
+{
+    return HunterStingAllowed(ai, "serpent sting") && CastRangedDebuffSpellOnAttackerAction::isUseful();
+}
+
+bool CastViperStingOnAttackerAction::isUseful()
+{
+    return HunterStingAllowed(ai, "viper sting") && CastRangedDebuffSpellOnAttackerAction::isUseful();
+}
+
+bool CastChoiceStingAction::isUseful()
+{
+    std::string const ordered = ai::OrderedStingFor(ai);
+    if (ordered.empty())
+        return false;
+    SetSpellName(ordered);
+    return HunterHasRangedAmmo(ai) && CastRangedDebuffSpellAction::isUseful();
+}
+
+bool CastChoiceStingAction::isPossible()
+{
+    std::string const ordered = ai::OrderedStingFor(ai);
+    if (ordered.empty())
+        return false;
+    SetSpellName(ordered);
+    return CastRangedDebuffSpellAction::isPossible();
+}
+
+bool CastChoiceStingAction::Execute(Event& event)
+{
+    std::string const ordered = ai::OrderedStingFor(ai);
+    if (ordered.empty())
+        return false;
+    SetSpellName(ordered);
+    return CastRangedDebuffSpellAction::Execute(event);
 }
 
 bool FeedPetAction::Execute(Event& event)

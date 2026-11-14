@@ -35,7 +35,9 @@
 #include "../ai/playerbot/PullRefusalPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
+#include "../ai/playerbot/strategy/generic/OffSpecPolicy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
+#include "../ai/playerbot/strategy/values/FocusMarkPolicy.h"
 #include "../ai/playerbot/strategy/values/AttackersValue.h"
 #include "../ai/playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
@@ -905,7 +907,16 @@ bool HandleRole(ChatHandler* handler, char const* args)
     sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
     ai->ResetStrategies();
     if (!specChange.empty())
+    {
         ai->ChangeStrategy(specChange, BotState::BOT_STATE_ALL);
+        // The rows carry the spec only: the talent-based reset may have left
+        // the old spec's off-spec, so set the new spec's default here.
+        // "hybrid" already names its own off-spec.
+        std::string const offSpec = roleToken == "hybrid" ? std::string()
+            : ai::OffSpecChangeForRole(bot->GetClass(), role, sPlayerbotAIConfig.enableOffSpecStrategies);
+        if (!offSpec.empty())
+            ai->ChangeStrategy(offSpec, BotState::BOT_STATE_COMBAT);
+    }
     if (role == static_cast<uint8>(ai::BOT_ROLE_TANK))
     {
         if (bot->GetClass() == CLASS_SHAMAN)
@@ -1264,7 +1275,14 @@ static BehaviorToggle const BehaviorToggles[] = {
     { "spread",   "spread",        BotState::BOT_STATE_COMBAT },
     { "hold",     "hold position", BotState::BOT_STATE_COMBAT },
     { "noblink",  "no blink instance", BotState::BOT_STATE_COMBAT },
+    { "offheal",  "offheal",       BotState::BOT_STATE_COMBAT, false, true },
+    { "offdps",   "offdps",        BotState::BOT_STATE_COMBAT, false, true },
 };
+
+static bool BotHasBehavior(Player* bot, BehaviorToggle const& toggle)
+{
+    return !toggle.offSpec || ai::ClassHasOffSpec(bot->GetClass());
+}
 
 BehaviorToggle const* FindBehaviorToggle(std::string const& key)
 {
@@ -1297,14 +1315,15 @@ void SendBotStateLine(ChatHandler* handler, Player* bot)
         movement = "flee";
     std::string fields = "move=" + movement;
     for (BehaviorToggle const& toggle : BehaviorToggles)
-        fields += std::string(",") + toggle.key + "=" + (IsBehaviorOn(ai, toggle) ? "on" : "off");
+        if (BotHasBehavior(bot, toggle))
+            fields += std::string(",") + toggle.key + "=" + (IsBehaviorOn(ai, toggle) ? "on" : "off");
     fields += std::string(",sap=") + (ai->HasStrategy("no sap", BotState::BOT_STATE_NON_COMBAT) ? "off" : "on");
     // The spec strategies the bot fights with, joined by '+', so the addon's
     // role buttons show the real spec (a hire's too) instead of a guess.
     static char const* const SpecStrategies[] = {
         "tank feral", "dps feral", "balance", "restoration", "protection", "holy", "retribution", "arms", "fury",
         "beast mastery", "marksmanship", "survival", "combat", "assassination", "subtlety", "shadow", "discipline",
-        "offdps", "elemental", "enhancement", "tank shaman", "frost", "fire", "arcane", "affliction", "demonology", "destruction",
+        "offdps", "offheal", "elemental", "enhancement", "tank shaman", "frost", "fire", "arcane", "affliction", "demonology", "destruction",
     };
     std::string specs;
     for (char const* strategy : SpecStrategies)
@@ -1312,6 +1331,8 @@ void SendBotStateLine(ChatHandler* handler, Player* bot)
             specs += (specs.empty() ? "" : "+") + std::string(strategy);
     if (!specs.empty())
         fields += ",specs=" + specs;
+    // The bot's focus mark (".bot focus"; Focus Skull and the run focus reset it).
+    fields += ",focus=" + ProtocolSafe(ai->GetAiObjectContext()->GetValue<std::string>("rti")->Get());
     handler->PSendSysMessage("TBM:BOTSTATE|%s|%s", ProtocolSafe(bot->GetName()).c_str(), fields.c_str());
 }
 
@@ -1339,7 +1360,7 @@ bool HandleBehavior(ChatHandler* handler, char const* args)
     if (!toggle || (mode != "on" && mode != "off"))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot behavior <bot|party|raid> <loot|aoe|autocc|savemana|boost|threat|potions|mimic|spread|hold|noblink> <on|off>");
+            "Usage: .bot behavior <bot|party|raid> <loot|aoe|autocc|savemana|boost|threat|potions|mimic|spread|hold|noblink|offheal|offdps> <on|off>");
         return true;
     }
 
@@ -1359,7 +1380,7 @@ bool HandleBehavior(ChatHandler* handler, char const* args)
         for (Player* bot : scope)
         {
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-            if (!ai)
+            if (!ai || !BotHasBehavior(bot, *toggle))
                 continue;
             SetBehavior(ai, *toggle, enable);
             sPlayerbotDbStore.Save(ai);
@@ -1384,6 +1405,13 @@ bool HandleBehavior(ChatHandler* handler, char const* args)
         return true;
     }
 
+    if (!BotHasBehavior(bot, *toggle))
+    {
+        SendActionError(handler, intent, "class",
+            "Only paladins, priests, shamans and druids have off-spec switches.");
+        return true;
+    }
+
     SetBehavior(ai, *toggle, enable);
     sPlayerbotDbStore.Save(ai);
     bool const now = IsBehaviorOn(ai, *toggle);
@@ -1395,6 +1423,104 @@ bool HandleBehavior(ChatHandler* handler, char const* args)
     return true;
 }
 
+// .bot focus <bot|party> <mark|clear|status> - the mark a damage dealer or
+// tank attacks first (its "rti" value, saved with the bot). Healers have
+// none. A mark a party bot holds as its CC mark is refused. Every change
+// answers with the bot's fresh TBM:BOTSTATE line (focus=<mark>).
+bool HandleFocus(ChatHandler* handler, char const* args)
+{
+    Player* requester = Requester(handler);
+    std::istringstream input(Trim(args ? args : ""));
+    std::string botName;
+    std::string mark;
+    input >> botName >> mark;
+    for (char& c : mark)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::string loweredBot = botName;
+    for (char& c : loweredBot)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (mark == "clear")
+        mark = "skull";
+    bool const status = mark == "status";
+    std::string const intent = status ? "focus status" : "focus";
+    if (botName.empty() || (!status && !ai::IsFocusMarkWord(mark)))
+    {
+        SendActionError(handler, "focus", "invalid",
+            "Usage: .bot focus <bot|party> <skull|cross|square|moon|triangle|diamond|circle|star|clear|status>");
+        return true;
+    }
+    if (!requester)
+        return true;
+
+    bool const partyScope = loweredBot == "party" || loweredBot == "raid";
+    BotCommandContext context = BuildContext(requester);
+    std::vector<Player*> bots;
+    if (partyScope)
+    {
+        bots = ResolveDynamicScope(context);
+        if (bots.empty())
+        {
+            SendActionError(handler, intent, "no-bot", "No live owned party bots are controllable.");
+            return true;
+        }
+    }
+    else
+    {
+        Player* bot = nullptr;
+        BotRecord* record = nullptr;
+        std::string name;
+        if (!ResolveOwnedBot(handler, botName.c_str(), bot, record, name) || !PlayerbotAIStorage::Instance().GetAI(bot))
+        {
+            SendActionError(handler, intent, "no-bot", "Unknown or uncontrollable bot name.");
+            return true;
+        }
+        bots.push_back(bot);
+    }
+    std::string const ackScope = partyScope ? "party" : "bot:" + std::string(bots.front()->GetName());
+
+    if (status)
+    {
+        for (Player* bot : bots)
+            SendBotStateLine(handler, bot);
+        SendActionAck(handler, intent, ackScope, static_cast<uint32_t>(bots.size()), "-");
+        return true;
+    }
+
+    std::vector<std::string> const ccMarks = HeldCcMarks(context.partyBots);
+    uint32_t succeeded = 0;
+    for (Player* bot : bots)
+    {
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!ai)
+            continue;
+        ai::FocusRefusal const refusal = ai::DecideFocusOrder(PlayerbotAI::IsHeal(bot), mark, ccMarks);
+        if (refusal == ai::FocusRefusal::Healer)
+        {
+            // A party order simply skips healers.
+            if (!partyScope)
+                SendActionError(handler, intent, "healer", "Healers have no focus mark.");
+            continue;
+        }
+        if (refusal == ai::FocusRefusal::CcMark)
+        {
+            SendActionError(handler, intent, "cc-mark",
+                ("A party bot holds " + mark + " as its CC mark; focusing it would break the crowd control.").c_str());
+            return true;
+        }
+        ai->GetAiObjectContext()->GetValue<std::string>("rti")->Set(mark);
+        sPlayerbotDbStore.Save(ai);
+        SendBotStateLine(handler, bot);
+        ++succeeded;
+    }
+    if (!succeeded)
+    {
+        if (partyScope)
+            SendActionError(handler, intent, "no-bot", "No damage dealer or tank in scope.");
+        return true;
+    }
+    SendActionAck(handler, intent, ackScope, succeeded, mark);
+    return true;
+}
 
 } // namespace BotCommands
 } // namespace TortoiseBots

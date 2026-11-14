@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "RogueActions.h"
+#include "RogueTriggers.h"
 #include "Maps/PathFinder.h"
 
 using namespace ai;
@@ -88,4 +89,11 @@ bool ReachSapAction::ApproachAroundPack(Unit* target, float standDist)
 
     SapPoint const dest = plan.viaWaypoint ? plan.waypoint : plan.stand;
     return MoveTo(bot->GetMapId(), dest.x, dest.y, SapGroundZ(map, dest.x, dest.y, target->GetPositionZ()));
+}
+
+bool ChoicePoisonAction::LoadOrder()
+{
+    std::string const word = OrderedPoisonWord(ai, mainHand);
+    poisonItemIds = ChoicePoisonItemIds(word);
+    return !poisonItemIds.empty();
 }

@@ -15,6 +15,16 @@ namespace ai
     BEGIN_TRIGGER(HunterNoStingsActiveTrigger, Trigger)
     END_TRIGGER()
 
+    // "no stings" while a `.bot choice sting` order is set: the ordered
+    // sting goes on instead of the automatic one.
+    class ChoiceStingTrigger : public HunterNoStingsActiveTrigger
+    {
+    public:
+        ChoiceStingTrigger(PlayerbotAI* ai) : HunterNoStingsActiveTrigger(ai) {}
+        std::string getName() override { return "choice sting"; }
+        bool IsActive() override;
+    };
+
     class AspectOfTheHawkTrigger : public BuffTrigger
     {
     public:

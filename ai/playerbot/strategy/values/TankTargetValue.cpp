@@ -308,7 +308,7 @@ Unit* TankTargetValue::Calculate()
     // tournament instead of peeling the main tank's skull.
     // (A tank never holds a creature aura set-aside; a non-tank on "tank
     // assist" does, and its set-aside mark falls through like a dps pick.)
-    Unit* rti = RtiTargetValue::Calculate();
+    Unit* rti = RtiTargetValue::CalculateFocus();
     if (rti && AttackersValue::IsKeepoutSetAside(rti, bot))
         rti = nullptr;
     // A ranged_only subject is out of the melee tanks' reach: they take the adds and the boss's threat stays with the
@@ -349,7 +349,9 @@ Unit* TankTargetValue::Calculate()
                 if (!ai->IsTank(victimPlayer))
                     return rti;
                 PlayerbotAI* victimAi = PlayerbotAIStorage::Instance().GetAI(victimPlayer);
-                std::string myRti = ai->GetAiObjectContext()->GetValue<std::string>("rti")->Get();
+                // The mark this tank is on, which is Skull after the focus
+                // fallback even when its own setting names another mark.
+                std::string myRti = MarkOn(rti);
                 if (!victimAi || victimAi->GetAiObjectContext()->GetValue<std::string>("rti")->Get() != myRti)
                     return rti;
             }
