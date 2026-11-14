@@ -2877,6 +2877,10 @@ bool HealerPullStand(Player* lead, Unit* target, Player* healer, float& ox, floa
             continue;
         PathFinder path(healer);
         ai::WorldPosition::ExcludeSteepSlopes(path);
+        // The route must be calculated before it is read: a fresh PathFinder's
+        // end is (0, 0, 0), so the distance check below rejected EVERY stand
+        // and the healer never took its pull spot (found 2026-11-13).
+        path.calculate(px, py, ground, false);
         if (path.getPathType() & PATHFIND_NOPATH)
             continue;
         Vector3 const end = path.getActualEndPosition();

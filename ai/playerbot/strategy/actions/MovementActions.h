@@ -11,6 +11,7 @@
 #include "../../policy/loot/CreatureAuraKeepoutPolicy.h"
 #include "playerbot/policy/dungeon/LedgeStepDownPolicy.h"
 #include "playerbot/policy/combat/SetBehindPolicy.h"
+#include "playerbot/MagmaHazardPolicy.h"
 #include <atomic>
 
 namespace ai
@@ -136,6 +137,31 @@ namespace ai
         // off outside it instead of chasing in. True when it handled the
         // chase this tick; false to chase normally.
         bool HoldChaseOutsideKeepout(WorldObject* target, float distance);
+        // The follow slot (target position plus `distance` at `angle`) probed
+        // at the z the core will MOVE the bot to (MagmaHazardPolicy.h,
+        // ai::MagmaAtMoveZ: the core's UpdateAllowedPositionZ clamp), or a
+        // route to it that walks into magma after dry ground. A sinking slot
+        // is walked to at the dry navmesh z by the module (the slot, else
+        // behind the leader) and the native follow resumes once it clears; a
+        // hold only when no dry navmesh point exists. On an instance map only,
+        // never while the bot itself stands in magma. True when it handled
+        // the follow this tick; false to follow normally.
+        bool HoldFollowOutOfMagma(Unit* target, float distance, float angle);
+        // The same for the chase goal MoveChase is handed (`distance` from the
+        // target at `angle` off the target's facing): held, no tank pass.
+        // `angle` must be the final one given to MoveChase, so the guard plans
+        // against the same point the core chase walks to. A zero distance is a
+        // melee chase: the core picks a random attack point on a ring around
+        // the target, so HoldMeleeChaseOutOfMagma decides. True when it
+        // handled the chase this tick; false to chase normally.
+        bool HoldChaseOutOfMagma(WorldObject* target, float distance, float angle);
+        // The zero-offset chase: the core paths to a random attack point on
+        // the melee ring around the target, so the ring is sampled at eight
+        // bearings (MagmaHazardPolicy.h: ai::PlanMeleeRing). All dry: the
+        // core's pick stands. Mixed: MoveChase on the dry bearing nearest
+        // the bot, with an explicit angle the core honours for a nonzero
+        // offset. All magma: held. True when it handled the chase.
+        bool HoldMeleeChaseOutOfMagma(WorldObject* target);
         // AiPlayerbot.AvoidCreatureAuras: true when a move's end point lies in
         // a listed creature's ring (rear flank, set behind, move out of
         // collision refuse it; the hazard registry only bends the path). A
@@ -188,6 +214,48 @@ namespace ai
         // The keep-out creature the last follow decision held, approached or
         // backed off from (empty when it followed normally): goal hysteresis.
         ObjectGuid keepoutFollowEngaged;
+        // The follow target the last magma hold re-pointed at distance 0
+        // (HoldFollowOutOfMagma, empty when the native follow runs at its own
+        // slot). The follow generator keeps that distance through Follow's
+        // FOLLOW_MOTION_TYPE early return, so the clearing slot must send a
+        // fresh MoveFollow at the caller's distance and angle.
+        ObjectGuid magmaFollowEngaged;
+        // Magma guard per-tick cost (MagmaHazardPolicy.h, kMagmaRecheckYd /
+        // kMagmaRecheckMs): the follow slot and the chase goal checked last,
+        // with the verdict. A memo hit answers before any terrain query: a dry
+        // verdict returns at once, and only a held one pays the own-spot and
+        // plan work. `hazard` is the refusal point for the log; `targetHeld`
+        // is the follow target's own spot, for PlanMagmaFollow.
+        struct MagmaSlotMemo
+        {
+            bool valid = false;
+            bool held = false;
+            bool targetHeld = false;
+            float x = 0.0f, y = 0.0f;
+            WorldPosition hazard;
+            uint32 atMs = 0;
+            // A dry navmesh point the guard walks the follower to instead of
+            // the core's sinking slot (the slot itself, else behind the
+            // leader). `escape` false: no dry point, the follower holds.
+            bool escape = false;
+            float escapeX = 0.0f, escapeY = 0.0f, escapeZ = 0.0f;
+        };
+        MagmaSlotMemo magmaFollowMemo;
+        MagmaSlotMemo magmaChaseMemo;
+        // The melee ring's last sampled verdicts (HoldMeleeChaseOutOfMagma):
+        // reused while the target, its radius and the ring centre are inside
+        // the re-check window, so a held melee chase costs no ring queries.
+        // A memo hit answers before the reach check and the target's liquid:
+        // `held` false is a dry ring; `targetHeld` says the target's own spot
+        // was wet (the ring verdicts are not sampled then).
+        bool magmaRingMemoValid = false;
+        bool magmaRingMemoHeld = false;
+        bool magmaRingMemoTargetHeld = false;
+        ObjectGuid magmaRingMemoTarget;
+        float magmaRingMemoX = 0.0f, magmaRingMemoY = 0.0f, magmaRingMemoRadius = 0.0f;
+        uint32 magmaRingMemoAtMs = 0;
+        bool magmaRingMemoInMagma[ai::kMeleeRingSamples] = {};
+        WorldPosition magmaRingMemoMagmaAt;
         // The same for chase decisions (HoldChaseOutsideKeepout).
         ObjectGuid keepoutChaseEngaged;
         // Bounded chase hold: the target held on, since when, and the last
@@ -195,6 +263,12 @@ namespace ai
         ObjectGuid keepoutChaseHoldTarget;
         uint32 keepoutChaseHoldSinceMs = 0;
         uint32 keepoutChaseHoldLastMs = 0;
+        // The melee chase re-pointed onto a dry magma-ring bearing
+        // (HoldMeleeChaseOutOfMagma): the target and the body-relative angle
+        // handed to MoveChase. Re-dispatching an unchanged one would reset the
+        // chase generator every tick.
+        ObjectGuid magmaRingChaseTarget;
+        float magmaRingChaseAngle = 0.0f;
     };
 
     class FleeAction : public MovementAction

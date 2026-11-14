@@ -117,6 +117,73 @@ namespace ai
         return mapIsInstance;
     }
 
+    // Instance maps whose liquid data carries magma: the .map MLIQ chunk (type
+    // flag 0x01, or liquid entry 3 "Magma") on terrain, or the WMO liquid the
+    // vmap query answers (the core's getLiquidStatus asks the vmaps first).
+    // Only here, or on a map learned below, does the follow/chase guard spend
+    // a terrain query at all. False positives only cost (the samples come back
+    // dry). A map whose lava neither query can see (Dragonmaw Retreat 816, no
+    // liquid in its .map tiles) gains nothing from the guard, so it is not
+    // listed.
+    // Data: a scan of the shipped data/maps found ADT magma on 808 only
+    // (Hateforge Quarry); 389 (Ragefire Chasm, RFC first-bridge deaths
+    // 2026-11-13, magma in the guard's own logs) and the classic lava
+    // instances are listed from their lava. 249 (Onyxia's Lair) has no .map
+    // tiles at all; its lair WMO group's vmap liquid is LiquidType 3 "Magma",
+    // which is what the guard's query reads there. A map added later is
+    // learned from its own liquid data by the caller instead
+    // (MagmaRouteCheckAllowed below).
+    inline bool MagmaMapLiquidListed(std::uint32_t mapId)
+    {
+        switch (mapId)
+        {
+            case 229:  // Blackrock Spire
+            case 230:  // Blackrock Depths
+            case 249:  // Onyxia's Lair
+            case 389:  // Ragefire Chasm
+            case 409:  // Molten Core
+            case 469:  // Blackwing Lair
+            case 800:  // Karazhan Crypt (Turtle)
+            case 808:  // Hateforge Quarry (Turtle)
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // Whether the follow/chase guards run on a map at all: the maps above, or
+    // any map where a move's own magma check has already answered magma
+    // (`mapSeenMagma` is the caller's per-map flag, set by MoveTo2's end-point
+    // and route checks and by the melee ring). Elsewhere they cost nothing,
+    // terrain queries included; a lava map missing from the list is learned by
+    // a move order before the guard needs it, so it is never unguarded for a
+    // check that costs per tick.
+    inline bool MagmaRouteCheckAllowed(bool mapListed, bool mapSeenMagma)
+    {
+        return mapListed || mapSeenMagma;
+    }
+
+    // The follow/chase guard's per-bot re-check clock: the slot or goal last
+    // checked is re-checked when it moved kMagmaRecheckYd or more, or when
+    // kMagmaRecheckMs passed (the route starts at the bot, which may have
+    // moved, and the world changes under a held bot).
+    constexpr float kMagmaRecheckYd = 2.0f;
+    constexpr std::uint32_t kMagmaRecheckMs = 1000;
+
+    // `have`: a verdict was stored. `nowMs`/`lastMs` are WorldTimer::getMSTime()
+    // values (uint32, wrap-safe).
+    inline bool MagmaRecheckDue(bool have, float x, float y, float lastX, float lastY,
+        std::uint32_t nowMs, std::uint32_t lastMs)
+    {
+        if (!have)
+            return true;
+        if (static_cast<std::uint32_t>(nowMs - lastMs) >= kMagmaRecheckMs)
+            return true;
+        float const dx = x - lastX;
+        float const dy = y - lastY;
+        return dx * dx + dy * dy >= kMagmaRecheckYd * kMagmaRecheckYd;
+    }
+
     // A bot's memory of the last destination the guard refused: the same
     // destination (same map, same 2 yd cell) is refused again without terrain
     // queries until `until` (wall-clock seconds).
@@ -185,6 +252,50 @@ namespace ai
             r.originZ == MagmaGridCell(fromZ, kMagmaRefusalOriginGridYd);
     }
 
+    // A follower's follow slot, or a chaser's chase goal, whose MOVE point is
+    // magma (the core lowers a server-moved point with
+    // UpdateAllowedPositionZ, so over a thin floor above liquid it answers
+    // liquid level - 2), or a route to it that walks into magma after dry
+    // ground: the engine's follow or chase move is not taken. Neither
+    // generator samples the terrain, and both goals come off the navmesh,
+    // which calls a shallow lava shelf plain ground (RFC first-bridge deaths
+    // 2026-11-13: the Ragefire Chasm follow slot landed on a shelf 0.1-0.4 yd
+    // under the lava surface, 605 a tick). The movement layer then walks a
+    // dry navmesh point instead of holding (MovementActions.cpp,
+    // ai::MagmaAtMoveZ / DryNavmeshPoint) and holds only when none exists. A
+    // bot already standing in magma is never held there: it walks out first,
+    // so its own spot is not a reason to hold and the caller leaves the goal
+    // alone.
+    inline bool FollowSlotHolds(bool guard, bool slotInMagma, bool routeInMagma)
+    {
+        if (!guard)
+            return false;
+        return slotInMagma || routeInMagma;
+    }
+
+    // What the follow guard's fallback does when no dry navmesh point exists
+    // (MovementActions.cpp, HoldFollowOutOfMagma; the dry-point walk runs
+    // before this plan).
+    enum class MagmaFollowAction
+    {
+        FollowUpstream,  // the slot is dry: the native follow runs untouched
+        HoldOnTarget,    // the slot is wet, the target dry: follow the target itself (distance 0)
+        HoldInPlace,     // the slot and the target's own spot are wet: stop here
+        RestoreFollow,   // the slot cleared after a module walk or a distance-0 follow: re-dispatch the native follow at the caller's distance
+    };
+
+    // `engaged`: a HoldOnTarget re-pointed the running follow at distance 0.
+    // The engine follow keeps its distance through the
+    // FOLLOW_MOTION_TYPE early return, so clearing the slot alone would leave
+    // the follower parked on the master (round 4 regression): the caller must
+    // send a fresh MoveFollow with the original distance and angle.
+    inline MagmaFollowAction PlanMagmaFollow(bool slotInMagma, bool targetInMagma, bool engaged)
+    {
+        if (!slotInMagma)
+            return engaged ? MagmaFollowAction::RestoreFollow : MagmaFollowAction::FollowUpstream;
+        return targetInMagma ? MagmaFollowAction::HoldInPlace : MagmaFollowAction::HoldOnTarget;
+    }
+
     // A commander task's walk nudge (a plain core MovePoint to its standing
     // point, BotCommands NudgeTaskWalk) on an instance map waits while the
     // bot's magma refusal memory on this map is still in its window, or when the
@@ -207,6 +318,113 @@ namespace ai
     {
         float x = 0.0f, y = 0.0f, z = 0.0f;
     };
+
+    // The point the core chase generator is handed: `distance` from the target
+    // at `angle` off the target's facing (TargetedMovementGenerator's
+    // m_fOffset/m_fAngle, the pair ChaseTo passes to MoveChase; the generator
+    // adds both bounding radii to the offset, so the caller passes that
+    // effective distance). A zero distance is a melee chase: the core picks an
+    // attack point on the melee ring below and ignores the angle. The magma
+    // guard must plan against THIS point: a point derived from the bot's side
+    // of the target is dry while an angled or behind slot at the same distance
+    // sits in the lava.
+    inline MagmaPoint ChaseGoalPoint(float targetX, float targetY, float targetOrientation, float distance,
+        float angle)
+    {
+        MagmaPoint goal;
+        goal.x = targetX;
+        goal.y = targetY;
+        if (!(distance > 0.0f))
+            return goal;
+        float const slot = targetOrientation + angle;
+        goal.x = targetX + distance * std::cos(slot);
+        goal.y = targetY + distance * std::sin(slot);
+        return goal;
+    }
+
+    // A zero-offset (melee) chase has no angle to check: the core asks
+    // Unit::GetRandomAttackPoint for a point between the two bounding radii and
+    // the target radius plus the attacker's combat reach (GetMeleeReach) out
+    // from the target, at the attacker's bearing plus a random spread. Any
+    // bearing of that ring can be picked, so the guard samples it at eight
+    // fixed world bearings on the outer radius, the farthest the core can go.
+    // Accepted limit: one point per bearing and only on the outer radius. A
+    // lava sliver between two sample bearings, and an inner point (the core
+    // may draw as close as the two bounding radii) that the outer sample
+    // misses, go unchecked; sampling the spokes and the inner ring would cost
+    // a route calculation per bearing.
+    constexpr int kMeleeRingSamples = 8;
+    constexpr float kTwoPi = 6.28318530717958647692f;
+
+    inline float MeleeRingAngle(int index)
+    {
+        return static_cast<float>(index) * (kTwoPi / static_cast<float>(kMeleeRingSamples));
+    }
+
+    inline MagmaPoint MeleeRingPoint(float targetX, float targetY, float radius, int index)
+    {
+        MagmaPoint point;
+        float const angle = MeleeRingAngle(index);
+        point.x = targetX + radius * std::cos(angle);
+        point.y = targetY + radius * std::sin(angle);
+        return point;
+    }
+
+    enum class MeleeRingStep
+    {
+        KeepRandom,  // no bearing is magma: the core keeps its random pick
+        ChaseAngle,  // mixed: chase the dry bearing nearest the bot
+        Hold,        // every bearing is magma: do not chase at all
+    };
+
+    struct MeleeRingPlan
+    {
+        MeleeRingStep step = MeleeRingStep::KeepRandom;
+        int index = 0;       // the dry bearing to chase (ChaseAngle)
+        float angle = 0.0f;  // that bearing, world radians around the target
+    };
+
+    // `inMagma` holds the eight ring samples' verdict; `botBearing` is the
+    // world bearing from the target to the bot (WorldObject::GetAngle). All
+    // dry: keep whatever the core would pick. All wet: hold, a random pick is
+    // a lava death. Mixed: the dry bearing nearest the bot's own, so the chase
+    // stays on the side the bot already stands on instead of crossing the
+    // target.
+    inline MeleeRingPlan PlanMeleeRing(bool const (&inMagma)[kMeleeRingSamples], float botBearing)
+    {
+        MeleeRingPlan plan;
+        botBearing = std::fmod(botBearing, kTwoPi);
+        if (botBearing < 0.0f)
+            botBearing += kTwoPi;
+        int dry = 0;
+        for (int i = 0; i < kMeleeRingSamples; ++i)
+            if (!inMagma[i])
+                ++dry;
+        if (dry == kMeleeRingSamples)
+            return plan;
+        if (dry == 0)
+        {
+            plan.step = MeleeRingStep::Hold;
+            return plan;
+        }
+        plan.step = MeleeRingStep::ChaseAngle;
+        float best = -1.0f;
+        for (int i = 0; i < kMeleeRingSamples; ++i)
+        {
+            if (inMagma[i])
+                continue;
+            float delta = std::fabs(MeleeRingAngle(i) - botBearing);
+            if (delta > kTwoPi / 2.0f)
+                delta = kTwoPi - delta;
+            if (best < 0.0f || delta < best)
+            {
+                best = delta;
+                plan.index = i;
+                plan.angle = MeleeRingAngle(i);
+            }
+        }
+        return plan;
+    }
 
     // The verdict on a route. `cut` true: it walks into magma after dry
     // ground (MoveTo2 then refuses the whole move and dispatches nothing);
@@ -336,5 +554,36 @@ namespace ai
     inline bool KeepStairNavmeshZ(bool lowered, bool bigDrop, bool clampedInMagmaOrSlime)
     {
         return lowered && bigDrop && !clampedInMagmaOrSlime;
+    }
+
+    // The core moves a bot (a server-moved player) to the point its
+    // UpdateAllowedPositionZ clamp answers, and over a thin floor above
+    // liquid that clamp is liquid level - 2 (GetWaterOrGroundLevel, swim=true),
+    // inside the magma, while the navmesh floor the leader walks is 2 yd up.
+    // A dry navmesh z more than this far above the clamp is the floor the
+    // move is sent at instead (RFC first-bridge deaths 2026-11-14: the
+    // follower died at surface - 2 while the leader walked the same x/y 2 yd
+    // above); nearer is no floor a bot can stand on, so the move is refused.
+    constexpr float kMagmaDryFloorAboveYd = 1.0f;
+
+    // The verdict on a point the core will clamp before it moves the bot
+    // there: DispatchMovement's per-point check and MoveTo2's end-point one.
+    enum class MagmaMoveZPlan
+    {
+        Move,          // the clamp is dry: dispatch it
+        KeepNavmeshZ,  // the clamp sank into magma, the navmesh z is dry and above: send that z
+        Refuse,        // the clamp sank and the navmesh z is no rescue: refuse the move
+    };
+
+    // `moveInMagma`: the clamped point is in magma; `navmeshDry`: the point at
+    // the navmesh z is dry; `navmeshZ`/`moveZ`: the two heights.
+    inline MagmaMoveZPlan PlanMagmaMoveZ(bool guardApplies, bool moveInMagma, bool navmeshDry,
+        float navmeshZ, float moveZ)
+    {
+        if (!guardApplies || !moveInMagma)
+            return MagmaMoveZPlan::Move;
+        if (navmeshDry && navmeshZ - moveZ > kMagmaDryFloorAboveYd)
+            return MagmaMoveZPlan::KeepNavmeshZ;
+        return MagmaMoveZPlan::Refuse;
     }
 }
