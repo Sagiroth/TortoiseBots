@@ -104,8 +104,9 @@ bool AddAllLootAction::isUseful()
 
 bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 {
-    // The bot's own sweep, not an order: the common-loot pickup filter applies.
-    LootObject loot(bot, guid, false);
+    // A player's "add all loot" run builds the target as the order it is; an automatic sweep
+    // keeps the common-loot pickup filter.
+    LootObject loot(bot, guid, playerOrder);
 
     if (ai->HasStrategy("debug loot", BotState::BOT_STATE_NON_COMBAT))
         loot.Refresh(bot, guid, true);
@@ -258,7 +259,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     if (playerOrder)
         lootStack->NotePlayerOrder(guid);
 
-    bool added = lootStack->Add(guid);
+    bool added = lootStack->Add(guid, playerOrder);
     sLog.outDebug("[BOT LOOT] %s: AddLoot queued guid=%lu (botDist=%.1f masterDist=%.1f cap=%.1f added=%d)",
         bot->GetName(), guid.GetRawValue(), botDist, masterDist, lootDistanceToUse, added ? 1 : 0);
     return added;

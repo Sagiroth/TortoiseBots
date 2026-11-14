@@ -28,7 +28,7 @@ using namespace ai;
 // combat again, so those kills were never looted at all.
 #define LOOT_OBJECT_TTL_SECONDS 180
 
-LootTarget::LootTarget(ObjectGuid guid) : guid(guid), asOfTime(time(0))
+LootTarget::LootTarget(ObjectGuid guid, bool playerOrder) : guid(guid), asOfTime(time(0)), playerOrder(playerOrder)
 {
 }
 
@@ -36,6 +36,7 @@ LootTarget::LootTarget(LootTarget const& other)
 {
     guid = other.guid;
     asOfTime = other.asOfTime;
+    playerOrder = other.playerOrder;
 }
 
 LootTarget& LootTarget::operator=(LootTarget const& other)
@@ -45,6 +46,7 @@ LootTarget& LootTarget::operator=(LootTarget const& other)
 
     guid = other.guid;
     asOfTime = other.asOfTime;
+    playerOrder = other.playerOrder;
 
     return *this;
 }
@@ -659,7 +661,7 @@ bool LootObjectStack::TakePlayerOrder(ObjectGuid guid)
     return fresh;
 }
 
-bool LootObjectStack::Add(ObjectGuid guid)
+bool LootObjectStack::Add(ObjectGuid guid, bool playerOrder)
 {
     if (!TortoiseBots::HireMayLoot(TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
             sPlayerbotAIConfig.hireLoot))
@@ -677,7 +679,7 @@ bool LootObjectStack::Add(ObjectGuid guid)
     // "add gathering loot" runs every second above travel, and counting the node it had
     // already queued as done took the decision of bots standing next to an ore vein or herb.
     bool const known = availableLoot.erase(LootTarget(guid)) > 0;
-    availableLoot.insert(LootTarget(guid));
+    availableLoot.insert(LootTarget(guid, playerOrder));
 
     if (availableLoot.size() < MAX_LOOT_OBJECT_COUNT)
         return !known;
@@ -759,8 +761,9 @@ std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
                 continue;
         }
 
-        // Automatic pickup: no player order, so a chest holding only common loot is dropped here.
-        LootObject lootObject(bot, guid, false);
+        // The entry's own provenance: a player's order on a chest holding only common loot
+        // must survive Refresh here, or it is cleared before GetLoot can return it.
+        LootObject lootObject(bot, guid, i->playerOrder);
         if (!lootObject.IsLootPossible(bot))
             continue;
 

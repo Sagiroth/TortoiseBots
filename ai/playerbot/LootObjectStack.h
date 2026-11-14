@@ -40,7 +40,7 @@ namespace ai
     class LootTarget
     {
     public:
-        LootTarget(ObjectGuid guid);
+        LootTarget(ObjectGuid guid, bool playerOrder = false);
         LootTarget(LootTarget const& other);
 
     public:
@@ -50,6 +50,10 @@ namespace ai
     public:
         ObjectGuid guid;
         time_t asOfTime;
+        // The order that queued this entry (a player's "add all loot" on a chest): OrderByDistance
+        // builds its LootObject with it, or a chest holding only common loot is cleared on Refresh
+        // before the selection ever sees it.
+        bool playerOrder;
     };
 
     class LootTargetList : public std::set<LootTarget>
@@ -64,7 +68,7 @@ namespace ai
         LootObjectStack(Player* bot) : bot(bot) {}
 
     public:
-        bool Add(ObjectGuid guid);
+        bool Add(ObjectGuid guid, bool playerOrder = false);
         void Remove(ObjectGuid guid);
         void Clear();
         bool CanLoot(float maxDistance);

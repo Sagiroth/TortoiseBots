@@ -9,8 +9,8 @@ tools/test_game_object_pickup_policy.cpp). This pins the glue:
   re-Refresh inside GetWorldObject and the open-loot path keep the object too;
 - the copy constructor carries the flag (LootObject travels by value through
   "loot target" and the trigger reads);
-- the automatic pickup sweep builds its objects without the flag, so the
-  common-loot filter still applies there.
+- the queue entry carries the order and OrderByDistance rebuilds each LootObject
+  with it, so a queued order survives selection; an automatic entry has none.
 """
 import pathlib
 import unittest
@@ -19,6 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 STACK = (ROOT / "ai/playerbot/LootObjectStack.cpp").read_text()
 STACK_H = (ROOT / "ai/playerbot/LootObjectStack.h").read_text()
+ADD_LOOT = (ROOT / "ai/playerbot/strategy/actions/AddLootAction.cpp").read_text()
 USE = (ROOT / "ai/playerbot/strategy/actions/UseItemAction.cpp").read_text()
 POLICY = (ROOT / "ai/playerbot/policy/loot/GameObjectPickupPolicy.h").read_text()
 
@@ -58,9 +59,23 @@ class LootOrderWiringTest(unittest.TestCase):
         self.assertIn("bool playerOrder = false;", STACK_H)
         self.assertIn("LootObject(Player* bot, ObjectGuid guid, bool playerOrder);", STACK_H)
 
-    def test_automatic_pickup_keeps_the_filter(self):
+    def test_selection_keeps_the_queued_order(self):
         fn = body(STACK, "std::vector<LootObject> LootObjectStack::OrderByDistance(")
-        self.assertIn("LootObject lootObject(bot, guid, false);", fn)
+        # The queued entry's own provenance, not a blanket false: a player-ordered common-only
+        # chest would be cleared on Refresh and never reach GetLoot.
+        self.assertIn("LootObject lootObject(bot, guid, i->playerOrder);", fn)
+        self.assertNotIn("LootObject lootObject(bot, guid, false);", fn)
+
+    def test_the_queue_carries_the_order(self):
+        self.assertIn("bool Add(ObjectGuid guid, bool playerOrder = false);", STACK_H)
+        self.assertIn("bool playerOrder;", body(STACK_H, "class LootTarget", "class LootTargetList"))
+        fn = body(STACK, "bool LootObjectStack::Add(")
+        self.assertIn("availableLoot.insert(LootTarget(guid, playerOrder));", fn)
+
+    def test_add_all_loot_builds_its_target_with_the_run_order(self):
+        fn = body(ADD_LOOT, "bool AddAllLootAction::AddLoot(")
+        self.assertIn("LootObject loot(bot, guid, playerOrder);", fn)
+        self.assertIn("lootStack->Add(guid, playerOrder);", fn)
 
     def test_the_filter_allows_an_order_first(self):
         fn = body(POLICY, "inline bool AllowGameObjectPickup(")
