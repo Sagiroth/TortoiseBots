@@ -27,7 +27,14 @@ bool CastChoicePetAction::isUseful()
 
 bool CastChoicePetAction::isPossible()
 {
-    return LoadOrder() && CastSpellAction::isPossible();
+    if (!LoadOrder())
+        return false;
+    // The core cast check wants the Soul Shard in the bags even under the
+    // item cheat, so a cheat bot gets the one shard the summon consumes.
+    if (OrderedPetWord(ai) != "imp" && ai->HasCheat(BotCheatMask::item) &&
+        bot->GetItemCount(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM) == 0)
+        bot->StoreNewItemInInventorySlot(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM, 1);
+    return CastSpellAction::isPossible();
 }
 
 bool CastChoicePetAction::Execute(Event& event)
