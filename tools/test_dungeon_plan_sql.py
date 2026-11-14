@@ -5372,6 +5372,17 @@ class DungeonPlanSql(unittest.TestCase):
         # carries the walk-29 unit lists: the mages Polymorph the Venombroods (14532, beasts and not immune) and the
         # kill_first order names the Thekal zealots and the four Razzashi Cobras. 9 legs, 754 steps, 149 pulls, the
         # eight bosses in the guide's order; leg 2 is the r2 Mar'li route (below).
+        # 20261114140000 (turtle-agent 2935ba14, fix/zg-arlokk-gong, 2026-11-14): the Arlokk gong fix (T13, walk 100b,
+        # TortoiseBots-audit tests/raid-zg-walk100b): every attempt paused at the gong's open order with "The bot stopped
+        # short of the object and cannot get closer." The step's stand was the ring's north-east bend -11502.9 -1609.1
+        # 49.625404, 69.4 yd (3D) from the goober 180526 and 8.3 yd above it on another floor; it is -11566.5 -1626.5
+        # 41.33 now, the gong's own floor 3.03 yd from it, inside the commander's 4.5 yd use range. The party walks the
+        # temple's arena descent to it (the leg's only way in; 167.7 yd of navmesh path over 50.6 yd straight), and the
+        # Arlokk boss approach keeps only -11521.6 -1621.6 41.3 (its old ramp vias -11492.3 -1634.9 49.5 and -11491.2
+        # -1621.3 41.3 would walk the party back up the ramp and down again after the gong). Leg 4: 95 -> 93 rows,
+        # 691 -> 689 steps, pulls unchanged at 148. It is also the first export of the exporter that nudges a tile-seam
+        # cut corner: leg 1 seq 8 -12010.666 -1514.6667 66.05147 -> -12011.003 -1514.2972 66.40053 (the seam x the
+        # server answers NOPATH), which changes no count.
         # 20261111100000 (turtle-agent 9a9ac8f0, fix/zg-hakkar-fast-attempt, 2026-11-10): the newest zul_gurub migration, the walk-71
         # fast first fix (TortoiseBots-audit tests/raid-zg-walk71-aux/FAST-ATTEMPT.md section 5a): leg 8's entry doubled back. Its
         # `to` was the walk-29 quiet point -11754.643 -1494.6427 37.76537 and a second via -11776.531 -1502.4786 29.24619 walked
@@ -5422,8 +5433,8 @@ class DungeonPlanSql(unittest.TestCase):
         # carries kill_first 15112,14987 (Brain Wash Totem, Powerful Healing Ward) ahead of the old order; 9 legs, 750 steps,
         # 148 pulls. Only leg 6 (jindo_the_hexxer) differs from 20261104160000: 90 -> 87 steps, 19 -> 18 pulls.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261111100000_world.sql")
-        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent 9a9ac8f00b661a8d76159fbdbbef2c1f476788f8 dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
+        self.assertEqual(name, "20261114140000_world.sql")
+        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent 766d9b34dcba959d386383c8cc3deff59a6c8bbf dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
         zg_cc = re.search(r"\('zul_gurub', 309, '([^']*)'", text)
         self.assertIsNotNone(zg_cc, "the zul_gurub plan row is missing")
         self.assertEqual(len(zg_cc.group(1).split(",")), 16,
@@ -5433,9 +5444,9 @@ class DungeonPlanSql(unittest.TestCase):
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
                           "jindo_the_hexxer", "hakkar_outer", "hakkar"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
-        self.assertEqual(len(rows), 691)
+        self.assertEqual(len(rows), 689)
         self.assertEqual([len(leg_steps(rows, leg)) for leg in range(9)],
-                         [49, 124, 28, 54, 95, 79, 89, 96, 77])
+                         [49, 124, 28, 54, 93, 79, 89, 96, 77])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
                          [16, 23, 6, 8, 26, 20, 18, 23, 8])
         # t1105c: the Jin'do ward leads kill_first (14987 before 15112) and Jeklik's boss approach is the walked floor point.
@@ -5650,7 +5661,7 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
                          ["14517", "14507", "14510", "14599", "14515", "11382", "11380", "14834"])
         self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "open"})
-        self.assertEqual(len([r for r in rows if r["comment"].endswith("approach")]), 187)  # item 8's approach points (walk 38: 172 -> 186, the split patrol camps and the hall's rows; t1105e: 187, Hakkar's two-point approach)
+        self.assertEqual(len([r for r in rows if r["comment"].endswith("approach")]), 185)  # item 8's approach points (walk 38: 172 -> 186, the split patrol camps and the hall's rows; t1105e: 187, Hakkar's two-point approach; 20261114140000: 185, the Arlokk boss approach's two ramp vias gone)
         pulls = [r for r in rows if r["kind"] == "pull"]
         self.assertEqual(len(pulls), 148)
         # Every stand pull of the plan runs from the move row right before it, inside the run leader's 60 yd see
@@ -5689,7 +5700,7 @@ class DungeonPlanSql(unittest.TestCase):
         # run already starts on (-11786.999 -1564.2667 20.562721, 58.0 yd from the nearest forward pack spawn), and the first
         # via keeps the connection from leg 7's end. The same map position is why a placed walk is unchanged.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261111100000_world.sql")
+        self.assertEqual(name, "20261114140000_world.sql")
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
         leg8 = leg_steps(rows, 8)
         self.assertEqual(len(leg8), 77)
