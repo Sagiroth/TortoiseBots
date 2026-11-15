@@ -1183,7 +1183,6 @@ protected:
     uint32 m_lastRationRefillMs = 0;
     // Last ms clock the auto-tools kit ensure ran; same bag-walking reason.
     uint32 m_lastAutoToolsKitMs = 0;
-    CampSessionState m_campState;
     // Last ms clock the guild public note was refreshed for skill changes;
     // the note rewrites at most every few minutes per bot.
     uint32 m_lastPublicNoteMs = 0;
@@ -1298,6 +1297,11 @@ public:
     CampSessionState const& GetCampState() const { return m_campState; }
     bool IsAutonomousCampEligible();
     void AbandonCamp();
+
+protected:
+    CampSessionState m_campState;
+
+public:
 
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }
     bool IsRecordingMessages() const { return m_recordMessages; }
