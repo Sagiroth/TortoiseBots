@@ -29,8 +29,9 @@ public:
     virtual bool Check(Unit* unit) override
     {
         Pet* pet = dynamic_cast<Pet*>(unit);
-        if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
+        if (pet && pet->getPetType() == MINI_PET)
             return false;
+        bool const isPet = pet != nullptr;
 
         if (!sServerFacade.IsAlive(unit))
             return false;
@@ -61,7 +62,8 @@ public:
             }
         }
 
-        if (!ai->HasAuraToDispel(unit, dispelType, ranked ? &overrideSet : nullptr))
+        bool hasSpreading = false;
+        if (!ai->HasAuraToDispel(unit, dispelType, ranked ? &overrideSet : nullptr, &hasSpreading))
             return false;
 
         // A member just outside cast range stays a candidate (the cure
@@ -74,7 +76,7 @@ public:
 
         bool const claimed = bot->GetGroup() &&
             BuffClaimRegistry::IsClaimedByOther(bot->GetObjectGuid(), unit->GetObjectGuid(), claimKey);
-        int const tier = DispelTargetTier(distance, spellDistance, true, claimed);
+        int const tier = DispelTargetTier(distance, spellDistance, true, claimed, hasSpreading, isPet);
         int const rank = ranked ? verdict.rank : 0;
         if (bestTier != kDispelTargetRejected &&
             (ranked ? !DispelCandidateBetter(rank, tier, bestRank, bestTier) : tier >= bestTier))
