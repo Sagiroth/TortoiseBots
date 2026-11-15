@@ -4920,7 +4920,9 @@ uint32 ItemUseSpell(ItemPrototype const* proto)
 ActStart BeginLootAct(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, TaskTarget const& target)
 {
     ObjectGuid const guid(task.targetRaw);
-    ai::LootObject lootObject(bot, guid);
+    // An explicit order: a chest holding only common loot (the Deadmines gunpowder, its key) is
+    // refused by the automatic pickup filter, not by the order.
+    ai::LootObject lootObject(bot, guid, true);
     if (lootObject.IsEmpty())
         return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed, target.creature
             ? "This corpse has nothing this bot may loot under the group's loot rules (another member's turn, already looted, or not tapped by the group)."
