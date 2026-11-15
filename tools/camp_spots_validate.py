@@ -4,8 +4,10 @@
 Checks every row in `ai_playerbot_camp_spot` (or parsed from a migration SQL
 file via `--sql`) against:
   - no innkeeper (`npc_flags & 0x80`) within 250 yards (2D)
+  - no monster spawn (`npc_flags == 0` and `(hostile_mask & 1) != 0`) within 50 yards horizontally and 20 yards vertically
   - no non-friendly creature spawn (`npc_flags == 0`) within 30 yards (3D)
   - no friendly NPC (`npc_flags != 0`) within 15 yards (3D)
+  - faction-hostile guards/NPCs (`npc_flags == 0`, `(hostile_mask & 1) == 0`, `(hostile_mask & 6) != 0`) within 50 yd H / 20 yd V are allowed and reported as warnings
   - valid `map` (0 or 1), valid `zone_id` in `area_template`, non-empty `name`/`note`
   - no two camp spots closer than 50 yards to each other
 
@@ -23,6 +25,8 @@ from collections import defaultdict
 
 INNKEEPER_MIN_DIST = 250.0
 CREATURE_MIN_DIST = 30.0
+HOSTILE_MONSTER_H_DIST = 50.0
+HOSTILE_MONSTER_V_DIST = 20.0
 FRIENDLY_NPC_MIN_DIST = 15.0
 SPOT_MIN_SPACING = 50.0
 GRID_CELL = 64.0
@@ -159,12 +163,14 @@ def load_db_spots(db_cmd, world_db):
 def load_world_data(db_cmd, world_db):
     c_tbl = table_ref(world_db, "creature")
     ct_tbl = table_ref(world_db, "creature_template")
+    ft_tbl = table_ref(world_db, "faction_template")
     a_tbl = table_ref(world_db, "area_template")
 
     creature_rows = run_db(
         db_cmd,
-        f"SELECT c.guid, c.map, c.position_x, c.position_y, c.position_z, ct.npc_flags, ct.name "
-        f"FROM {c_tbl} c JOIN {ct_tbl} ct ON ct.entry = c.id WHERE c.map IN (0, 1);",
+        f"SELECT c.guid, c.map, c.position_x, c.position_y, c.position_z, ct.npc_flags, ct.faction, COALESCE(ft.hostile_mask, 0), ct.name "
+        f"FROM {c_tbl} c JOIN {ct_tbl} ct ON ct.entry = c.id "
+        f"LEFT JOIN {ft_tbl} ft ON ft.id = ct.faction WHERE c.map IN (0, 1);",
     )
     grid = defaultdict(list)
     innkeepers = defaultdict(list)
@@ -173,8 +179,10 @@ def load_world_data(db_cmd, world_db):
         m = int(r[1])
         x, y, z = float(r[2]), float(r[3]), float(r[4])
         flags = int(r[5])
-        name = r[6]
-        rec = (guid, x, y, z, flags, name)
+        faction = int(r[6])
+        hostile_mask = int(r[7])
+        name = r[8]
+        rec = (guid, x, y, z, flags, faction, hostile_mask, name)
         cx = int(math.floor(x / GRID_CELL))
         cy = int(math.floor(y / GRID_CELL))
         grid[(m, cx, cy)].append(rec)
@@ -191,6 +199,7 @@ def load_world_data(db_cmd, world_db):
 
 def validate(spots, grid, innkeepers, areas):
     violations = []
+    warnings = []
     for idx, s in enumerate(spots):
         sid = s["id"]
         m = s["map"]
@@ -214,25 +223,36 @@ def validate(spots, grid, innkeepers, areas):
             violations.append(f"{label}: zone_id {zid} ({areas[zid][2]}) belongs to map {areas[zid][0]}, not {m}")
 
         # 1. Innkeeper within 250 yd (2D)
-        for guid, ix, iy, iz, flags, iname in innkeepers.get(m, ()):
+        for guid, ix, iy, iz, flags, faction, hmask, iname in innkeepers.get(m, ()):
             d = math.hypot(x - ix, y - iy)
             if d < INNKEEPER_MIN_DIST:
                 violations.append(
                     f"{label}: innkeeper '{iname}' (guid={guid}) is {d:.1f} yd away (< {INNKEEPER_MIN_DIST:.0f} yd)"
                 )
 
-        # 2. Creature spawns within 30 yd (npc_flags == 0) / friendly NPCs within 15 yd (npc_flags != 0)
+        # 2. Creature/hostile checks
         gx = int(math.floor(x / GRID_CELL))
         gy = int(math.floor(y / GRID_CELL))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-                for guid, cx, cy, cz, flags, cname in grid.get((m, gx + dx, gy + dy), ()):
+                for guid, cx, cy, cz, flags, faction, hmask, cname in grid.get((m, gx + dx, gy + dy), ()):
+                    dh = math.hypot(x - cx, y - cy)
+                    dv = abs(z - cz)
                     d3 = math.sqrt((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2)
-                    if flags == 0 and d3 < CREATURE_MIN_DIST:
-                        violations.append(
-                            f"{label}: creature '{cname}' (guid={guid}) is {d3:.1f} yd away (< {CREATURE_MIN_DIST:.0f} yd)"
-                        )
-                    elif flags != 0 and d3 < FRIENDLY_NPC_MIN_DIST:
+                    if flags == 0:
+                        if d3 < CREATURE_MIN_DIST:
+                            violations.append(
+                                f"{label}: creature '{cname}' (guid={guid}) is {d3:.1f} yd away (< {CREATURE_MIN_DIST:.0f} yd)"
+                            )
+                        elif (hmask & 1) != 0 and dh < HOSTILE_MONSTER_H_DIST and dv < HOSTILE_MONSTER_V_DIST:
+                            violations.append(
+                                f"{label}: hostile monster '{cname}' (guid={guid}, faction={faction}) is {dh:.1f} yd H / {dv:.1f} yd V away (< {HOSTILE_MONSTER_H_DIST:.0f}H/{HOSTILE_MONSTER_V_DIST:.0f}V)"
+                            )
+                        elif (hmask & 6) != 0 and dh < HOSTILE_MONSTER_H_DIST and dv < HOSTILE_MONSTER_V_DIST:
+                            warnings.append(
+                                f"{label}: faction-hostile '{cname}' (guid={guid}, faction={faction}, hostile_mask={hmask}) at {dh:.1f} yd H / {dv:.1f} yd V"
+                            )
+                    elif d3 < FRIENDLY_NPC_MIN_DIST:
                         violations.append(
                             f"{label}: friendly NPC '{cname}' (guid={guid}, flags={flags}) is {d3:.1f} yd away (< {FRIENDLY_NPC_MIN_DIST:.0f} yd)"
                         )
@@ -248,7 +268,7 @@ def validate(spots, grid, innkeepers, areas):
                     f"{label}: too close ({d2:.1f} yd < {SPOT_MIN_SPACING:.0f} yd) to #{o['id']} '{o['name']}'"
                 )
 
-    return violations
+    return violations, warnings
 
 
 def main():
@@ -266,11 +286,16 @@ def main():
         source_desc = f"DB table {table_ref(args.world_db, 'ai_playerbot_camp_spot')}"
 
     grid, innkeepers, areas = load_world_data(args.db_cmd, args.world_db)
-    violations = validate(spots, grid, innkeepers, areas)
+    violations, warnings = validate(spots, grid, innkeepers, areas)
 
     zones_covered = len({s["zone_id"] for s in spots})
     print(f"Camp spots validated: {len(spots)} spots across {zones_covered} zones (source: {source_desc})")
     print("Note: water, indoors, and terrain walkability cannot be checked from SQL; the bot checks those at runtime.")
+
+    if warnings:
+        print(f"\nWARNINGS ({len(warnings)} faction-hostile guard/NPC spawns within {HOSTILE_MONSTER_H_DIST:.0f} yd):")
+        for w in warnings:
+            print(f"  * {w}")
 
     if violations:
         print(f"\nFAILED with {len(violations)} violation(s):")
