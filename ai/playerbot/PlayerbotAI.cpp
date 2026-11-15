@@ -270,7 +270,7 @@ bool PlayerbotAI::IsOwnedBot() const
 PlayerbotAI::~PlayerbotAI()
 {
     if (bot && m_campState.phase != CampPhase::Idle)
-        sCampMgr.ClearActiveCamp(bot->GetGUIDLow());
+        AbandonCamp("shutdown");
 
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
@@ -1520,7 +1520,7 @@ bool PlayerbotAI::IsGroupMemberNearInCombat()
 
 void PlayerbotAI::OnCombatStarted()
 {
-    AbandonCamp();
+    AbandonCamp("combat");
     if(!IsStateActive(BotState::BOT_STATE_COMBAT))
     {
         // Reset the combat start timestamp
@@ -1799,7 +1799,6 @@ void PlayerbotAI::EnsureAutoToolsKit()
         if (bot->GetSkillValuePure(SKILL_SURVIVAL2) < TortoiseBots::CAMP_SURVIVAL_SKILL_CAP)
             bot->SetSkill(SKILL_SURVIVAL2, TortoiseBots::CAMP_SURVIVAL_SKILL_CAP, TortoiseBots::CAMP_SURVIVAL_SKILL_CAP);
         EnsureCheatItem(TortoiseBots::CAMP_TENT_ITEM_ID, 1);
-        EnsureCheatItem(TortoiseBots::CAMP_SIMPLE_WOOD_ITEM_ID, 1);
     }
     // MC rune douse: map gate first so open-world bots skip the bag counts;
     // one Quintessence while inside Molten Core so the rune actions never
@@ -1890,13 +1889,19 @@ bool PlayerbotAI::IsAutonomousCampEligible()
         bot->InBattleGround());
 }
 
-void PlayerbotAI::AbandonCamp()
+void PlayerbotAI::AbandonCamp(char const* reason)
 {
     if (m_campState.phase == CampPhase::Idle)
         return;
 
     if (bot)
     {
+        sLog.outDetail("TortoiseBots: [Camp] %s: abandoned (%s) at spot %u (%s).",
+            bot->GetName(),
+            reason ? reason : "unknown",
+            m_campState.spotId,
+            m_campState.spotName.c_str());
+
         if (TortoiseBots::ShouldRestoreRestBonus(sPlayerbotAIConfig.campKeepRestedXp, m_campState.hasSavedRestBonus))
             bot->SetRestBonus(m_campState.savedRestBonus);
 
@@ -1926,6 +1931,7 @@ void PlayerbotAI::AbandonCamp()
     m_campState.orientation = 0.0f;
     m_campState.spotName.clear();
     m_campState.startedMs = 0;
+    m_campState.moveStartedMs = 0;
     m_campState.stayCapMs = 0;
     m_campState.nextEmoteMs = 0;
     m_campState.emoteStep = 0;
@@ -3621,7 +3627,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
             if (!sServerFacade.isMoving(bot) && sServerFacade.getDistance2d(bot, master) < 10.0f)
                 bot->SetStandState(UNIT_STAND_STATE_SIT);
         }
-        else if (aiInternalUpdateDelay < 1000)
+        else if (aiInternalUpdateDelay < 1000 && m_campState.phase != CampPhase::Camping)
             bot->SetStandState(UNIT_STAND_STATE_STAND);
 
         // Issue #644: following bots often miss the dungeon entrance, and a
@@ -3650,7 +3656,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     bot->GetName());
         }
 	}
-	else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT) bot->SetStandState(UNIT_STAND_STATE_STAND);
+	else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT && m_campState.phase != CampPhase::Camping) bot->SetStandState(UNIT_STAND_STATE_STAND);
 
 
     if (bot->IsTaxiFlying())

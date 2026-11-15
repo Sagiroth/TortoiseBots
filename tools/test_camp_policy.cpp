@@ -166,5 +166,13 @@ int main()
     assert(PickNearestCampSpotIndex(0, 0.0f, 0.0f, 0.0f, 10.0f, spots) == -1);
     assert(PickNearestCampSpotIndex(1, 95.0f, 100.0f, 10.0f, 40.0f, spots) == 0);
 
+    // Movement arrival & 15s timeout
+    assert(!HasCampMoveTimedOut(0, CAMP_MOVE_TIMEOUT_MS));
+    assert(!HasCampMoveTimedOut(CAMP_MOVE_TIMEOUT_MS - 1, CAMP_MOVE_TIMEOUT_MS));
+    assert(HasCampMoveTimedOut(CAMP_MOVE_TIMEOUT_MS, CAMP_MOVE_TIMEOUT_MS));
+    assert(ShouldFinishCampMove(1.4f, CAMP_ARRIVAL_RANGE_YD, 500, CAMP_MOVE_TIMEOUT_MS));
+    assert(!ShouldFinishCampMove(3.0f, CAMP_ARRIVAL_RANGE_YD, 14999, CAMP_MOVE_TIMEOUT_MS));
+    assert(ShouldFinishCampMove(12.0f, CAMP_ARRIVAL_RANGE_YD, 15000, CAMP_MOVE_TIMEOUT_MS));
+
     return 0;
 }

@@ -153,7 +153,7 @@ bool RpgCampAction::Execute(Event& /*event*/)
         if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId ||
             (!state.isJoiner && HasTentNearPoint(bot, state.x, state.y, state.z, TortoiseBots::CAMP_TENT_EXCLUSION_RANGE_YD)))
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("spot no longer valid");
             return false;
         }
 
@@ -162,11 +162,13 @@ bool RpgCampAction::Execute(Event& /*event*/)
             : TortoiseBots::ComputeTentCastPoint(state.x, state.y, state.z, state.orientation);
         target.z = SnapGroundZ(bot, target.x, target.y, target.z);
 
-        if (bot->GetDistance(target.x, target.y, target.z) > TortoiseBots::CAMP_ARRIVAL_RANGE_YD)
+        float const dist2d = bot->GetDistance2d(target.x, target.y);
+        uint64_t const moveElapsedMs = static_cast<uint64_t>(now - state.moveStartedMs);
+        if (!TortoiseBots::ShouldFinishCampMove(dist2d, TortoiseBots::CAMP_ARRIVAL_RANGE_YD, moveElapsedMs, TortoiseBots::CAMP_MOVE_TIMEOUT_MS))
         {
             if (!MoveTo(state.mapId, target.x, target.y, target.z))
             {
-                ai->AbandonCamp();
+                ai->AbandonCamp("move to spot failed");
                 state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
                 return false;
             }
@@ -174,23 +176,33 @@ bool RpgCampAction::Execute(Event& /*event*/)
             return true;
         }
 
+        if (TortoiseBots::HasCampMoveTimedOut(moveElapsedMs, TortoiseBots::CAMP_MOVE_TIMEOUT_MS))
+            sLog.outDetail("TortoiseBots: [Camp] %s: MovingToSpot timed out (dist2d=%.1f), continuing from current position.",
+                bot->GetName(), dist2d);
+
         ai->StopMoving();
         bot->SetFacingTo(target.o);
 
-        if (state.isJoiner)
+        if (!state.hasSavedRestBonus)
         {
             state.savedRestBonus = bot->GetRestBonus();
             state.hasSavedRestBonus = true;
+        }
+
+        if (state.isJoiner)
+        {
             bot->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
             state.phase = PlayerbotAI::CampPhase::Camping;
             state.startedMs = now;
             state.nextEmoteMs = now + 2000;
             state.emoteStep = static_cast<uint8>(TortoiseBots::CampEmoteStep::SitEat);
+            sLog.outDetail("TortoiseBots: [Camp] %s: MovingToSpot -> Camping (joiner).", bot->GetName());
             ai->SetActionDuration(2000);
             return true;
         }
 
         state.phase = PlayerbotAI::CampPhase::SettingUp;
+        sLog.outDetail("TortoiseBots: [Camp] %s: MovingToSpot -> SettingUp.", bot->GetName());
     }
 
     if (state.phase == PlayerbotAI::CampPhase::SettingUp)
@@ -200,18 +212,22 @@ bool RpgCampAction::Execute(Event& /*event*/)
             bot->HasSpellCooldown(TortoiseBots::CAMP_TENT_SPELL_ID) ||
             !bot->HasItemCount(TortoiseBots::CAMP_TENT_ITEM_ID, 1))
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("setting up precondition failed");
             return false;
         }
 
-        state.savedRestBonus = bot->GetRestBonus();
-        state.hasSavedRestBonus = true;
+        if (!state.hasSavedRestBonus)
+        {
+            state.savedRestBonus = bot->GetRestBonus();
+            state.hasSavedRestBonus = true;
+        }
 
         bot->SetFacingTo(state.orientation);
         ai->DoSpecificAction("use", Event("rpg camp", ChatHelper::formatQItem(TortoiseBots::CAMP_TENT_ITEM_ID)), true);
 
         state.startedMs = now;
         state.phase = PlayerbotAI::CampPhase::WaitingTentCast;
+        sLog.outDetail("TortoiseBots: [Camp] %s: SettingUp -> WaitingTentCast.", bot->GetName());
         ai->SetActionDuration(500);
         return true;
     }
@@ -220,7 +236,7 @@ bool RpgCampAction::Execute(Event& /*event*/)
     {
         if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId)
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("ineligible during tent cast");
             return false;
         }
 
@@ -237,7 +253,7 @@ bool RpgCampAction::Execute(Event& /*event*/)
         }
         if (res == TortoiseBots::CampCastWaitResult::Failed)
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("tent cast failed");
             state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
             return false;
         }
@@ -253,6 +269,8 @@ bool RpgCampAction::Execute(Event& /*event*/)
         sCampMgr.SetActiveCamp(info);
 
         state.phase = PlayerbotAI::CampPhase::MovingToFire;
+        state.moveStartedMs = now;
+        sLog.outDetail("TortoiseBots: [Camp] %s: WaitingTentCast -> MovingToFire.", bot->GetName());
         ai->SetActionDuration(500);
         return true;
     }
@@ -261,38 +279,45 @@ bool RpgCampAction::Execute(Event& /*event*/)
     {
         if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId)
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("ineligible moving to fire");
             return false;
         }
 
         TortoiseBots::CampPoint firePt = TortoiseBots::ComputeFireCastPoint(state.x, state.y, state.z, state.orientation);
         firePt.z = SnapGroundZ(bot, firePt.x, firePt.y, firePt.z);
 
-        if (bot->GetDistance(firePt.x, firePt.y, firePt.z) > TortoiseBots::CAMP_ARRIVAL_RANGE_YD)
+        float const dist2d = bot->GetDistance2d(firePt.x, firePt.y);
+        uint64_t const moveElapsedMs = static_cast<uint64_t>(now - state.moveStartedMs);
+        if (!TortoiseBots::ShouldFinishCampMove(dist2d, TortoiseBots::CAMP_ARRIVAL_RANGE_YD, moveElapsedMs, TortoiseBots::CAMP_MOVE_TIMEOUT_MS))
         {
             if (!MoveTo(state.mapId, firePt.x, firePt.y, firePt.z))
             {
-                ai->AbandonCamp();
+                ai->AbandonCamp("move to fire failed");
                 return false;
             }
             ai->SetActionDuration(800);
             return true;
         }
 
+        if (TortoiseBots::HasCampMoveTimedOut(moveElapsedMs, TortoiseBots::CAMP_MOVE_TIMEOUT_MS))
+            sLog.outDetail("TortoiseBots: [Camp] %s: MovingToFire timed out (dist2d=%.1f), continuing from current position.",
+                bot->GetName(), dist2d);
+
         ai->StopMoving();
         bot->SetFacingTo(firePt.o);
-        if (bot->HasSpell(TortoiseBots::CAMP_FIRE_SPELL_ID) &&
-            bot->HasItemCount(TortoiseBots::CAMP_SIMPLE_WOOD_ITEM_ID, 1) &&
-            sServerFacade.IsSpellReady(bot, TortoiseBots::CAMP_FIRE_SPELL_ID))
+        if (sServerFacade.LookupSpellInfo(TortoiseBots::CAMP_FIRE_SPELL_ID))
         {
-            ai->CastSpell(TortoiseBots::CAMP_FIRE_SPELL_ID, bot);
+            bot->CastSpell(bot, TortoiseBots::CAMP_FIRE_SPELL_ID, true);
             state.startedMs = now;
             state.phase = PlayerbotAI::CampPhase::WaitingFireCast;
+            sLog.outDetail("TortoiseBots: [Camp] %s: MovingToFire -> WaitingFireCast.", bot->GetName());
             ai->SetActionDuration(500);
             return true;
         }
 
         state.phase = PlayerbotAI::CampPhase::MovingToSeat;
+        state.moveStartedMs = now;
+        sLog.outDetail("TortoiseBots: [Camp] %s: MovingToFire -> MovingToSeat.", bot->GetName());
         ai->SetActionDuration(500);
         return true;
     }
@@ -301,7 +326,7 @@ bool RpgCampAction::Execute(Event& /*event*/)
     {
         if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId)
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("ineligible during fire cast");
             return false;
         }
 
@@ -315,6 +340,8 @@ bool RpgCampAction::Execute(Event& /*event*/)
         }
 
         state.phase = PlayerbotAI::CampPhase::MovingToSeat;
+        state.moveStartedMs = now;
+        sLog.outDetail("TortoiseBots: [Camp] %s: WaitingFireCast -> MovingToSeat.", bot->GetName());
         ai->SetActionDuration(500);
         return true;
     }
@@ -323,23 +350,29 @@ bool RpgCampAction::Execute(Event& /*event*/)
     {
         if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId)
         {
-            ai->AbandonCamp();
+            ai->AbandonCamp("ineligible moving to seat");
             return false;
         }
 
         TortoiseBots::CampPoint seatPt = TortoiseBots::ComputeOwnerSeatPoint(state.x, state.y, state.z, state.orientation);
         seatPt.z = SnapGroundZ(bot, seatPt.x, seatPt.y, seatPt.z);
 
-        if (bot->GetDistance(seatPt.x, seatPt.y, seatPt.z) > TortoiseBots::CAMP_ARRIVAL_RANGE_YD)
+        float const dist2d = bot->GetDistance2d(seatPt.x, seatPt.y);
+        uint64_t const moveElapsedMs = static_cast<uint64_t>(now - state.moveStartedMs);
+        if (!TortoiseBots::ShouldFinishCampMove(dist2d, TortoiseBots::CAMP_ARRIVAL_RANGE_YD, moveElapsedMs, TortoiseBots::CAMP_MOVE_TIMEOUT_MS))
         {
             if (!MoveTo(state.mapId, seatPt.x, seatPt.y, seatPt.z))
             {
-                ai->AbandonCamp();
+                ai->AbandonCamp("move to seat failed");
                 return false;
             }
             ai->SetActionDuration(800);
             return true;
         }
+
+        if (TortoiseBots::HasCampMoveTimedOut(moveElapsedMs, TortoiseBots::CAMP_MOVE_TIMEOUT_MS))
+            sLog.outDetail("TortoiseBots: [Camp] %s: MovingToSeat timed out (dist2d=%.1f), continuing from current position.",
+                bot->GetName(), dist2d);
 
         ai->StopMoving();
         bot->SetFacingTo(seatPt.o);
@@ -348,6 +381,7 @@ bool RpgCampAction::Execute(Event& /*event*/)
         state.startedMs = now;
         state.nextEmoteMs = now + 2000;
         state.emoteStep = static_cast<uint8>(TortoiseBots::CampEmoteStep::SitEat);
+        sLog.outDetail("TortoiseBots: [Camp] %s: MovingToSeat -> Camping.", bot->GetName());
         ai->SetActionDuration(2000);
         return true;
     }
@@ -370,9 +404,23 @@ bool RpgCampAction::Execute(Event& /*event*/)
                 tentStillStanding,
                 pastGrace))
         {
+            char const* reason = "completed";
+            if (sServerFacade.IsInCombat(bot))
+                reason = "combat";
+            else if (!bot->IsAlive())
+                reason = "dead";
+            else if (!ai->IsAutonomousCampEligible())
+                reason = "ineligible";
+            else if (bot->GetMapId() != state.mapId)
+                reason = "map changed";
+            else if (pastGrace && !tentStillStanding)
+                reason = "tent despawned";
+            else if (elapsedMs >= sitCapMs)
+                reason = "duration cap";
+
             if (state.isJoiner && bot->IsAlive())
                 bot->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
-            ai->AbandonCamp();
+            ai->AbandonCamp(reason);
             return true;
         }
 

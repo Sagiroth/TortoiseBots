@@ -1378,6 +1378,8 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
     }
     else
     {
+        if (::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player))
+            ai->AbandonCamp("logout");
         auto saved = m_bots.find(player->GetObjectGuid().GetCounter());
         if (saved != m_bots.end() && saved->second.aiAdapter)
             saved->second.aiAdapter->SavePlayerSnapshot();

@@ -35,7 +35,21 @@ inline constexpr uint32_t CAMP_ROLL_RETRY_COOLDOWN_MS = 30000;
 inline constexpr uint32_t CAMP_TENT_SPAWN_GRACE_MS = 5000;
 inline constexpr uint32_t CAMP_TENT_CAST_TIMEOUT_MS = 13000;
 inline constexpr uint32_t CAMP_FIRE_CAST_TIMEOUT_MS = 5000;
+inline constexpr uint32_t CAMP_MOVE_TIMEOUT_MS = 15000;
 inline constexpr uint32_t CAMP_EMOTE_ROTATE_MS = 12000;
+
+inline bool HasCampMoveTimedOut(uint64_t elapsedMs, uint64_t timeoutMs)
+{
+    return elapsedMs >= timeoutMs;
+}
+
+inline bool ShouldFinishCampMove(float dist2d,
+                                 float arrivalRangeYd,
+                                 uint64_t elapsedMs,
+                                 uint64_t timeoutMs)
+{
+    return dist2d <= arrivalRangeYd || HasCampMoveTimedOut(elapsedMs, timeoutMs);
+}
 
 enum class CampCastWaitResult : uint8_t
 {

@@ -844,10 +844,17 @@ bool RpgGossipTalkTrigger::IsActive()
 
 bool RpgCampTrigger::IsActive()
 {
-    if (!ai || !bot || !bot->IsAlive())
+    if (!ai || !bot)
         return false;
 
     PlayerbotAI::CampSessionState& state = ai->GetCampState();
+    if (!bot->IsAlive())
+    {
+        if (state.phase != PlayerbotAI::CampPhase::Idle)
+            ai->AbandonCamp("dead");
+        return false;
+    }
+
     if (state.phase != PlayerbotAI::CampPhase::Idle)
         return true;
 
@@ -910,6 +917,12 @@ bool RpgCampTrigger::IsActive()
 
         state.phase = PlayerbotAI::CampPhase::MovingToSpot;
         state.isJoiner = true;
+        state.moveStartedMs = now;
+        if (!state.hasSavedRestBonus)
+        {
+            state.savedRestBonus = bot->GetRestBonus();
+            state.hasSavedRestBonus = true;
+        }
         state.stayCapMs = TortoiseBots::ComputeJoinSitDurationMs(
             sPlayerbotAIConfig.campJoinMinSec,
             sPlayerbotAIConfig.campJoinMaxSec,
@@ -922,6 +935,8 @@ bool RpgCampTrigger::IsActive()
         state.z = spot->z;
         state.orientation = spot->orientation;
         state.spotName = spot->name;
+        sLog.outDetail("TortoiseBots: [Camp] %s: join -> MovingToSpot (spot %u: %s).",
+            bot->GetName(), state.spotId, state.spotName.c_str());
         return true;
     }
 
@@ -955,6 +970,12 @@ bool RpgCampTrigger::IsActive()
 
     state.phase = PlayerbotAI::CampPhase::MovingToSpot;
     state.isJoiner = false;
+    state.moveStartedMs = now;
+    if (!state.hasSavedRestBonus)
+    {
+        state.savedRestBonus = bot->GetRestBonus();
+        state.hasSavedRestBonus = true;
+    }
     state.stayCapMs = sPlayerbotAIConfig.campSitDurationSec * 1000;
     state.spotId = spot->id;
     state.mapId = spot->map;
@@ -964,5 +985,7 @@ bool RpgCampTrigger::IsActive()
     state.z = spot->z;
     state.orientation = spot->orientation;
     state.spotName = spot->name;
+    sLog.outDetail("TortoiseBots: [Camp] %s: start -> MovingToSpot (spot %u: %s).",
+        bot->GetName(), state.spotId, state.spotName.c_str());
     return true;
 }

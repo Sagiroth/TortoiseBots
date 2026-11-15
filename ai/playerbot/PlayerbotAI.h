@@ -1284,6 +1284,7 @@ public:
         float orientation = 0.0f;
         std::string spotName;
         uint32 startedMs = 0;
+        uint32 moveStartedMs = 0;
         uint32 stayCapMs = 0;
         uint32 nextEmoteMs = 0;
         uint32 lastScanMs = 0;
@@ -1298,7 +1299,7 @@ public:
     CampSessionState& GetCampState() { return m_campState; }
     CampSessionState const& GetCampState() const { return m_campState; }
     bool IsAutonomousCampEligible();
-    void AbandonCamp();
+    void AbandonCamp(char const* reason = "abandoned");
 
 protected:
     CampSessionState m_campState;
