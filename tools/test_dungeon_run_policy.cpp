@@ -37585,6 +37585,94 @@ static void TestTooFarLegNoteIsUnchanged()
     CHECK(r.walkLegs == 1 && r.walkDryLegs == 0 && r.legOn);
 }
 
+static void TestHopUnitReachable()
+{
+    CHECK(!HopUnitReachable(false, false, false, false, false, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(!HopUnitReachable(true, true, false, false, false, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(!HopUnitReachable(true, false, true, false, false, 0, 0, 0, 15, 0, 0, 15, 15));
+    CHECK(!HopUnitReachable(true, false, false, true, false, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(!HopUnitReachable(true, false, false, false, true, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(HopUnitReachable(true, false, false, false, false, 6, 0, 0, 6, 0, 0, 18, 6));
+    CHECK(!HopUnitReachable(true, false, false, false, false, 10, 0, 0, 10, 0, 0, 60, 10));
+    CHECK(HopUnitReachable(true, false, false, false, false, 45, 0, 0, 45, 0, 0, 55, 45));
+}
+
+static void TestBossStepDoesNotSkipOnFruitlessPullsOrOutOfReach()
+{
+    // A boss step without kPlanFlagSkipUnreachable pauses instead of skipping after fruitless pulls.
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(1, 63131, 10), Unit(2, 63138, 12)};
+        for (int i = 0; i < 3000 && r.state == State::Running && r.step == 0; ++i)
+        {
+            f.anyInCombat = false;
+            if (Tick(r, f).compare(0, 9, "pullback ") == 0)
+            {
+                f.anyInCombat = true;
+                for (int k = 0; k < 5; ++k)
+                    Tick(r, f);
+            }
+        }
+        CHECK(r.state == State::Paused && r.step == 0);
+        CHECK(r.note.find("out of reach") != std::string::npos);
+    }
+
+    // A boss step without kPlanFlagSkipUnreachable pauses on OutOfReach (e.g. invalid-target).
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(42, 63131, 10)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "pullback 42");
+        OrderRefused(r, order, "invalid-target: cannot attack");
+        Tick(r, f);
+        CHECK(r.state == State::Paused && r.step == 0);
+        CHECK(r.note.find("out of reach") != std::string::npos);
+    }
+
+    // BossDownEvidence wins over unreachable adds on a boss step.
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        r.unreachable.insert(2);
+        Facts f = Party(0);
+        f.units = {Unit(2, 63138, 12)};
+        f.bossOwnDead = true;
+        CHECK(FightStepEnd(r, f, boss) == FightEnd::BossDown);
+        Tick(r, f);
+        CHECK(r.state == State::Running && r.step == 1);
+    }
+
+    // With kPlanFlagSkipUnreachable, OutOfReach still skips as authored.
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        boss.flags = ai::kPlanFlagSkipUnreachable;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(42, 63131, 10)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "pullback 42");
+        OrderRefused(r, order, "invalid-target: cannot attack");
+        Tick(r, f);
+        CHECK(r.state == State::Running && r.step == 1);
+    }
+}
+
 int main()
 {
     TestZgC3HopDipsIntoThePool();
@@ -38626,6 +38714,8 @@ int main()
     TestRaidTrashSwarmInCombatOnStayIsNotJoined();
     TestRaidTrashSwarmLatchedOnceTheTankMoves();
     TestRaidTrashSwarmLatchedAfterThreeTries();
+    TestHopUnitReachable();
+    TestBossStepDoesNotSkipOnFruitlessPullsOrOutOfReach();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }
