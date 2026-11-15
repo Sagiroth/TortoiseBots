@@ -1271,3 +1271,58 @@ Combat strategy modifiers for owned non-random bots.
 These apply to owned non-random, non-autonomous bots. Hires and autonomous alts use `RandomBotCombatStrategies`.
 
 </details>
+
+### `AiPlayerbot.CampEnabled`
+Allows autonomous pool and alt bots from `CampMinLevel` to set up a Traveler's Tent and campfire at hand-picked camp spots.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When enabled (`1`), autonomous bots from `AiPlayerbot.CampMinLevel` carry maxed Survival, a Traveler's Tent, and Simple Wood. Passing an unoccupied camp spot rolls `AiPlayerbot.CampChancePct` to pitch a tent and campfire, sit with eating/cooking/dancing emotes, and move on when the tent despawns or `AiPlayerbot.CampSitDurationSec` elapses. Hired companions and bots in a party with a real player never camp.
+
+</details>
+
+### `AiPlayerbot.CampChancePct`
+Percent chance per pass that an autonomous bot sets up camp when passing an unoccupied camp spot.
+**Default:** `15` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Checked when an eligible bot passes within 40 yards of a spot from `ai_playerbot_camp_spot` that has no tent standing within 25 yards.
+
+</details>
+
+### `AiPlayerbot.CampMinLevel`
+Minimum bot level required for the Survival + tent kit and camping at spots.
+**Default:** `10` · **Values:** `1` to `60` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Autonomous bots below this level do not receive the Survival skill or tent item and skip camp spots.
+
+</details>
+
+### `AiPlayerbot.CampSitDurationSec`
+Maximum seconds an autonomous bot remains seated at its camp before resuming normal activity.
+**Default:** `1200` · **Values:** seconds (`1200` = 20 minutes, matching tent lifetime) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Bots also leave early if the tent despawns or if they enter combat.
+
+</details>
+
+### `AiPlayerbot.CampKeepRestedXp`
+Allows bots to keep rested XP gained while sitting at their own camp.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When `0`, a bot's rest bonus is saved before pitching camp and restored on leaving so bot levelling speed is unchanged. Real players sitting near a bot's tent still gain rested XP normally.
+
+</details>

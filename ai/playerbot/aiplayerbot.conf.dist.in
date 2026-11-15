@@ -7364,3 +7364,15 @@ AiPlayerbot.HealDistanceBg = 25
 # vmangos) MUST keep this at 0 to avoid a worker-thread SIGSEGV; set 1 only on
 # cores with concurrent terrain support.
 # AiPlayerbot.AsyncTravelPartitions = 0
+
+# Autonomous bots setting up Traveler's Tent + campfire at hand-picked camp spots.
+# CampEnabled: allow autonomous pool/alt bots to set up camps (1 = on, 0 = off).
+# CampChancePct: percent chance per pass when passing an unoccupied camp spot (0-100).
+# CampMinLevel: minimum bot level for Survival + tent kit and camping.
+# CampSitDurationSec: max seconds a bot stays at camp (1200 = 20 min tent lifetime).
+# CampKeepRestedXp: allow bots to keep rested XP gained at their own camp (0 = off, 1 = on).
+AiPlayerbot.CampEnabled = 1
+AiPlayerbot.CampChancePct = 15
+AiPlayerbot.CampMinLevel = 10
+AiPlayerbot.CampSitDurationSec = 1200
+AiPlayerbot.CampKeepRestedXp = 0

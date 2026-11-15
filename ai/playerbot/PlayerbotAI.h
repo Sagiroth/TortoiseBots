@@ -1183,6 +1183,7 @@ protected:
     uint32 m_lastRationRefillMs = 0;
     // Last ms clock the auto-tools kit ensure ran; same bag-walking reason.
     uint32 m_lastAutoToolsKitMs = 0;
+    CampSessionState m_campState;
     // Last ms clock the guild public note was refreshed for skill changes;
     // the note rewrites at most every few minutes per bot.
     uint32 m_lastPublicNoteMs = 0;
@@ -1260,6 +1261,39 @@ protected:
     void UpdateEvadeProbe();
 
 public:
+    enum class CampPhase : uint8
+    {
+        Idle = 0,
+        MovingToSpot = 1,
+        SettingUp = 2,
+        Camping = 3
+    };
+
+    struct CampSessionState
+    {
+        CampPhase phase = CampPhase::Idle;
+        uint32 spotId = 0;
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float orientation = 0.0f;
+        std::string spotName;
+        uint32 startedMs = 0;
+        uint32 nextEmoteMs = 0;
+        uint32 lastScanMs = 0;
+        uint32 cooldownUntilMs = 0;
+        uint8 emoteStep = 0;
+        float savedRestBonus = 0.0f;
+        bool hasSavedRestBonus = false;
+    };
+
+    CampSessionState& GetCampState() { return m_campState; }
+    CampSessionState const& GetCampState() const { return m_campState; }
+    bool IsAutonomousCampEligible();
+    void AbandonCamp();
+
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }
     bool IsRecordingMessages() const { return m_recordMessages; }
     bool IsRecordingIncommingMessages() const { return m_recordIncommingMessages; }

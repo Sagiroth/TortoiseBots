@@ -5,6 +5,7 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/DungeonPlanMgr.h"
+#include "playerbot/CampMgr.h"
 #include "../../runtime/BotNames.h"
 #include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireFeePolicy.h"
@@ -696,6 +697,11 @@ bool PlayerbotAIConfig::Initialize()
     hireCrossFactionNeutralInns = config.GetBoolDefault("AiPlayerbot.HireCrossFactionNeutralInns", false);
     hireLoot = config.GetBoolDefault("AiPlayerbot.HireLoot", false);
     shamanTankEnabled = config.GetBoolDefault("AiPlayerbot.ShamanTankEnabled", true);
+    campEnabled = config.GetBoolDefault("AiPlayerbot.CampEnabled", true);
+    campChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampChancePct", 15);
+    campMinLevel = (uint32) config.GetIntDefault("AiPlayerbot.CampMinLevel", 10);
+    campSitDurationSec = (uint32) config.GetIntDefault("AiPlayerbot.CampSitDurationSec", 1200);
+    campKeepRestedXp = config.GetBoolDefault("AiPlayerbot.CampKeepRestedXp", false);
     hireBaseCostCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireBaseCostCopper", 15000));
     if (hireBaseCostCopper > 100000000)
         hireBaseCostCopper = 100000000;
@@ -1273,6 +1279,8 @@ bool PlayerbotAIConfig::Initialize()
     ai::LoadBossStands();
     sLog.outString("Loading dungeon plans.");
     ai::LoadDungeonPlans();
+    sLog.outString("Loading bot camp spots.");
+    sCampMgr.Load();
     sRandomBotFacade.LoadBattleMastersCache();
     sRandomBotFacade.LoadAuctionPrices();
 

@@ -184,6 +184,9 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot pool accounts`](../../server/admin-commands.md#bot-pool-accounts) | Admin & GM | Lists managed bot accounts (console only). |
 | [`.bot pool adopt preview`](../../server/admin-commands.md#bot-pool-adopt-preview) | Admin & GM | Previews unmanaged bot accounts for adoption (console). |
 | [`.bot pool adopt confirm`](../../server/admin-commands.md#bot-pool-adopt-confirm) | Admin & GM | Enrolls unmanaged bot accounts into pool (console). |
+| `.bot camp add [name]` | Admin & GM | Saves your current position as a bot camp spot (`ai_playerbot_camp_spot`) and reloads the list. |
+| `.bot camp list` | Admin & GM | Lists camp spots within 200 yd of your position and active bot camps. |
+| `.bot camp status` | Admin & GM | Shows loaded camp spot count and active bot camps with zone and coordinates. |
 | [`.bot ah status`](../../server/admin-commands.md#bot-ah-status) | Admin & GM | Reports synthetic auction house telemetry and counts. |
 | [`.bot ah reload`](../../server/admin-commands.md#bot-ah-reload) | Admin & GM | Reloads auction house item pricing rules from DB. |
 | [`.bot ah rebuild`](../../server/admin-commands.md#bot-ah-rebuild) | Admin & GM | Forces evaluation and refreshing of market listings. |

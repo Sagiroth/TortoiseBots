@@ -296,6 +296,7 @@ namespace ai
             creators["val"] = [](PlayerbotAI* ai) { return new ValueTrigger(ai); };
 
             creators["rpg"] = [](PlayerbotAI* ai) { return new RpgTrigger(ai); };
+            creators["rpg camp"] = [](PlayerbotAI* ai) { return new RpgCampTrigger(ai); };
             creators["rpg wander"] = [](PlayerbotAI* ai) { return new RpgWanderTrigger(ai); };
             creators["rpg taxi"] = [](PlayerbotAI* ai) { return new RpgTaxiTrigger(ai); };
             creators["rpg discover"] = [](PlayerbotAI* ai) { return new RpgDiscoverTrigger(ai); };

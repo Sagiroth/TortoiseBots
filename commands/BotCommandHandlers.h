@@ -71,6 +71,7 @@ bool HandleAutogear(ChatHandler* handler, char const* args);
 bool HandleBotGear(ChatHandler* handler, char const* args);
 bool HandleHire(ChatHandler* handler, char const* args);
 bool HandlePool(ChatHandler* handler, char const* args);
+bool HandleCamp(ChatHandler* handler, char const* args);
 bool HandleLoot(ChatHandler* handler, char const* args);
 bool HandleOrder(ChatHandler* handler, char const* args);
 // `.bot order search`: the order command checks the requester and the bot,

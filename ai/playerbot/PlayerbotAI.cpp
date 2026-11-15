@@ -91,6 +91,8 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "CampMgr.h"
+#include "policy/rpg/CampPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
 #include "playerbot/Talentspec.h"
 #include "../../behavior/PlayerConvenience.h"
@@ -267,6 +269,9 @@ bool PlayerbotAI::IsOwnedBot() const
 
 PlayerbotAI::~PlayerbotAI()
 {
+    if (bot && m_campState.phase != CampPhase::Idle)
+        sCampMgr.ClearActiveCamp(bot->GetGUIDLow());
+
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         if (engines[i])
@@ -1515,6 +1520,7 @@ bool PlayerbotAI::IsGroupMemberNearInCombat()
 
 void PlayerbotAI::OnCombatStarted()
 {
+    AbandonCamp();
     if(!IsStateActive(BotState::BOT_STATE_COMBAT))
     {
         // Reset the combat start timestamp
@@ -1780,6 +1786,21 @@ void PlayerbotAI::EnsureAutoToolsKit()
             bot->LearnSpell(TortoiseBots::PICK_LOCK_SPELL_ID, false);
         EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
     }
+    if (TortoiseBots::BotWantsCampKit(
+            sPlayerbotAIConfig.campEnabled,
+            sRandomBotFacade.IsFreeBot(bot),
+            HasRealPlayerMaster(),
+            TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
+            false,
+            bot->GetLevel(),
+            sPlayerbotAIConfig.campMinLevel) &&
+        IsAutonomousCampEligible())
+    {
+        if (bot->GetSkillValuePure(SKILL_SURVIVAL2) < TortoiseBots::CAMP_SURVIVAL_SKILL_CAP)
+            bot->SetSkill(SKILL_SURVIVAL2, TortoiseBots::CAMP_SURVIVAL_SKILL_CAP, TortoiseBots::CAMP_SURVIVAL_SKILL_CAP);
+        EnsureCheatItem(TortoiseBots::CAMP_TENT_ITEM_ID, 1);
+        EnsureCheatItem(TortoiseBots::CAMP_SIMPLE_WOOD_ITEM_ID, 1);
+    }
     // MC rune douse: map gate first so open-world bots skip the bag counts;
     // one Quintessence while inside Molten Core so the rune actions never
     // silently skip for lack of the item.
@@ -1836,6 +1857,73 @@ void PlayerbotAI::EnsureAutoToolsKit()
             }
         }
     }
+}
+
+bool PlayerbotAI::IsAutonomousCampEligible()
+{
+    if (!bot || !bot->IsInWorld())
+        return false;
+
+    bool hasRealPlayerInGroup = false;
+    if (Group* group = bot->GetGroup())
+    {
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (member && member->IsInWorld() && IsRealPlayer(member))
+            {
+                hasRealPlayerInGroup = true;
+                break;
+            }
+        }
+    }
+
+    return TortoiseBots::IsBotEligibleForCamp(
+        sPlayerbotAIConfig.campEnabled,
+        sRandomBotFacade.IsFreeBot(bot),
+        HasRealPlayerMaster(),
+        TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
+        hasRealPlayerInGroup,
+        bot->GetLevel(),
+        sPlayerbotAIConfig.campMinLevel,
+        bot->GetMap() && bot->GetMap()->IsDungeon(),
+        bot->InBattleGround());
+}
+
+void PlayerbotAI::AbandonCamp()
+{
+    if (m_campState.phase == CampPhase::Idle)
+        return;
+
+    if (bot)
+    {
+        if (TortoiseBots::ShouldRestoreRestBonus(sPlayerbotAIConfig.campKeepRestedXp, m_campState.hasSavedRestBonus))
+            bot->SetRestBonus(m_campState.savedRestBonus);
+
+        if (m_campState.phase == CampPhase::Camping)
+        {
+            bot->HandleEmoteCommand(EMOTE_ONESHOT_NONE);
+            if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+                bot->SetStandState(UNIT_STAND_STATE_STAND);
+        }
+
+        sCampMgr.ClearActiveCamp(bot->GetGUIDLow());
+    }
+
+    m_campState.phase = CampPhase::Idle;
+    m_campState.spotId = 0;
+    m_campState.mapId = 0;
+    m_campState.zoneId = 0;
+    m_campState.x = 0.0f;
+    m_campState.y = 0.0f;
+    m_campState.z = 0.0f;
+    m_campState.orientation = 0.0f;
+    m_campState.spotName.clear();
+    m_campState.startedMs = 0;
+    m_campState.nextEmoteMs = 0;
+    m_campState.emoteStep = 0;
+    m_campState.savedRestBonus = 0.0f;
+    m_campState.hasSavedRestBonus = false;
 }
 
 void PlayerbotAI::RefreshPublicNote()

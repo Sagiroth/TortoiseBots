@@ -12,6 +12,9 @@
 #include "../../../runtime/AltBotService.h"
 #include "../../../runtime/DowntimeService.h"
 #include "playerbot/strategy/values/TrainerValues.h"
+#include "playerbot/CampMgr.h"
+#include "playerbot/policy/rpg/CampPolicy.h"
+#include "Timer.h"
 using namespace ai;
 
 bool RpgTrigger::IsActive()
@@ -834,5 +837,87 @@ bool RpgGossipTalkTrigger::IsActive()
     if (!menu.MenuItemCount())
         return false;
 
+    return true;
+}
+
+bool RpgCampTrigger::IsActive()
+{
+    if (!ai || !bot || !bot->IsAlive())
+        return false;
+
+    PlayerbotAI::CampSessionState& state = ai->GetCampState();
+    if (state.phase != PlayerbotAI::CampPhase::Idle)
+        return true;
+
+    if (sServerFacade.IsInCombat(bot) || !ai->IsAutonomousCampEligible())
+        return false;
+
+    uint32 const now = WorldTimer::getMSTime();
+    if (state.cooldownUntilMs && now < state.cooldownUntilMs)
+        return false;
+    if (state.lastScanMs && (now - state.lastScanMs) < TortoiseBots::CAMP_SCAN_COOLDOWN_MS)
+        return false;
+    state.lastScanMs = now;
+
+    if (bot->HasSpellCooldown(TortoiseBots::CAMP_TENT_SPELL_ID) ||
+        !bot->HasItemCount(TortoiseBots::CAMP_TENT_ITEM_ID, 1))
+        return false;
+
+    std::optional<TortoiseBots::CampSpot> spot = sCampMgr.FindNearestSpot(
+        bot->GetMapId(),
+        bot->GetPositionX(),
+        bot->GetPositionY(),
+        bot->GetPositionZ(),
+        TortoiseBots::CAMP_SPOT_DETECT_RANGE_YD);
+    if (!spot)
+        return false;
+
+    static uint32 const tentEntries[] = {
+        TortoiseBots::CAMP_TENT_GO_ALLIANCE,
+        TortoiseBots::CAMP_TENT_GO_HORDE,
+        TortoiseBots::CAMP_TENT_GO_ALT_1,
+        TortoiseBots::CAMP_TENT_GO_ALT_2
+    };
+    float const searchRange = TortoiseBots::CAMP_SPOT_DETECT_RANGE_YD + TortoiseBots::CAMP_TENT_EXCLUSION_RANGE_YD;
+    bool tentNearby = false;
+    for (uint32 entry : tentEntries)
+    {
+        if (GameObject* go = bot->FindNearestGameObject(entry, searchRange))
+        {
+            if (go->isSpawned() && go->GetDistance(spot->x, spot->y, spot->z) <= TortoiseBots::CAMP_TENT_EXCLUSION_RANGE_YD)
+            {
+                tentNearby = true;
+                break;
+            }
+        }
+    }
+
+    bool const outdoors = bot->GetTerrain() && bot->GetTerrain()->IsOutdoors(spot->x, spot->y, spot->z);
+    bool const blockedZone = TortoiseBots::IsCampBlockedZone(spot->zoneId ? spot->zoneId : bot->GetZoneId());
+
+    if (!TortoiseBots::ShouldStartCampAtSpot(
+            true,
+            tentNearby,
+            true,
+            true,
+            bot->IsInWater(),
+            outdoors,
+            blockedZone,
+            sPlayerbotAIConfig.campChancePct,
+            urand(0, 99)))
+    {
+        state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
+        return false;
+    }
+
+    state.phase = PlayerbotAI::CampPhase::MovingToSpot;
+    state.spotId = spot->id;
+    state.mapId = spot->map;
+    state.zoneId = spot->zoneId ? spot->zoneId : bot->GetZoneId();
+    state.x = spot->x;
+    state.y = spot->y;
+    state.z = spot->z;
+    state.orientation = spot->orientation;
+    state.spotName = spot->name;
     return true;
 }

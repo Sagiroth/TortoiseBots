@@ -176,6 +176,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | Companion mages conjure food and water and trade it to group members who have none | Yes | — | [Trading](../world/social.md#trading-with-pool-bots) |
 | Your companions greet players they meet | Yes | [`AiPlayerbot.EnableGreet`](../server/settings/world-population.md#aiplayerbotenablegreet) | [Greetings](../world/social.md#greetings--emotes) |
 | Pool bots greet players too | No | [`AiPlayerbot.RandomBotGreet`](../server/settings/world-population.md#aiplayerbotrandombotgreet) | [Greetings](../world/social.md#greetings--emotes) |
+| Autonomous bots set up Traveler's Tent + campfire camps at scenic spots | Yes | [`AiPlayerbot.CampEnabled`](../server/settings/world-population.md#aiplayerbotcampenabled) | [Camp settings](../server/settings/world-population.md#aiplayerbotcampenabled) |
 | Trade with pool bots that are not yours | No | [`AiPlayerbot.PoolBotTradeMode`](../server/settings/world-population.md#aiplayerbotpoolbottrademode) | [Trading](../world/social.md#trading-with-pool-bots) |
 
 ## Economy (Auction House)

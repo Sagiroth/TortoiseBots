@@ -418,6 +418,13 @@ public:
     // Issue #1125: the experimental 7.3 shaman tank build. 0 withholds it from
     // the recruiter spec menu, `.bot hire`, raid hire and the random pool roll.
     bool shamanTankEnabled = true;
+
+    // Autonomous bots setting up Traveler's Tent + campfire at camp spots.
+    bool campEnabled = true;
+    uint32 campChancePct = 15;
+    uint32 campMinLevel = 10;
+    uint32 campSitDurationSec = 1200;
+    bool campKeepRestedXp = false;
     // Hiring fee in copper for the 1st companion at level 60 (default 15000 =
     // 1.5g). Hires 2-4 multiply by the party mults below; the full 4-bot
     // party totals ~15g at 60. Set to 0 for free hiring.
