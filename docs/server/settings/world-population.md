@@ -59,6 +59,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RepopAtGraveyard`](#aiplayerbotrepopatgraveyard) | `1` | Dead masterless bots release to nearest graveyard instead of starting zone. |
 | [`AiPlayerbot.AvoidHostileTowns`](#aiplayerbotavoidhostiletowns) | `1` | Prevents masterless bots from traveling near enemy faction town guards. |
 | [`AiPlayerbot.RelocateHopelessDeaths`](#aiplayerbotrelocatehopelessdeaths) | `1` (commented out in the template; uncomment to change it) | Relocates bots repeatedly killed near enemy guards or in death loops. |
+| [`AiPlayerbot.AbandonedInstanceGraceSec`](#aiplayerbotabandonedinstancegracesec) | `90` | Grace period in seconds before an abandoned random or autonomous bot inside a dungeon or raid returns to its homebind. |
 | [`AiPlayerbot.UnstuckHearthLevelFit`](#aiplayerbotunstuckhearthlevelfit) | `1` | Requires bot hearthstone bind point to be within 10 levels of bot level. |
 | [`AiPlayerbot.StuckTravelTeleport`](#aiplayerbotstucktravelteleport) | `1` | Teleports long-stuck masterless bots directly to their travel destinations. |
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
@@ -639,6 +640,17 @@ Rescues bots stuck in fatal death loops by relocating them to a safe nearby hub.
 <summary>How it works in detail</summary>
 
 When a masterless bot suffers repeated deaths in the same hostile area or becomes trapped in an inescapable graveyard loop, the unstuck engine teleports the bot's spirit or corpse to its starting area (< level 10) or a level-fitting overworld point. The town death-loop rescue additionally needs `AiPlayerbot.AvoidHostileTowns = 1`.
+
+</details>
+
+### `AiPlayerbot.AbandonedInstanceGraceSec`
+Grace period in seconds before a random or autonomous bot left inside a dungeon or raid instance without a real player in its group teleports back to its homebind.
+**Default:** `90` · **Values:** `0` disables, `>= 1` seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When a real player leaves a dungeon or raid party without disbanding it, any random or autonomous bots remaining in the instance without a real player in their group or a master in the same instance are evacuated to their homebind after the grace period elapses (no hearthstone cooldown is consumed). Re-inviting a bot before the grace period expires cancels the timer so it stays. Hired companions, non-autonomous owned alts, pinned bots, and autonomous LFG dungeon crews are excluded.
 
 </details>
 

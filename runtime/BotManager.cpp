@@ -1,5 +1,6 @@
 #include "../ai/playerbot/GroupMembers.h"
 #include "BotManager.h"
+#include "AbandonedInstancePolicy.h"
 #include "BotActivityLease.h"
 #include "BotGuidKey.h"
 #include "PlayerBotClassification.h"
@@ -424,6 +425,7 @@ bool MisplacedBotEligible(::Player* bot, int32& areaLevelOut, std::string* why =
 // after uninterrupted stranding, so briefly passing through is never caught.
 constexpr uint32_t STRANDED_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 constexpr time_t STRANDED_GRACE_SEC = 15 * 60;
+constexpr uint32_t INSTANCE_SWEEP_INTERVAL_MS = 15 * 1000;
 
 // Dead-bot sweep cadence and patience: release a stuck corpse quickly (its AI
 // may be starved by the pool budget), revive a stalled ghost only after it sat
@@ -945,6 +947,104 @@ void BotManager::SweepStrandedBots(uint32_t diff)
     {
         if (m_bots.find(it->first) == m_bots.end())
             it = m_strandedSince.erase(it);
+        else
+            ++it;
+    }
+}
+
+void BotManager::SweepAbandonedInstanceBots(uint32_t diff)
+{
+    m_instanceSweepElapsedMs += diff;
+    if (m_instanceSweepElapsedMs < INSTANCE_SWEEP_INTERVAL_MS)
+        return;
+    m_instanceSweepElapsedMs = 0;
+
+    uint32 const graceSec = sPlayerbotAIConfig.abandonedInstanceGraceSec;
+    if (graceSec == 0)
+    {
+        m_abandonedInstanceSince.clear();
+        return;
+    }
+
+    time_t const now = time(nullptr);
+    for (auto& [key, entry] : m_bots)
+    {
+        BotRecord& rec = entry.record;
+        ::Player* p = sObjectAccessor.FindPlayer(rec.characterGuid);
+        AbandonedInstanceFacts facts;
+        facts.isHeadless = p && p->GetSession() && p->GetSession()->IsHeadless();
+        facts.inWorld = p && p->IsInWorld();
+        facts.beingTeleported = p && p->IsBeingTeleported();
+        facts.alive = p && p->IsAlive();
+        facts.inBattleground = p && p->InBattleGround();
+        facts.onInstanceMap = p && p->GetMap() && (p->GetMap()->IsDungeon() || p->GetMap()->IsRaid());
+        facts.randomOrAutonomous = rec.random || AltBotService::Instance().IsAutonomous(key);
+        facts.inWorldLifecycle = rec.lifecycle == BotLifecycle::InWorld;
+        facts.hired = HireLifecycle::Instance().IsHired(rec.characterGuid);
+        facts.pinned = sRandomBotFacade.IsPinnedBot(key);
+        facts.dungeonCrew = BotActivityLeaseManager::Instance().GetActivity(key) == BotActivity::Dungeon;
+        facts.groupHasRealPlayer = p && GroupHasRealPlayer(p);
+        facts.hasMaster = !rec.masterGuid.IsEmpty();
+        if (facts.hasMaster && p)
+        {
+            ::Player* master = sObjectAccessor.FindPlayer(rec.masterGuid);
+            facts.masterInSameInstance = master && master->IsInWorld() &&
+                master->GetMapId() == p->GetMapId() &&
+                master->GetInstanceId() == p->GetInstanceId();
+        }
+
+        if (!IsAbandonedInInstance(facts))
+        {
+            m_abandonedInstanceSince.erase(key);
+            continue;
+        }
+
+        auto it = m_abandonedInstanceSince.find(key);
+        if (it == m_abandonedInstanceSince.end())
+        {
+            m_abandonedInstanceSince.emplace(key, now);
+            continue;
+        }
+        if (!AbandonedInstanceGraceElapsed(it->second, now, graceSec))
+            continue;
+        m_abandonedInstanceSince.erase(it);
+
+        // Leave any bot-only group first so the evacuated bot is not pulled back.
+        if (p->GetGroup() && p->GetSession())
+        {
+            WorldPacket leave;
+            p->GetSession()->HandleGroupDisbandOpcode(leave);
+        }
+        uint32 const fromMapId = p->GetMapId();
+        p->GetMotionMaster()->Clear();
+        if (!p->TeleportToHomebind(0, false))
+        {
+            sLog.outError("TortoiseBots: abandoned-instance homebind teleport failed for bot %s on map %u",
+                p->GetName(), fromMapId);
+            continue;
+        }
+        p->SaveToDB();
+        if (::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(p))
+        {
+            if (ai->GetAiObjectContext())
+            {
+                auto* travelHolder = ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target");
+                if (ai::TravelTarget* target = travelHolder ? travelHolder->Get() : nullptr)
+                {
+                    MaNGOS::Singleton<ai::TravelMgr>::Instance().SetNullTravelTarget(target);
+                    target->SetStatus(ai::TravelStatus::TRAVEL_STATUS_EXPIRED);
+                    target->SetExpireIn(1000);
+                }
+            }
+        }
+        sLog.outString("TortoiseBots: evacuated abandoned instance bot %s (level %u) from map %u to homebind",
+            p->GetName(), p->GetLevel(), fromMapId);
+    }
+
+    for (auto it = m_abandonedInstanceSince.begin(); it != m_abandonedInstanceSince.end();)
+    {
+        if (m_bots.find(it->first) == m_bots.end())
+            it = m_abandonedInstanceSince.erase(it);
         else
             ++it;
     }
@@ -2631,6 +2731,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     UpdateBots(diff);
     SweepDeadBots(diff);
     SweepStrandedBots(diff);
+    SweepAbandonedInstanceBots(diff);
     // Guild public notes queued by map threads (package 7): Guild state is
     // only touched here, on the world thread.
     DrainPublicNoteQueue();

@@ -281,6 +281,10 @@ public:
     // with 2+ deaths and no master/group, teleport once to a validated
     // level-fitting point and reset the death count. Default on; fail-closed.
     bool relocateHopelessDeaths = true;
+    // Grace period in seconds before a masterless random or autonomous bot left
+    // inside a dungeon or raid instance without a real player in its group is
+    // teleported to its homebind. 0 disables. Default 90.
+    uint32 abandonedInstanceGraceSec = 90;
     // Repop brings a random masterless bot back at the nearest graveyard instead of its
     // racial starting area, so evacuations stop draining bots into the starting zones.
     bool repopAtGraveyard = true;
