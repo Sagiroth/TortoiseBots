@@ -1,4 +1,6 @@
 #include <cassert>
+#include <cmath>
+#include <cstring>
 #include <vector>
 #include "ai/playerbot/policy/rpg/CampPolicy.h"
 
@@ -22,6 +24,17 @@ int main()
     assert(IsTentGameObjectEntry(1100000));
     assert(IsTentGameObjectEntry(1100001));
     assert(!IsTentGameObjectEntry(29784));
+
+    // Time of day
+    assert(IsCampNightHour(21));
+    assert(IsCampNightHour(23));
+    assert(IsCampNightHour(0));
+    assert(IsCampNightHour(5));
+    assert(!IsCampNightHour(6));
+    assert(!IsCampNightHour(12));
+    assert(!IsCampNightHour(20));
+    assert(EffectiveCampChancePct(15, 30, false) == 15);
+    assert(EffectiveCampChancePct(15, 30, true) == 30);
 
     // Eligibility: only autonomous free bots >= minLevel, outdoors/non-BG, no real player master/group/hire
     assert(IsBotEligibleForCamp(true, true, false, false, false, 10, 10, false, false));
@@ -51,6 +64,18 @@ int main()
     assert(!ShouldStartCampAtSpot(true, false, true, true, false, true, true, 100, 0));   // capital
     assert(!ShouldStartCampAtSpot(true, false, true, true, false, true, false, 0, 0));    // 0% chance
 
+    // Joining existing camp
+    assert(ShouldJoinExistingCamp(true, true, false, true, false, 10, 9));
+    assert(!ShouldJoinExistingCamp(true, true, false, true, false, 10, 10));
+    assert(!ShouldJoinExistingCamp(true, false, false, true, false, 100, 0));
+    assert(!ShouldJoinExistingCamp(false, true, false, true, false, 100, 0));
+    assert(!ShouldJoinExistingCamp(true, true, true, true, false, 100, 0));
+    assert(ComputeJoinSitDurationMs(60, 180, 0) == 60000);
+    assert(ComputeJoinSitDurationMs(60, 180, 120) == 180000);
+    float ox = 0.0f, oy = 0.0f, oz = 0.0f;
+    ComputeJoinSeatOffset(10.0f, 20.0f, 5.0f, 0.0f, 3.0f, ox, oy, oz);
+    assert(std::fabs(ox - 13.0f) < 0.01f && std::fabs(oy - 20.0f) < 0.01f && std::fabs(oz - 5.0f) < 0.01f);
+
     // Abandonment decision
     assert(!ShouldAbandonCamp(false, true, true, true, 1000, 1200000, true, true));
     assert(ShouldAbandonCamp(true, true, true, true, 1000, 1200000, true, true));    // combat
@@ -61,12 +86,33 @@ int main()
     assert(!ShouldAbandonCamp(false, true, true, true, 1000, 1200000, false, false));// before spawn grace
     assert(ShouldAbandonCamp(false, true, true, true, 6000, 1200000, false, true));  // tent gone after grace
 
-    // Emote rotation
-    assert(NextCampEmoteStep(CampEmoteStep::SitEat, true) == CampEmoteStep::Cook);
-    assert(NextCampEmoteStep(CampEmoteStep::Cook, true) == CampEmoteStep::Dance);
-    assert(NextCampEmoteStep(CampEmoteStep::Dance, true) == CampEmoteStep::SitEat);
-    assert(NextCampEmoteStep(CampEmoteStep::SitEat, false) == CampEmoteStep::Dance);
-    assert(NextCampEmoteStep(CampEmoteStep::Dance, false) == CampEmoteStep::SitEat);
+    // Emote rotation (day vs night)
+    assert(NextCampEmoteStep(CampEmoteStep::SitEat, true, false) == CampEmoteStep::Cook);
+    assert(NextCampEmoteStep(CampEmoteStep::Cook, true, false) == CampEmoteStep::ClassFlavour);
+    assert(NextCampEmoteStep(CampEmoteStep::ClassFlavour, true, false) == CampEmoteStep::Dance);
+    assert(NextCampEmoteStep(CampEmoteStep::Dance, true, false) == CampEmoteStep::SitEat);
+    assert(NextCampEmoteStep(CampEmoteStep::SitEat, false, false) == CampEmoteStep::ClassFlavour);
+
+    assert(NextCampEmoteStep(CampEmoteStep::SitEat, true, true) == CampEmoteStep::Sleep);
+    assert(NextCampEmoteStep(CampEmoteStep::Sleep, true, true) == CampEmoteStep::Cook);
+    assert(NextCampEmoteStep(CampEmoteStep::Sleep, false, true) == CampEmoteStep::ClassFlavour);
+    assert(NextCampEmoteStep(CampEmoteStep::ClassFlavour, false, true) == CampEmoteStep::SitEat);
+
+    // Class flavour
+    assert(PickCampFlavourAction(8, 70, false, 0).spellId == 746);   // hurt -> bandage
+    assert(PickCampFlavourAction(3, 100, true, 0).petRest == true);  // hunter with pet -> feed + pet rest
+    assert(PickCampFlavourAction(8, 100, false, 0).spellId == 5504); // mage -> conjure water
+    assert(PickCampFlavourAction(8, 100, false, 1).spellId == 587);  // mage -> conjure food
+    assert(PickCampFlavourAction(9, 100, false, 0).spellId == 6201); // warlock -> healthstone
+
+    // Player greeting rate limits
+    assert(ShouldGreetPlayerAtCamp(10000, 0, 0, 120000));
+    assert(!ShouldGreetPlayerAtCamp(50000, 10000, 0, 120000));      // bot on cooldown
+    assert(!ShouldGreetPlayerAtCamp(50000, 0, 10000, 120000));      // player on cooldown
+    assert(ShouldGreetPlayerAtCamp(130000, 10000, 10000, 120000));
+    assert(ShouldSayCampLine(15, 14));
+    assert(!ShouldSayCampLine(15, 15));
+    assert(std::strlen(PickCampGreetingLine(0)) > 0);
 
     // Rested XP restore
     assert(ShouldRestoreRestBonus(false, true));

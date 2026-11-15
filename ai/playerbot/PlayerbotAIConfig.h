@@ -422,9 +422,15 @@ public:
     // Autonomous bots setting up Traveler's Tent + campfire at camp spots.
     bool campEnabled = true;
     uint32 campChancePct = 15;
+    uint32 campNightChancePct = 30;
     uint32 campMinLevel = 10;
     uint32 campSitDurationSec = 1200;
     bool campKeepRestedXp = false;
+    uint32 campJoinChancePct = 10;
+    uint32 campJoinMinSec = 60;
+    uint32 campJoinMaxSec = 180;
+    uint32 campGreetChancePct = 15;
+    uint32 campGreetCooldownSec = 120;
     // Hiring fee in copper for the 1st companion at level 60 (default 15000 =
     // 1.5g). Hires 2-4 multiply by the party mults below; the full 4-bot
     // party totals ~15g at 60. Set to 0 for free hiring.

@@ -15,6 +15,8 @@
 #include "playerbot/CampMgr.h"
 #include "playerbot/policy/rpg/CampPolicy.h"
 #include "Timer.h"
+#include "World.h"
+#include <ctime>
 using namespace ai;
 
 bool RpgTrigger::IsActive()
@@ -859,10 +861,6 @@ bool RpgCampTrigger::IsActive()
         return false;
     state.lastScanMs = now;
 
-    if (bot->HasSpellCooldown(TortoiseBots::CAMP_TENT_SPELL_ID) ||
-        !bot->HasItemCount(TortoiseBots::CAMP_TENT_ITEM_ID, 1))
-        return false;
-
     std::optional<TortoiseBots::CampSpot> spot = sCampMgr.FindNearestSpot(
         bot->GetMapId(),
         bot->GetPositionX(),
@@ -895,15 +893,66 @@ bool RpgCampTrigger::IsActive()
     bool const outdoors = bot->GetTerrain() && bot->GetTerrain()->IsOutdoors(spot->x, spot->y, spot->z);
     bool const blockedZone = TortoiseBots::IsCampBlockedZone(spot->zoneId ? spot->zoneId : bot->GetZoneId());
 
+    if (tentNearby)
+    {
+        if (!TortoiseBots::ShouldJoinExistingCamp(
+                true,
+                true,
+                bot->IsInWater(),
+                outdoors,
+                blockedZone,
+                sPlayerbotAIConfig.campJoinChancePct,
+                urand(0, 99)))
+        {
+            state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
+            return false;
+        }
+
+        float seatX = spot->x;
+        float seatY = spot->y;
+        float seatZ = spot->z;
+        float const angle = static_cast<float>(urand(0, 628)) / 100.0f;
+        TortoiseBots::ComputeJoinSeatOffset(spot->x, spot->y, spot->z, angle, TortoiseBots::CAMP_JOIN_OFFSET_RADIUS_YD, seatX, seatY, seatZ);
+
+        state.phase = PlayerbotAI::CampPhase::MovingToSpot;
+        state.isJoiner = true;
+        state.stayCapMs = TortoiseBots::ComputeJoinSitDurationMs(
+            sPlayerbotAIConfig.campJoinMinSec,
+            sPlayerbotAIConfig.campJoinMaxSec,
+            urand(0, 10000));
+        state.spotId = spot->id;
+        state.mapId = spot->map;
+        state.zoneId = spot->zoneId ? spot->zoneId : bot->GetZoneId();
+        state.x = seatX;
+        state.y = seatY;
+        state.z = seatZ;
+        state.orientation = spot->orientation + 3.14159f;
+        state.spotName = spot->name;
+        return true;
+    }
+
+    if (bot->HasSpellCooldown(TortoiseBots::CAMP_TENT_SPELL_ID) ||
+        !bot->HasItemCount(TortoiseBots::CAMP_TENT_ITEM_ID, 1))
+        return false;
+
+    time_t const gameTime = sWorld.GetGameTime();
+    std::tm tmBuf{};
+    localtime_r(&gameTime, &tmBuf);
+    bool const isNight = TortoiseBots::IsCampNightHour(static_cast<uint32_t>(tmBuf.tm_hour));
+    uint32_t const chancePct = TortoiseBots::EffectiveCampChancePct(
+        sPlayerbotAIConfig.campChancePct,
+        sPlayerbotAIConfig.campNightChancePct,
+        isNight);
+
     if (!TortoiseBots::ShouldStartCampAtSpot(
             true,
-            tentNearby,
+            false,
             true,
             true,
             bot->IsInWater(),
             outdoors,
             blockedZone,
-            sPlayerbotAIConfig.campChancePct,
+            chancePct,
             urand(0, 99)))
     {
         state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
@@ -911,6 +960,8 @@ bool RpgCampTrigger::IsActive()
     }
 
     state.phase = PlayerbotAI::CampPhase::MovingToSpot;
+    state.isJoiner = false;
+    state.stayCapMs = sPlayerbotAIConfig.campSitDurationSec * 1000;
     state.spotId = spot->id;
     state.mapId = spot->map;
     state.zoneId = spot->zoneId ? spot->zoneId : bot->GetZoneId();

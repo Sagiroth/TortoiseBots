@@ -699,9 +699,15 @@ bool PlayerbotAIConfig::Initialize()
     shamanTankEnabled = config.GetBoolDefault("AiPlayerbot.ShamanTankEnabled", true);
     campEnabled = config.GetBoolDefault("AiPlayerbot.CampEnabled", true);
     campChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampChancePct", 15);
+    campNightChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampNightChancePct", 30);
     campMinLevel = (uint32) config.GetIntDefault("AiPlayerbot.CampMinLevel", 10);
     campSitDurationSec = (uint32) config.GetIntDefault("AiPlayerbot.CampSitDurationSec", 1200);
     campKeepRestedXp = config.GetBoolDefault("AiPlayerbot.CampKeepRestedXp", false);
+    campJoinChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampJoinChancePct", 10);
+    campJoinMinSec = (uint32) config.GetIntDefault("AiPlayerbot.CampJoinMinSec", 60);
+    campJoinMaxSec = (uint32) config.GetIntDefault("AiPlayerbot.CampJoinMaxSec", 180);
+    campGreetChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampGreetChancePct", 15);
+    campGreetCooldownSec = (uint32) config.GetIntDefault("AiPlayerbot.CampGreetCooldownSec", 120);
     hireBaseCostCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireBaseCostCopper", 15000));
     if (hireBaseCostCopper > 100000000)
         hireBaseCostCopper = 100000000;

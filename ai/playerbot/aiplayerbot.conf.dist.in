@@ -7367,12 +7367,23 @@ AiPlayerbot.HealDistanceBg = 25
 
 # Autonomous bots setting up Traveler's Tent + campfire at hand-picked camp spots.
 # CampEnabled: allow autonomous pool/alt bots to set up camps (1 = on, 0 = off).
-# CampChancePct: percent chance per pass when passing an unoccupied camp spot (0-100).
+# CampChancePct: percent chance per pass by day when passing an unoccupied camp spot (0-100).
+# CampNightChancePct: percent chance per pass at night (game time 21:00-06:00).
 # CampMinLevel: minimum bot level for Survival + tent kit and camping.
 # CampSitDurationSec: max seconds a bot stays at camp (1200 = 20 min tent lifetime).
 # CampKeepRestedXp: allow bots to keep rested XP gained at their own camp (0 = off, 1 = on).
+# CampJoinChancePct: percent chance a passing bot sits at an existing camp (0-100).
+# CampJoinMinSec / CampJoinMaxSec: stay duration range in seconds for joining bots.
+# CampGreetChancePct: percent chance a camping bot says a short line when waving at a nearby player.
+# CampGreetCooldownSec: per-bot and per-player cooldown in seconds between camp greetings.
 AiPlayerbot.CampEnabled = 1
 AiPlayerbot.CampChancePct = 15
+AiPlayerbot.CampNightChancePct = 30
 AiPlayerbot.CampMinLevel = 10
 AiPlayerbot.CampSitDurationSec = 1200
 AiPlayerbot.CampKeepRestedXp = 0
+AiPlayerbot.CampJoinChancePct = 10
+AiPlayerbot.CampJoinMinSec = 60
+AiPlayerbot.CampJoinMaxSec = 180
+AiPlayerbot.CampGreetChancePct = 15
+AiPlayerbot.CampGreetCooldownSec = 120

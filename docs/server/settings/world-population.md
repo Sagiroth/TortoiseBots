@@ -1326,3 +1326,69 @@ Allows bots to keep rested XP gained while sitting at their own camp.
 When `0`, a bot's rest bonus is saved before pitching camp and restored on leaving so bot levelling speed is unchanged. Real players sitting near a bot's tent still gain rested XP normally.
 
 </details>
+
+### `AiPlayerbot.CampNightChancePct`
+Percent chance per pass at night (game time 21:00–06:00) that an autonomous bot sets up camp at an unoccupied spot.
+**Default:** `30` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+At night bots are more likely to pitch camp and spend part of their stay sleeping under the tent.
+
+</details>
+
+### `AiPlayerbot.CampJoinChancePct`
+Percent chance per pass that a passing autonomous bot sits down at an already-occupied camp for a short visit.
+**Default:** `10` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Joining bots never place a second tent; they wave, sit by the fire for `CampJoinMinSec`–`CampJoinMaxSec` seconds, wave again, and move on.
+
+</details>
+
+### `AiPlayerbot.CampJoinMinSec`
+Minimum seconds a joining bot stays at an existing camp.
+**Default:** `60` · **Values:** seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Lower bound of the random visit duration when a bot joins an existing camp.
+
+</details>
+
+### `AiPlayerbot.CampJoinMaxSec`
+Maximum seconds a joining bot stays at an existing camp.
+**Default:** `180` · **Values:** seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Upper bound of the random visit duration when a bot joins an existing camp.
+
+</details>
+
+### `AiPlayerbot.CampGreetChancePct`
+Percent chance a camping bot says a short friendly line when waving or nodding at a real player within 10 yards.
+**Default:** `15` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Controls how often a camping bot adds a spoken line to its wave/nod greeting.
+
+</details>
+
+### `AiPlayerbot.CampGreetCooldownSec`
+Minimum seconds between camp greetings per bot and per real player.
+**Default:** `120` · **Values:** seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Rate-limits both how often a bot greets and how often any given player is greeted by camping bots.
+
+</details>

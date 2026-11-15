@@ -1281,10 +1281,13 @@ public:
         float orientation = 0.0f;
         std::string spotName;
         uint32 startedMs = 0;
+        uint32 stayCapMs = 0;
         uint32 nextEmoteMs = 0;
         uint32 lastScanMs = 0;
         uint32 cooldownUntilMs = 0;
+        uint32 lastGreetMs = 0;
         uint8 emoteStep = 0;
+        bool isJoiner = false;
         float savedRestBonus = 0.0f;
         bool hasSavedRestBonus = false;
     };

@@ -1905,9 +1905,15 @@ void PlayerbotAI::AbandonCamp()
             bot->HandleEmoteCommand(EMOTE_ONESHOT_NONE);
             if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
                 bot->SetStandState(UNIT_STAND_STATE_STAND);
+            if (Pet* pet = bot->GetPet())
+            {
+                if (pet->IsAlive() && pet->GetStandState() != UNIT_STAND_STATE_STAND)
+                    pet->SetStandState(UNIT_STAND_STATE_STAND);
+            }
         }
 
-        sCampMgr.ClearActiveCamp(bot->GetGUIDLow());
+        if (!m_campState.isJoiner)
+            sCampMgr.ClearActiveCamp(bot->GetGUIDLow());
     }
 
     m_campState.phase = CampPhase::Idle;
@@ -1920,8 +1926,10 @@ void PlayerbotAI::AbandonCamp()
     m_campState.orientation = 0.0f;
     m_campState.spotName.clear();
     m_campState.startedMs = 0;
+    m_campState.stayCapMs = 0;
     m_campState.nextEmoteMs = 0;
     m_campState.emoteStep = 0;
+    m_campState.isJoiner = false;
     m_campState.savedRestBonus = 0.0f;
     m_campState.hasSavedRestBonus = false;
 }
