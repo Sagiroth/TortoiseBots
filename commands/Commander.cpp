@@ -15715,6 +15715,7 @@ static CommanderTelemetry::AuraRead AuraReadOf(SpellAuraHolder const* holder)
     read.aura.dispelType = DispelLetter(proto->Dispel);
     read.passive = holder->IsDeleted() || holder->IsPassive();
     read.negative = !holder->IsPositive();
+    read.aura.spreading = read.negative && read.aura.dispelType != 0 && PlayerbotAI::IsSpreadingAura(proto);
     return read;
 }
 

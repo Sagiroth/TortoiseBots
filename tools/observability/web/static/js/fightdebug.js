@@ -604,7 +604,7 @@
         tag: layout && b.name === layout.mt ? "MT"
           : layout && Array.isArray(layout.ot) && layout.ot.indexOf(b.name) >= 0 ? "OT" : "",
         // The boss's debuffs on this bot (a newer module): the tile's chips, the dispel colour and the MC tag.
-        debuffs: (Array.isArray(b.db) ? b.db : []).map((d) => ({ id: d && d.id, n: (d && d.n) || "", st: num(d && d.st) || 1, l: num(d && d.l), dt: (d && d.dt) || "" })),
+        debuffs: (Array.isArray(b.db) ? b.db : []).map((d) => ({ id: d && d.id, n: (d && d.n) || "", st: num(d && d.st) || 1, l: num(d && d.l), dt: (d && d.dt) || "", sp: !!(d && d.sp) })),
         mc: !!b.mc,
       });
     });

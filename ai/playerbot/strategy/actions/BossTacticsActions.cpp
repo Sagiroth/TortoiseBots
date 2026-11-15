@@ -7754,11 +7754,18 @@ ActiveBossRows DispelRows(const BossTacticsFight& fight)
     return rows;
 }
 
-// The living group members a cure can reach, the bot included.
+// The living group members (and their combat pets) a cure can reach, the bot included.
 std::vector<Unit*> DispelSweepMembers(Player* bot)
 {
     std::vector<Unit*> members;
+    auto addPet = [&](Player* owner)
+    {
+        Pet* pet = owner->GetPet();
+        if (pet && pet->getPetType() != MINI_PET && pet->IsAlive() && pet->GetMapId() == bot->GetMapId())
+            members.push_back(pet);
+    };
     members.push_back(bot);
+    addPet(bot);
     Group* group = bot->GetGroup();
     if (!group)
         return members;
@@ -7767,6 +7774,7 @@ std::vector<Unit*> DispelSweepMembers(Player* bot)
         if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
             continue;
         members.push_back(member);
+        addPet(member);
     }
     return members;
 }
@@ -7902,7 +7910,7 @@ bool ai::DispelCastBlocked(PlayerbotAI* ai, Unit* target, uint32 spellId)
     Player* bot = ai->GetBot();
     if (!bot || !target->IsAlive() || target->GetMapId() != bot->GetMapId())
         return false;
-    // PartyMemberToDispel offers non-summoned pets as well as players; a hunter pet has no Player, so it is placed by
+    // PartyMemberToDispel offers pets as well as players; a pet has no Player, so it is placed by
     // its owner's group and judged like a member. A target that is none of these is unknown, and the cast is refused.
     DispelTargetKind targetKind = DispelTargetKind::Unknown;
     if (target == bot)

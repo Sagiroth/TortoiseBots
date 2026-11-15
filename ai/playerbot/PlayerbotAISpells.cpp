@@ -18,6 +18,8 @@
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/MountDismountPolicy.h"
 #include "strategy/actions/BossTacticsActions.h"
+#include <shared_mutex>
+#include <unordered_map>
 
 using namespace ai;
 
@@ -1936,8 +1938,72 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell, u
     return ai::ShouldInterruptTargetCasting(genericSlot, channeledSlot, interrupt, allowStun);
 }
 
+namespace
+{
+DispelSpellInput ToDispelSpellInput(const SpellEntry* entry)
+{
+    DispelSpellInput input;
+    if (!entry)
+        return input;
+    input.spellId = entry->Id;
+    input.dispelType = entry->Dispel;
+    input.isPositive = IsPositiveSpell(entry->Id);
+    input.effects.reserve(MAX_EFFECT_INDEX);
+    for (int32 i = EFFECT_INDEX_0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        DispelSpellEffectInput eff;
+        eff.effect = entry->Effect[i];
+        eff.auraName = entry->EffectApplyAuraName[i];
+        eff.triggerSpellId = entry->EffectTriggerSpell[i];
+        eff.implicitTargetA = entry->EffectImplicitTargetA[i];
+        eff.implicitTargetB = entry->EffectImplicitTargetB[i];
+        eff.radiusIndex = entry->EffectRadiusIndex[i];
+        input.effects.push_back(eff);
+    }
+    return input;
+}
+}
+
+bool PlayerbotAI::IsSpreadingAura(const SpellEntry* entry)
+{
+    if (!entry)
+        return false;
+
+    static std::shared_mutex sCacheMutex;
+    static std::unordered_map<uint32, bool> sSpreadingCache;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(sCacheMutex);
+        auto it = sSpreadingCache.find(entry->Id);
+        if (it != sSpreadingCache.end())
+            return it->second;
+    }
+
+    DispelSpellInput const input = ToDispelSpellInput(entry);
+    bool const spreading = IsSpreadingAuraSpell(input, [](std::uint32_t trigId, DispelSpellInput& out) -> bool {
+        const SpellEntry* trigEntry = sSpellMgr.GetSpellEntry(trigId);
+        if (!trigEntry)
+            return false;
+        out = ToDispelSpellInput(trigEntry);
+        return true;
+    });
+
+    std::unique_lock<std::shared_mutex> lock(sCacheMutex);
+    sSpreadingCache[entry->Id] = spreading;
+    return spreading;
+}
+
 bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType, const DispelOverride* override)
 {
+    return HasAuraToDispel(target, dispelType, override, nullptr);
+}
+
+bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType, const DispelOverride* override, bool* outHasSpreading)
+{
+    if (outHasSpreading)
+        *outHasSpreading = false;
+
+    bool found = false;
     bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
 	for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
 	{
@@ -1962,11 +2028,21 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType, const DispelO
 			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)
 			    continue;
 
-			if (canDispel(entry, dispelType, override))
+			if (!canDispel(entry, dispelType, override))
+				continue;
+
+			if (!outHasSpreading)
 				return true;
+
+			found = true;
+			if (IsSpreadingAura(entry))
+			{
+				*outHasSpreading = true;
+				return true;
+			}
 		}
 	}
-	return false;
+	return found;
 }
 
 #ifndef WIN32

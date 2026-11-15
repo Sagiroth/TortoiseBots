@@ -843,7 +843,7 @@ func TestCommandersTwentyBindings(t *testing.T) {
 // grow them.
 func TestCommandersCarryAurasDebuffsAndFlags(t *testing.T) {
 	raw := `{"v":12,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[{"commander":"Z","online":true,"group":1,"lead":"Lead",
-"bots":[{"name":"Lead","lead":true,"alive":true,"db":[{"id":24328,"n":"Corrupted Blood","st":2,"l":8000,"dt":"p"},{"id":24314,"n":"Threatening Gaze","dt":"m"}],"mc":1}],
+"bots":[{"name":"Lead","lead":true,"alive":true,"db":[{"id":24328,"n":"Corrupted Blood","st":2,"l":8000,"dt":"p","sp":1},{"id":24314,"n":"Threatening Gaze","dt":"m"}],"mc":1}],
 "mobs_map":309,"mobs":[
 {"id":"5","entry":14507,"name":"Venoxis","hp":49,"x":1,"y":2,"reaction":"h","rank":"b","cast":"Poison Cloud","au":[{"id":23849,"n":"Snake Form","l":12000},{"id":8269,"n":"Frenzy","st":3}],"uf":"nh"},
 {"id":"6","entry":14884,"name":"Razzashi Serpent","hp":90,"x":3,"y":4,"reaction":"h"}],"orders":[]}]}`
@@ -872,7 +872,7 @@ func TestCommandersCarryAurasDebuffsAndFlags(t *testing.T) {
 	}
 	bot := view.Commanders[0].Bots[0]
 	if len(bot.Debuffs) != 2 || bot.Debuffs[0].ID != 24328 || bot.Debuffs[0].Dispel != "p" || bot.Debuffs[0].Stacks != 2 ||
-		bot.Debuffs[1].Dispel != "m" || bot.MC != 1 {
+		bot.Debuffs[0].Spreading != 1 || bot.Debuffs[1].Dispel != "m" || bot.Debuffs[1].Spreading != 0 || bot.MC != 1 {
 		t.Fatalf("bot debuffs lost: %+v mc %d", bot.Debuffs, bot.MC)
 	}
 
@@ -882,7 +882,7 @@ func TestCommandersCarryAurasDebuffsAndFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{`"au":[{"id":23849,"n":"Snake Form","l":12000}`, `"uf":"nh"`,
-		`"db":[{"id":24328,"n":"Corrupted Blood","st":2,"l":8000,"dt":"p"}`, `"mc":1`} {
+		`"db":[{"id":24328,"n":"Corrupted Blood","st":2,"l":8000,"dt":"p","sp":1},{"id":24314,"n":"Threatening Gaze","dt":"m"}]`, `"mc":1`} {
 		if !strings.Contains(string(out), key) {
 			t.Fatalf("the API JSON lost %s: %s", key, out)
 		}
