@@ -72,9 +72,32 @@ int main()
     assert(!ShouldJoinExistingCamp(true, true, true, true, false, 100, 0));
     assert(ComputeJoinSitDurationMs(60, 180, 0) == 60000);
     assert(ComputeJoinSitDurationMs(60, 180, 120) == 180000);
-    float ox = 0.0f, oy = 0.0f, oz = 0.0f;
-    ComputeJoinSeatOffset(10.0f, 20.0f, 5.0f, 0.0f, 3.0f, ox, oy, oz);
-    assert(std::fabs(ox - 13.0f) < 0.01f && std::fabs(oy - 20.0f) < 0.01f && std::fabs(oz - 5.0f) < 0.01f);
+
+    // Deterministic camp geometry (tent at (100, 200, 10) facing o = 0 -> +X)
+    CampPoint const tentCast = ComputeTentCastPoint(100.0f, 200.0f, 10.0f, 0.0f);
+    assert(std::fabs(tentCast.x - 96.0f) < 0.01f);
+    assert(std::fabs(tentCast.y - 200.0f) < 0.01f);
+    assert(std::fabs(tentCast.z - 10.0f) < 0.01f);
+    assert(std::fabs(tentCast.o - 0.0f) < 0.01f);
+    // Casting 4 yd forward from tentCast lands on the tent spot (100, 200)
+    assert(std::fabs((tentCast.x + 4.0f * std::cos(tentCast.o)) - 100.0f) < 0.01f);
+    assert(std::fabs((tentCast.y + 4.0f * std::sin(tentCast.o)) - 200.0f) < 0.01f);
+
+    CampPoint const fireCast = ComputeFireCastPoint(100.0f, 200.0f, 10.0f, 0.0f);
+    float const fireDist = std::hypot(fireCast.x - 100.0f, fireCast.y - 200.0f);
+    assert(std::fabs(fireDist - CAMP_FIRE_OFFSET_YD) < 0.01f);
+    assert(fireCast.x > 100.0f && fireCast.y < 200.0f); // front-right
+
+    CampPoint const ownerSeat = ComputeOwnerSeatPoint(100.0f, 200.0f, 10.0f, 0.0f);
+    float const ownerDist = std::hypot(ownerSeat.x - 100.0f, ownerSeat.y - 200.0f);
+    assert(std::fabs(ownerDist - CAMP_OWNER_SEAT_OFFSET_YD) < 0.01f);
+    assert(ownerSeat.x > 100.0f && ownerSeat.y > 200.0f); // front-left
+
+    CampPoint const joinerSeat = ComputeJoinerSeatPoint(100.0f, 200.0f, 10.0f, 0.0f);
+    float const joinerDist = std::hypot(joinerSeat.x - 100.0f, joinerSeat.y - 200.0f);
+    assert(std::fabs(joinerDist - CAMP_JOINER_SEAT_OFFSET_YD) < 0.01f);
+    // Joiner seat and owner seat are distinct and both face the fire
+    assert(std::hypot(joinerSeat.x - ownerSeat.x, joinerSeat.y - ownerSeat.y) > 2.0f);
 
     // Abandonment decision
     assert(!ShouldAbandonCamp(false, true, true, true, 1000, 1200000, true, true));

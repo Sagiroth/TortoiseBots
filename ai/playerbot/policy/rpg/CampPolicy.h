@@ -22,9 +22,13 @@ inline constexpr uint32_t CAMP_SURVIVAL_SKILL_CAP = 300;
 
 inline constexpr float CAMP_SPOT_DETECT_RANGE_YD = 40.0f;
 inline constexpr float CAMP_TENT_EXCLUSION_RANGE_YD = 25.0f;
-inline constexpr float CAMP_ARRIVAL_RANGE_YD = 2.5f;
+inline constexpr float CAMP_ARRIVAL_RANGE_YD = 1.5f;
 inline constexpr float CAMP_PLAYER_GREET_RANGE_YD = 10.0f;
-inline constexpr float CAMP_JOIN_OFFSET_RADIUS_YD = 3.0f;
+inline constexpr float CAMP_TENT_SUMMON_OFFSET_YD = 4.0f;
+inline constexpr float CAMP_FIRE_OFFSET_YD = 3.0f;
+inline constexpr float CAMP_OWNER_SEAT_OFFSET_YD = 2.5f;
+inline constexpr float CAMP_JOINER_SEAT_OFFSET_YD = 4.8f;
+inline constexpr float CAMP_QUARTER_PI = 0.7853981633974483f;
 
 inline constexpr uint32_t CAMP_SCAN_COOLDOWN_MS = 10000;
 inline constexpr uint32_t CAMP_ROLL_RETRY_COOLDOWN_MS = 30000;
@@ -169,18 +173,56 @@ inline uint32_t ComputeJoinSitDurationMs(uint32_t minSec, uint32_t maxSec, uint3
     return (minSec + (roll % span)) * 1000;
 }
 
-inline void ComputeJoinSeatOffset(float spotX,
-                                  float spotY,
-                                  float spotZ,
-                                  float angleRad,
-                                  float radiusYd,
-                                  float& outX,
-                                  float& outY,
-                                  float& outZ)
+struct CampPoint
 {
-    outX = spotX + std::cos(angleRad) * radiusYd;
-    outY = spotY + std::sin(angleRad) * radiusYd;
-    outZ = spotZ;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float o = 0.0f;
+};
+
+// Tent spell summons 4 yd in front of the caster, so the caster stands 4 yd
+// behind the tent's (x, y, z) facing orientation o.
+inline CampPoint ComputeTentCastPoint(float tentX, float tentY, float tentZ, float o)
+{
+    return {
+        tentX - CAMP_TENT_SUMMON_OFFSET_YD * std::cos(o),
+        tentY - CAMP_TENT_SUMMON_OFFSET_YD * std::sin(o),
+        tentZ,
+        o
+    };
+}
+
+// Campfire sits at a fixed offset 3 yd in front-right of the tent.
+inline CampPoint ComputeFireCastPoint(float tentX, float tentY, float tentZ, float o)
+{
+    float const angle = o - CAMP_QUARTER_PI;
+    return {
+        tentX + CAMP_FIRE_OFFSET_YD * std::cos(angle),
+        tentY + CAMP_FIRE_OFFSET_YD * std::sin(angle),
+        tentZ,
+        angle
+    };
+}
+
+// Owner sits at a fixed seat 2.5 yd in front-left of the tent, facing the fire.
+inline CampPoint ComputeOwnerSeatPoint(float tentX, float tentY, float tentZ, float o)
+{
+    CampPoint const fire = ComputeFireCastPoint(tentX, tentY, tentZ, o);
+    float const angle = o + CAMP_QUARTER_PI;
+    float const sx = tentX + CAMP_OWNER_SEAT_OFFSET_YD * std::cos(angle);
+    float const sy = tentY + CAMP_OWNER_SEAT_OFFSET_YD * std::sin(angle);
+    return { sx, sy, tentZ, std::atan2(fire.y - sy, fire.x - sx) };
+}
+
+// Joiner sits at a fixed seat on the opposite side of the fire, facing the fire.
+inline CampPoint ComputeJoinerSeatPoint(float tentX, float tentY, float tentZ, float o)
+{
+    CampPoint const fire = ComputeFireCastPoint(tentX, tentY, tentZ, o);
+    float const angle = o - CAMP_QUARTER_PI;
+    float const sx = tentX + CAMP_JOINER_SEAT_OFFSET_YD * std::cos(angle);
+    float const sy = tentY + CAMP_JOINER_SEAT_OFFSET_YD * std::sin(angle);
+    return { sx, sy, tentZ, std::atan2(fire.y - sy, fire.x - sx) };
 }
 
 inline bool ShouldAbandonCamp(bool inCombat,

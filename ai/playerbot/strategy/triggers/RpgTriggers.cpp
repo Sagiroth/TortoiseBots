@@ -908,12 +908,6 @@ bool RpgCampTrigger::IsActive()
             return false;
         }
 
-        float seatX = spot->x;
-        float seatY = spot->y;
-        float seatZ = spot->z;
-        float const angle = static_cast<float>(urand(0, 628)) / 100.0f;
-        TortoiseBots::ComputeJoinSeatOffset(spot->x, spot->y, spot->z, angle, TortoiseBots::CAMP_JOIN_OFFSET_RADIUS_YD, seatX, seatY, seatZ);
-
         state.phase = PlayerbotAI::CampPhase::MovingToSpot;
         state.isJoiner = true;
         state.stayCapMs = TortoiseBots::ComputeJoinSitDurationMs(
@@ -923,10 +917,10 @@ bool RpgCampTrigger::IsActive()
         state.spotId = spot->id;
         state.mapId = spot->map;
         state.zoneId = spot->zoneId ? spot->zoneId : bot->GetZoneId();
-        state.x = seatX;
-        state.y = seatY;
-        state.z = seatZ;
-        state.orientation = spot->orientation + 3.14159f;
+        state.x = spot->x;
+        state.y = spot->y;
+        state.z = spot->z;
+        state.orientation = spot->orientation;
         state.spotName = spot->name;
         return true;
     }

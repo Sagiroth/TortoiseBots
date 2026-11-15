@@ -630,7 +630,6 @@ static BotCommandEntry const botCommands[] = {
     {"gear", HandleBotGear, "gear <bot|raid commander> tier|preset", {}, AlwaysVisible},
     {"hire", HandleHire, "hire <class> [dps/tank/healer] ... | hire raid <preset> [tier]", {}, AlwaysVisible},
     {"pool", HandlePool, "pool <status|accounts|adopt ...>", {}, AlwaysVisible},
-    {"camp", HandleCamp, "camp <add [name]|list|status>", {}, AlwaysVisible},
     {"loot", HandleLoot, "loot [on/off]", {}, AlwaysVisible},
     {"order", HandleOrder, "order <bot> <farm|buy|craft> <item> <amount> | order <bot> cancel | order list | order search <bot> <farm|buy|craft> <text>", {}, AlwaysVisible},
     {"lootlog", HandleLootLog, "lootlog [cursor]", {}, AlwaysVisible},

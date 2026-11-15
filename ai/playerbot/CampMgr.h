@@ -42,10 +42,8 @@ public:
     static CampMgr& Instance();
 
     void Load();
-    bool AddSpot(uint32 map, float x, float y, float z, float orientation, uint32 zoneId, std::string const& name, uint32& outId);
 
     std::optional<CampSpot> FindNearestSpot(uint32 mapId, float x, float y, float z, float maxRangeYd) const;
-    std::vector<std::pair<CampSpot, float>> FindNearbySpots(uint32 mapId, float x, float y, float z, float maxRangeYd) const;
 
     void SetActiveCamp(ActiveCampInfo const& info);
     void ClearActiveCamp(uint32 botGuid);
