@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/AmmoBagPolicy.h"
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
 #include "playerbot/policy/gear/EquipThresholdPolicy.h"
@@ -853,57 +854,50 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (itemProto->Class == ITEM_CLASS_QUIVER)
     {
         Item* equippedRangedWeapon = bot->GetWeaponForAttack(WeaponAttackType::RANGED_ATTACK, false, false);
+        ItemPrototype const* rangedProto = equippedRangedWeapon ? equippedRangedWeapon->GetProto() : nullptr;
 
-        if (bot->GetClass() == CLASS_HUNTER && equippedRangedWeapon)
+        auto bagKindFromSubClass = [](uint32 subClass) -> AmmoBagKind {
+            if (subClass == ITEM_SUBCLASS_QUIVER)
+                return AmmoBagKind::Quiver;
+            if (subClass == ITEM_SUBCLASS_AMMO_POUCH)
+                return AmmoBagKind::Pouch;
+            return AmmoBagKind::None;
+        };
+
+        AmmoBagKind wantedKind = AmmoBagKind::None;
+        if (rangedProto)
         {
-            ItemPrototype const* rangedWeaponItemProto = equippedRangedWeapon->GetProto();
-            if (!rangedWeaponItemProto)
-                return ItemUsage::ITEM_USAGE_NONE;
-
-            bool isCorrectQuiverTypeForCurrentWeapon = false;
-
-            if (itemProto->SubClass == ITEM_SUBCLASS_AMMO_POUCH)
-            {
-                if (rangedWeaponItemProto->SubClass == ItemSubclassWeapon::ITEM_SUBCLASS_WEAPON_GUN)
-                {
-                    isCorrectQuiverTypeForCurrentWeapon = true;
-                }
-            }
-            else {
-                if (rangedWeaponItemProto->SubClass == ItemSubclassWeapon::ITEM_SUBCLASS_WEAPON_BOW
-                    || rangedWeaponItemProto->SubClass == ItemSubclassWeapon::ITEM_SUBCLASS_WEAPON_CROSSBOW)
-                {
-                    isCorrectQuiverTypeForCurrentWeapon = true;
-                }
-            }
-
-            if (!isCorrectQuiverTypeForCurrentWeapon)
-                return ItemUsage::ITEM_USAGE_NONE;
-
-            std::vector<Bag*> equippedQuivers = PlayerbotAIStorage::Instance().GetAI(bot)->GetEquippedQuivers();
-
-            if (equippedQuivers.empty())
-            {
-                // Hunter with no quiver yet: any quiver matching the
-                // ranged weapon is an upgrade (free slot or quiver slot
-                // picked by GetSmallestBagSlot; core vetoes a second one).
-                return ItemUsage::ITEM_USAGE_EQUIP;
-            }
-            for (auto quiver : equippedQuivers)
-            {
-                if (quiver->GetProto()->ItemLevel < itemProto->ItemLevel)
-                {
-                    return ItemUsage::ITEM_USAGE_EQUIP;
-                }
-
-                if (quiver->GetProto()->ItemLevel == itemProto->ItemLevel && quiver->GetProto()->Quality < itemProto->Quality)
-                {
-                    return ItemUsage::ITEM_USAGE_EQUIP;
-                }
-
-                //no need to check for quiver container slots size, higher ilvl/quality checks is enough
-            }
+            if (rangedProto->SubClass == ItemSubclassWeapon::ITEM_SUBCLASS_WEAPON_GUN)
+                wantedKind = AmmoBagKind::Pouch;
+            else if (rangedProto->SubClass == ItemSubclassWeapon::ITEM_SUBCLASS_WEAPON_BOW
+                     || rangedProto->SubClass == ItemSubclassWeapon::ITEM_SUBCLASS_WEAPON_CROSSBOW)
+                wantedKind = AmmoBagKind::Quiver;
         }
+
+        AmmoBagSpec candidate{
+            bagKindFromSubClass(itemProto->SubClass),
+            itemProto->ContainerSlots,
+            itemProto->ItemLevel,
+            itemProto->Quality
+        };
+
+        std::vector<Bag*> equippedQuivers = PlayerbotAIStorage::Instance().GetAI(bot)->GetEquippedQuivers();
+        bool const hasEquipped = !equippedQuivers.empty();
+        AmmoBagSpec equipped{};
+        if (hasEquipped)
+        {
+            Bag* quiver = equippedQuivers.front();
+            ItemPrototype const* quiverProto = quiver->GetProto();
+            equipped = {
+                bagKindFromSubClass(quiverProto ? quiverProto->SubClass : 0),
+                quiver->GetBagSize(),
+                quiverProto ? quiverProto->ItemLevel : 0,
+                quiverProto ? quiverProto->Quality : 0
+            };
+        }
+
+        if (ShouldEquipAmmoBag(bot->GetClass() == CLASS_HUNTER, wantedKind, candidate, hasEquipped, equipped))
+            return ItemUsage::ITEM_USAGE_EQUIP;
 
         return ItemUsage::ITEM_USAGE_NONE;
     }
