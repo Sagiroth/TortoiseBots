@@ -34,7 +34,7 @@ INSERT INTO `ai_playerbot_camp_spot` (`map`, `x`, `y`, `z`, `orientation`, `zone
   (0, 962.35, -1401.73, 67.18, 0.39, 28, 'Chillwind Camp', 'Existing cauldron camp near Alchemist Arbington at Chillwind Camp', 0),
   (0, 1797.62, -705.75, 59.39, 3.93, 28, 'The Bulwark', 'Flat ground at The Bulwark near Argent Defender', 0),
   (0, -11599.20, -53.97, 11.12, 3.14, 33, 'Nesingwary''s Expedition', 'Existing campfire on the edge of Nesingwary''s Expedition', 0),
-  (0, -11280.00, -204.00, 75.50, 3.14, 33, 'Rebel Camp Outskirts', 'Flat clearing on the eastern edge of Rebel Camp facing the campfire', 0),
+  (0, -11341.00, -217.00, 75.22, 0.00, 33, 'Rebel Camp Outskirts', 'Flat open ground at the western edge of Rebel Camp', 0),
   (0, -12683.00, -1019.71, 94.85, 3.14, 33, 'Venture Co. Base Camp', 'Existing campfire on the ridge overlooking Lake Nazferiti', 0),
   (0, 46.91, -354.98, 131.13, 3.14, 36, 'Alterac Valley Approach', 'Snowy camp near Prospector Stonehewer at the valley entrance', 0),
   (0, 25.70, 278.05, 42.03, 5.28, 36, 'Dalaran Crater Outskirts', 'Camp near Archmage Ansirem Runeweaver outside the Dalaran dome', 0),
