@@ -509,13 +509,14 @@ void TestAuraSelection()
 
     std::vector<AuraRead> debuffs;
     auto add = [&debuffs](uint32_t id, char dispel, uint32_t leftMs, bool negative = true, bool hostile = true,
-                          bool passive = false)
+                          bool passive = false, bool spreading = false)
     {
         AuraRead r;
         r.aura.id = id;
         r.aura.name = "Debuff" + std::to_string(id);
         r.aura.dispelType = dispel;
         r.aura.leftMs = leftMs;
+        r.aura.spreading = spreading;
         r.negative = negative;
         r.hostileCaster = hostile;
         r.passive = passive;
@@ -528,11 +529,11 @@ void TestAuraSelection()
     add(105, 'p', 100, true, true, true);   // passive
     add(106, 'm', 8000, false);             // positive
     add(107, 'm', 8000, true, false);       // the bot's own group cast it
-    add(108, 'd', 500);
+    add(108, 'd', 500, true, true, false, true); // spreading
     std::vector<AuraInfo> const out = SelectBotDebuffs(debuffs);
     Check(out.size() == kMaxBotDebuffs, "a bot carries at most 4 boss debuffs");
-    Check(out[0].id == 104 && out[1].id == 103 && out[2].id == 101 && out[3].id == 108,
-        "dispellable first, then the one that runs out last");
+    Check(out[0].id == 108 && out[1].id == 104 && out[2].id == 103 && out[3].id == 101,
+        "dispellable first, spreading before non-spreading, then the one that runs out last");
     for (AuraInfo const& a : out)
         Check(a.id != 105 && a.id != 106 && a.id != 107, "passive, positive and own-group auras are not boss debuffs");
 
@@ -666,16 +667,18 @@ void TestAuraNameEscaping()
     boss.entry = 14834;
     boss.rank = 'b';
     boss.hasO = true;
-    boss.auras.push_back(AuraInfo{24169, "Q\"\\x", 1, 0, 0});
+    boss.auras.push_back(AuraInfo{24169, "Q\"\\x", 1, 0, 0, true});
     b.mobs.push_back(boss);
     BotInfo bot = Bot("Healbot", true);
     bot.hasExtra = true;
     bot.extra.debuffs.push_back(AuraInfo{24328, "Q\"\\x", 1, 0, 'm'});
+    bot.extra.debuffs.push_back(AuraInfo{45997, "Fungal Spores", 1, 5000, 'd', true});
     b.bots.push_back(bot);
 
     std::string const json = BuildPayload(9, 1, 1, 1, {b});
-    Check(Has(json, "\"au\":[{\"id\":24169,\"n\":\"Q\\\"\\\\x\"}"), "a quoted aura name in au is escaped");
-    Check(Has(json, "\"db\":[{\"id\":24328,\"n\":\"Q\\\"\\\\x\",\"dt\":\"m\"}"), "a quoted aura name in db is escaped");
+    Check(Has(json, "\"au\":[{\"id\":24169,\"n\":\"Q\\\"\\\\x\"}"), "a quoted aura name in au is escaped and omits sp");
+    Check(Has(json, "\"db\":[{\"id\":24328,\"n\":\"Q\\\"\\\\x\",\"dt\":\"m\"},{\"id\":45997,\"n\":\"Fungal Spores\",\"l\":5000,\"dt\":\"d\",\"sp\":1}]"),
+        "a quoted aura name in db is escaped and sp:1 is written only for spreading debuffs");
 }
 
 // The 0.5 s position report (task S3/R3m): a bot row in one decimal with its facing at two, a dead bot at hp 0 and

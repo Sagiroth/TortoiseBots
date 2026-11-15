@@ -108,7 +108,7 @@
   function debuffChip(a) {
     if (!a || (a.id == null && !a.n)) return "";
     const w = DISPEL_WORD[str(a.dt)];
-    return (str(a.n) || ("spell " + a.id)) + (w ? " (" + w + ")" : "") + (typeof a.st === "number" && a.st > 1 ? " ×" + a.st : "") + (secsLeft(a.l) ? " " + secsLeft(a.l) : "");
+    return (str(a.n) || ("spell " + a.id)) + (w ? " (" + w + ")" : "") + (a.sp ? " [spreads]" : "") + (typeof a.st === "number" && a.st > 1 ? " ×" + a.st : "") + (secsLeft(a.l) ? " " + secsLeft(a.l) : "");
   }
   function flagWords(uf) {
     const s = str(uf);

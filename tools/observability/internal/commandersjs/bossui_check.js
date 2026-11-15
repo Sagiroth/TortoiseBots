@@ -51,14 +51,19 @@ const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runI
 // ---- raid frames: the boss's debuffs as dispel-coloured chips, the dispel border and the red MC tag ------------------
 const frames = run(`FightDebug.raidFrames({ bots: [
   { name: "Healbot", guid: 7, role: "healer", class: "priest", hp: 80, max_hp: 100, power: 50, max_power: 100, power_type: "mana", alive: true,
-    db: [{ id: 24328, n: "Corrupted Blood", st: 2, l: 8000, dt: "d" }, { id: 24314, n: "Threatening Gaze", l: 3000, dt: "" }], mc: 1 },
+    db: [{ id: 24328, n: "Corrupted Blood", st: 2, l: 8000, dt: "d", sp: 1 }, { id: 24314, n: "Threatening Gaze", l: 3000, dt: "" }], mc: 1 },
   { name: "Tankie", guid: 8, role: "tank", class: "warrior", hp: 100, max_hp: 100, power: 100, max_power: 100, power_type: "rage", alive: true },
 ] })`);
 assert.strictEqual(frames[0].tiles[0].debuffs.length, 2);
 assert.strictEqual(frames[0].tiles[0].debuffs[0].dt, "d");
+assert.strictEqual(frames[0].tiles[0].debuffs[0].sp, true);
+assert.strictEqual(frames[0].tiles[0].debuffs[1].sp, false);
 assert.strictEqual(frames[0].tiles[0].mc, true);
 const framesHtml = run("fdFramesHtml(frames, null)", { frames: frames });
-assert.ok(framesHtml.includes('class="fd-db dt-disease"'), framesHtml);
+assert.ok(framesHtml.includes('class="fd-db dt-disease sp"'), framesHtml);
+assert.ok(framesHtml.includes('Spreads to nearby allies — dispel first'), framesHtml);
+assert.ok(framesHtml.includes('class="fd-sp"'), framesHtml);
+assert.ok(framesHtml.includes('class="fd-db dt-none"'), framesHtml);
 assert.ok(framesHtml.includes("Corrupted Blood ×2 8s"), "the chip carries the stacks and the seconds left: " + framesHtml);
 assert.ok(framesHtml.includes('class="fd-mc">MC<'), "the MC tag");
 assert.ok(/class="fd-tile r-healer[^"]*hasdispel/.test(framesHtml) && /class="fd-tile r-healer[^"]*mc/.test(framesHtml), "the dispel border and the MC class: " + framesHtml);

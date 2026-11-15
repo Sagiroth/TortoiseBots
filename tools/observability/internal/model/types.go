@@ -711,13 +711,15 @@ type CommanderPos struct {
 
 // CommanderAura is one aura the module saw on a unit: a boss's own buff or form, or a boss debuff on a bot. Stacks and
 // LeftMS are left out when they add nothing (one stack, a permanent aura); Dispel is the dispel type a healer must bring
-// (m magic, c curse, p poison, d disease) and is empty when the aura is not dispellable.
+// (m magic, c curse, p poison, d disease) and is empty when the aura is not dispellable; Spreading is 1 when a
+// dispellable debuff spreads to nearby allies.
 type CommanderAura struct {
-	ID     uint32 `json:"id"`
-	Name   string `json:"n,omitempty"`
-	Stacks uint32 `json:"st,omitempty"`
-	LeftMS uint32 `json:"l,omitempty"`
-	Dispel string `json:"dt,omitempty"`
+	ID        uint32 `json:"id"`
+	Name      string `json:"n,omitempty"`
+	Stacks    uint32 `json:"st,omitempty"`
+	LeftMS    uint32 `json:"l,omitempty"`
+	Dispel    string `json:"dt,omitempty"`
+	Spreading int    `json:"sp,omitempty"`
 }
 
 // CommanderMob is a unit near the lead of a binding. IDs are decimal strings: a creature guid is 64 bits, more than a JSON
