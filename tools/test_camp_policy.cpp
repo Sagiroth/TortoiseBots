@@ -2,7 +2,7 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
-#include "ai/playerbot/policy/rpg/CampPolicy.h"
+#include "../ai/playerbot/policy/rpg/CampPolicy.h"
 
 using namespace TortoiseBots;
 
