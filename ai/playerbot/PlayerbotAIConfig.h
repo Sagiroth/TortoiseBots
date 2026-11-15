@@ -79,8 +79,8 @@ public:
 public:
     bool Initialize();
     // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*) and the `.reload`-able combat
-    // keys (AiPlayerbot.InterruptIgnoresThreat, AiPlayerbot.SpellFacingPrecheck), read from the loaded aiplayerbot.conf:
-    // by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
+    // keys (AiPlayerbot.InterruptIgnoresThreat, AiPlayerbot.InterruptAllowStun, AiPlayerbot.SpellFacingPrecheck), read
+    // from the loaded aiplayerbot.conf: by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
     void LoadDungeonRunKeys();
     // The two-file gate's aiplayerbot.conf half (AiPlayerbot.ObservabilityRaids): read by Initialize, and again by
     // ReloadDungeonRunKeys, so the file that turned the feed on can turn it off on a `.reload config`.
@@ -642,6 +642,11 @@ public:
     // its target off the tank (bot threat plus the spell's flat threat under 110 % of the tank's in melee, 130 %
     // ranged). Earth Shock and Death Coil interrupt rows stay gated. Off = as before (vetoed at the high line).
     bool interruptIgnoresThreat = false;
+    // A stun counts as an interrupt (InterruptCastingPolicy): Bash, Hammer of Justice, War Stomp, Repentance and
+    // Intercept's triggered stun interrupt a cast the target is not stun-immune to, even where the spell has no
+    // interrupt-cast effect and the victim's cast is not silence-prevented. Off = as before (only silence / interrupt
+    // effects count, and the tank stun rows never fire).
+    bool interruptAllowStun = false;
     // PlayerbotAI::CanCastSpell refuses a unit-target cast the target's facing makes impossible (Gouge from behind,
     // Backstab from the front) before it probes the core's CheckCast, which broadcasts a spell failure on every probe.
     // Off = as before (the probe runs, and a Gouge from behind reads as castable and fails in the real cast).

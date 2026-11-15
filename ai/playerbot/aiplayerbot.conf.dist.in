@@ -1767,6 +1767,19 @@ AiPlayerbot.DungeonRunRaidHealerGuard = 0
 # 1 - on
 AiPlayerbot.InterruptIgnoresThreat = 0
 
+# A stun counts as an interrupt. Bash (5211/8983), Hammer of Justice (853/10308), War Stomp (20549), Repentance (20066)
+# and Intercept's triggered stun (20252 -> 20253) are an APPLY_AURA / MOD_STUN effect only on this core: no
+# interrupt-cast effect, no combat-interrupt flag. The interrupt target value (and the "on enemy healer" rows) only
+# accepted a silence or an interrupt-cast effect, so every tank stun row was dead (Tortoise Trials
+# tank-bear-bash-caster 0/75, tank-paladin-hoj-caster 3/32). With 1 a stun the target is not immune to counts: the
+# core stops any non-melee cast a stun lands on, so the victim's cast need not be silence-prevented either. Stun
+# immunity (the effect's mechanic) still refuses. Bash and HoJ have a 60 s cooldown, so a tank spends them on the
+# first trash cast the row can answer.
+# Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
+# 0 - off: only a silence or an interrupt-cast effect counts, as before (Default)
+# 1 - on
+AiPlayerbot.InterruptAllowStun = 0
+
 # A bot does not probe a cast the target's facing makes impossible: Gouge (the target must face the caster) from behind,
 # or a from-behind-only spell such as Backstab from the front. The core refuses both in its cast check, broadcasts a
 # spell failure to everyone nearby each time it is asked, and the bot read a Gouge from behind as castable: a rogue on
