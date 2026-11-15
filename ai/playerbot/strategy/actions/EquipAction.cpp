@@ -326,6 +326,19 @@ void EquipAction::EquipItem(PlayerbotAI* ai, Player* requester, Item* item, bool
             Bag* oldBagBag = (oldBag && oldBag->IsBag()) ? (Bag*)oldBag : nullptr;
             if (newBagSlot > 0 && oldBagBag && !oldBagBag->IsEmpty())
             {
+                auto tryStoreElsewhere = [&](Item* content, ItemPosCountVec& dest) -> bool {
+                    if (bot->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, content, false) == EQUIP_ERR_OK)
+                        return true;
+                    for (uint8 otherBag = INVENTORY_SLOT_BAG_START; otherBag < INVENTORY_SLOT_BAG_END; ++otherBag)
+                    {
+                        if (otherBag == newBagSlot)
+                            continue;
+                        if (bot->CanStoreItem(otherBag, NULL_SLOT, dest, content, false) == EQUIP_ERR_OK)
+                            return true;
+                    }
+                    return false;
+                };
+
                 bool contentsMoved = true;
                 for (uint32 i = 0; i < oldBagBag->GetBagSize(); ++i)
                 {
@@ -339,15 +352,24 @@ void EquipAction::EquipItem(PlayerbotAI* ai, Player* requester, Item* item, bool
                     // the item expired (SIGSEGV in Item::UpdateDuration).
                     bot->RemoveItem(oldBagBag->GetSlot(), i, true);
                     ItemPosCountVec dest;
-                    if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, content, false) != EQUIP_ERR_OK)
+                    if (tryStoreElsewhere(content, dest))
+                    {
+                        bot->StoreItem(dest, content, true);
+                    }
+                    else
                     {
                         ItemPosCountVec back;
                         if (bot->CanStoreItem(oldBagBag->GetSlot(), i, back, content, false) == EQUIP_ERR_OK)
                             bot->StoreItem(back, content, true);
+                        if (oldBagBag->GetProto() && oldBagBag->GetProto()->Class == ITEM_CLASS_QUIVER &&
+                            content->GetProto() && content->GetProto()->Class == ITEM_CLASS_PROJECTILE)
+                        {
+                            bot->DestroyItem(oldBagBag->GetSlot(), i, true);
+                            continue;
+                        }
                         contentsMoved = false;
                         break;
                     }
-                    bot->StoreItem(dest, content, true);
                 }
                 if (!contentsMoved || !oldBagBag->IsEmpty())
                 {
