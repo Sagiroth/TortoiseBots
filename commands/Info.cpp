@@ -354,6 +354,24 @@ static std::string RosterLocation(uint32 mapId, uint32 zoneId, uint32 areaId)
     return "map:" + std::to_string(mapId) + ",zone:" + std::to_string(zoneId) +
         ",area:" + std::to_string(areaId);
 }
+static std::string RosterClassName(uint32 classId, Player const* requester)
+{
+    if (!classId || classId > 255)
+        return "-";
+    uint8 locale = requester && requester->GetSession()
+        ? static_cast<uint8>(requester->GetSession()->GetSessionDbcLocale())
+        : uint8(LOCALE_enUS);
+    // ChrClassesEntry::name has 8 locale slots; fall back to English when out of range or empty.
+    if (locale >= 8)
+        locale = uint8(LOCALE_enUS);
+    char const* name = GetClassName(static_cast<uint8>(classId), locale);
+    if (!name || !*name)
+        name = GetClassName(static_cast<uint8>(classId), LOCALE_enUS);
+    if (!name || !*name)
+        return "-";
+    std::string safe = ProtocolSafe(name);
+    return safe.empty() ? "-" : safe;
+}
 // Channel the core currently dispatches addon commands from for this
 // requester. Mirrors the PARTY path of WorldSession::HandleMessagechatOpcode:
 // the message is consumed before any broadcast, so a pre-battleground group or
@@ -441,10 +459,11 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
             grouped = requester->GetGroup() && requester->GetGroup()->IsMember(row.characterGuid) ? 1u : 0u;
         }
 
-        handler->PSendSysMessage("TBM:ROSTER|%u|%s|%u|%s|%u|%s",
+        handler->PSendSysMessage("TBM:ROSTER|%u|%s|%u|%s|%u|%s|%s",
             row.characterGuid.GetCounter(), ProtocolSafe(name).c_str(), classId,
             ProtocolSafe(state).c_str(), grouped,
-            ProtocolSafe(RosterLocation(mapId, zoneId, areaId)).c_str());
+            ProtocolSafe(RosterLocation(mapId, zoneId, areaId)).c_str(),
+            RosterClassName(classId, requester).c_str());
     }
     handler->PSendSysMessage("TBM:ROSTER_END");
     // Issue #872: rows that currently play on their own, in one extra line so
@@ -542,11 +561,12 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
             }
             profs = ClaimedProfsPolicy::FormatProfs(skills);
         }
-        handler->PSendSysMessage("TBM:CLAIMED|%u|%s|%u|%u|%s|%u|%s|%u|%s|%u",
+        handler->PSendSysMessage("TBM:CLAIMED|%u|%s|%u|%u|%s|%u|%s|%u|%s|%u|%s",
             botGuidLow, ProtocolSafe(name).c_str(), classId, level,
             ProtocolSafe(state).c_str(), grouped,
             ProtocolSafe(RosterLocation(mapId, zoneId, areaId)).c_str(),
-            gearLocked, profs.c_str(), isAlt);
+            gearLocked, profs.c_str(), isAlt,
+            RosterClassName(classId, requester).c_str());
     }
     handler->PSendSysMessage("TBM:CLAIMED_END");
     // Live behaviour snapshot for the controllable party bots (owned alts
