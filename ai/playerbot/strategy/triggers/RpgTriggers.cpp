@@ -968,9 +968,9 @@ bool RpgCampTrigger::IsActive()
         return false;
     }
 
-    auto snapGroundZ = [bot](float x, float y, float z) -> float
+    auto snapGroundZ = [player = bot](float x, float y, float z) -> float
     {
-        if (Map* map = bot->GetMap())
+        if (Map* map = player->GetMap())
         {
             float const floor = map->GetHeight(x, y, z + 5.0f);
             if (floor > INVALID_HEIGHT)
