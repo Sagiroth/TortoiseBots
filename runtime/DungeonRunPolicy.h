@@ -12918,6 +12918,17 @@ inline bool PathFitsStraight(float pathYd, float straightYd)
     return pathYd <= kPathDetourFactor * std::max(straightYd, kArriveYd);
 }
 
+inline bool HopUnitReachable(bool los, bool noPath, bool incomplete, bool shortcut, bool notUsingPath,
+    float endX, float endY, float endZ, float targetX, float targetY, float targetZ,
+    float pathYd, float straightYd)
+{
+    if (!los)
+        return false;
+    if (!NavPathReaches(noPath, incomplete, shortcut, notUsingPath, endX, endY, endZ, targetX, targetY, targetZ))
+        return false;
+    return pathYd <= std::max(straightYd * kPathDetourFactor, straightYd + kHopPullYd);
+}
+
 // Whether plan step `i` (a pull or boss of the party's team) is a live pack for the walk back: the current step and
 // later ones (LiveFrom), one left uncleared, or one before the run's start step.
 inline bool WalkBackPackLive(const Run& r, std::size_t i)
@@ -15358,6 +15369,8 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
         return FightEnd::NotYet;
     if ((s.flags & ai::kPlanFlagAmbush) && !r.walkedThrough)
         return FightEnd::NotYet;
+    if (s.kind == PlanStepKind::Boss && BossDownEvidence(r, f))
+        return FightEnd::BossDown;
     if (UnitsOutOfReach(r, f))
         return FightEnd::OutOfReach;
     for (const UnitFact& u : f.units)
@@ -15372,8 +15385,7 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
                 return FightEnd::NotYet;
         return FightEnd::Cleared;
     }
-    // Checked before the away-wait, so a boss whose script changed his entry never starts it.
-    return BossDownEvidence(r, f) ? FightEnd::BossDown : FightEnd::NotYet;
+    return FightEnd::NotYet;
 }
 
 // Where a place lies from the lead bot, for a boss step's pause: "N yd from the lead bot (M yd above it)" (or below),
@@ -15645,6 +15657,13 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         }
         if (r.fruitlessPulls >= kFruitlessPulls)
         {
+            if (s.kind == PlanStepKind::Boss && !(s.flags & ai::kPlanFlagSkipUnreachable))
+            {
+                Pause(r, "boss " + std::to_string(s.entry) + " out of reach after " +
+                    std::to_string(kFruitlessPulls) +
+                    " pulls that killed nothing: bring the party where it can reach him, then .bot run resume, or .bot run skip");
+                return;
+            }
             for (const UnitFact& u : f.units)
                 if (u.hostile && !r.passed.count(u.guid))
                     r.unreachable.insert(u.guid);
@@ -15726,6 +15745,12 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
     std::string const what = s.kind == PlanStepKind::Boss ? "boss" : "pack";
     if (end == FightEnd::OutOfReach)
     {
+        if (s.kind == PlanStepKind::Boss && !(s.flags & ai::kPlanFlagSkipUnreachable))
+        {
+            Pause(r, "boss " + std::to_string(s.entry) +
+                " is out of reach: bring the party where it can reach him, then .bot run resume, or .bot run skip");
+            return;
+        }
         r.notCleared.insert(r.step);
         NextStep(r, what + " skipped, not cleared: " + std::to_string(UnitsOutOfReach(r, f)) + " units out of reach");
     }
