@@ -2988,6 +2988,14 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     if (filtered.empty())
         return;
 
+    // A fresh command must always get its answer, even one identical to a
+    // reply the repeat guards just suppressed.
+    if (&fromPlayer != bot)
+    {
+        whispers.clear();
+        errorTells.clear();
+    }
+
     if (filtered.substr(0, 6) == "debug " && &fromPlayer != bot)
     {
         // `debug <remote>` diagnostics stay GM-only; refusals keep the exact

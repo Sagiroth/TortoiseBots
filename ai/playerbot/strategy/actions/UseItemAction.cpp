@@ -393,6 +393,24 @@ bool UseAction::Execute(Event& event)
         }
     }
 
+    // A key used on nothing in particular (TBM's Use button, "u [key]") is meant for the
+    // lock it opens: walk up to the nearest one and open it as a player's click does.
+    if (itemID && !targetGameObject && !targetItem)
+    {
+        if (GameObject* lock = NearestLockFor(itemID))
+        {
+            if (bot->GetDistance(lock) <= INTERACTION_DISTANCE)
+                return UseGameObject(requester, event, lock);
+
+            std::string const link = chat->formatGameobject(lock);
+            if (!ai->DoSpecificAction("go", Event("use key", link, requester), true))
+                return false;
+            float const seconds = bot->GetDistance(lock) / std::max(1.0f, bot->GetSpeed(MOVE_RUN));
+            ai->QueueChatCommand("u " + link, requester, time(0) + static_cast<time_t>(seconds) + 2);
+            return true;
+        }
+    }
+
     if (targetGameObject != nullptr)
     {
         if (itemID != 0)
@@ -427,6 +445,32 @@ bool UseAction::Execute(Event& event)
 
     ai->TellPlayerNoFacing(requester, "No items or game objects available");
     return false;
+}
+
+GameObject* UseAction::NearestLockFor(uint32 keyItemId)
+{
+    GameObject* nearest = nullptr;
+    float closest = 30.0f;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los"))
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !go->GetGOInfo() || !sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY)
+            continue;
+        LockEntry const* lock = sLockStore.LookupEntry(go->GetGOInfo()->GetLockId());
+        if (!lock)
+            continue;
+        bool opensIt = false;
+        for (int i = 0; i < 8; ++i)
+            if (lock->Type[i] == LOCK_KEY_ITEM && lock->Index[i] == keyItemId)
+                opensIt = true;
+        float const distance = bot->GetDistance(go);
+        if (opensIt && distance < closest)
+        {
+            nearest = go;
+            closest = distance;
+        }
+    }
+    return nearest;
 }
 
 bool CommanderUseAction::Execute(Event& event)
