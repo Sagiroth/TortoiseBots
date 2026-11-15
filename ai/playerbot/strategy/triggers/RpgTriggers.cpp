@@ -968,6 +968,31 @@ bool RpgCampTrigger::IsActive()
         return false;
     }
 
+    auto snapGroundZ = [bot](float x, float y, float z) -> float
+    {
+        if (Map* map = bot->GetMap())
+        {
+            float const floor = map->GetHeight(x, y, z + 5.0f);
+            if (floor > INVALID_HEIGHT)
+                return floor;
+        }
+        return z;
+    };
+
+    TortoiseBots::CampPoint const castPt = TortoiseBots::ComputeTentCastPoint(spot->x, spot->y, spot->z, spot->orientation);
+    TortoiseBots::CampPoint const firePt = TortoiseBots::ComputeFireCastPoint(spot->x, spot->y, spot->z, spot->orientation);
+    TortoiseBots::CampPoint const seatPt = TortoiseBots::ComputeOwnerSeatPoint(spot->x, spot->y, spot->z, spot->orientation);
+    float const castZ = snapGroundZ(castPt.x, castPt.y, castPt.z);
+    float const fireZ = snapGroundZ(firePt.x, firePt.y, firePt.z);
+    float const seatZ = snapGroundZ(seatPt.x, seatPt.y, seatPt.z);
+    if (!TortoiseBots::IsCampTerrainLevel(castZ, fireZ, seatZ))
+    {
+        state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
+        sLog.outDetail("TortoiseBots: [Camp] %s: skipped spot %u (%s) due to slope (castZ=%.1f fireZ=%.1f seatZ=%.1f).",
+            bot->GetName(), spot->id, spot->name.c_str(), castZ, fireZ, seatZ);
+        return false;
+    }
+
     state.phase = PlayerbotAI::CampPhase::MovingToSpot;
     state.isJoiner = false;
     state.moveStartedMs = now;

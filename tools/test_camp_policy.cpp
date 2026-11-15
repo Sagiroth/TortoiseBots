@@ -174,5 +174,11 @@ int main()
     assert(!ShouldFinishCampMove(3.0f, CAMP_ARRIVAL_RANGE_YD, 14999, CAMP_MOVE_TIMEOUT_MS));
     assert(ShouldFinishCampMove(12.0f, CAMP_ARRIVAL_RANGE_YD, 15000, CAMP_MOVE_TIMEOUT_MS));
 
+    // Slope / ground height guard
+    assert(IsCampTerrainLevel(80.0f, 81.5f, 82.9f));
+    assert(IsCampTerrainLevel(80.0f, 80.0f, 83.0f));
+    assert(!IsCampTerrainLevel(89.8f, 81.4f, 81.2f));
+    assert(!IsCampTerrainLevel(80.0f, 83.1f, 80.5f));
+
     return 0;
 }

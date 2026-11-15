@@ -29,6 +29,7 @@ inline constexpr float CAMP_FIRE_OFFSET_YD = 3.0f;
 inline constexpr float CAMP_OWNER_SEAT_OFFSET_YD = 2.5f;
 inline constexpr float CAMP_JOINER_SEAT_OFFSET_YD = 4.8f;
 inline constexpr float CAMP_QUARTER_PI = 0.7853981633974483f;
+inline constexpr float CAMP_MAX_SLOPE_Z_DIFF_YD = 3.0f;
 
 inline constexpr uint32_t CAMP_SCAN_COOLDOWN_MS = 10000;
 inline constexpr uint32_t CAMP_ROLL_RETRY_COOLDOWN_MS = 30000;
@@ -49,6 +50,22 @@ inline bool ShouldFinishCampMove(float dist2d,
                                  uint64_t timeoutMs)
 {
     return dist2d <= arrivalRangeYd || HasCampMoveTimedOut(elapsedMs, timeoutMs);
+}
+
+inline bool IsCampTerrainLevel(float castZ,
+                               float fireZ,
+                               float seatZ,
+                               float maxDiffYd = CAMP_MAX_SLOPE_Z_DIFF_YD)
+{
+    float minZ = castZ;
+    if (fireZ < minZ) minZ = fireZ;
+    if (seatZ < minZ) minZ = seatZ;
+
+    float maxZ = castZ;
+    if (fireZ > maxZ) maxZ = fireZ;
+    if (seatZ > maxZ) maxZ = seatZ;
+
+    return (maxZ - minZ) <= maxDiffYd;
 }
 
 enum class CampCastWaitResult : uint8_t
