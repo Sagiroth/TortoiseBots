@@ -134,6 +134,73 @@ int main()
     CHECK(!AbandonedInstanceGraceElapsed(1000, 5000, 0));
     CHECK(!AbandonedInstanceGraceElapsed(2000, 1000, 90));
 
+    // Orphaned bot-only group policy (e.g. LFT fillers after player leaves).
+    auto makeOrphanedGroupBase = []() {
+        OrphanedBotGroupFacts f;
+        f.isHeadless = true;
+        f.inWorld = true;
+        f.beingTeleported = false;
+        f.inBattleground = false;
+        f.randomBot = true;
+        f.inWorldLifecycle = true;
+        f.hasMaster = false;
+        f.hired = false;
+        f.pinned = false;
+        f.dungeonCrew = false;
+        f.commandedGroup = false;
+        f.inGroup = true;
+        f.groupHasRealPlayer = false;
+        return f;
+    };
+
+    CHECK(IsOrphanedInBotGroup(makeOrphanedGroupBase()));
+
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.groupHasRealPlayer = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.inGroup = false;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.dungeonCrew = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.commandedGroup = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.hired = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.randomBot = false; // owned alt
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.hasMaster = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.pinned = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+    {
+        OrphanedBotGroupFacts f = makeOrphanedGroupBase();
+        f.inBattleground = true;
+        CHECK(!IsOrphanedInBotGroup(f));
+    }
+
     std::printf("test_abandoned_instance_policy: %d checks passed\n", checks);
     return 0;
 }

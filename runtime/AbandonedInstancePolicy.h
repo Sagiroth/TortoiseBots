@@ -53,4 +53,34 @@ inline bool AbandonedInstanceGraceElapsed(std::int64_t firstSeenSec, std::int64_
     return static_cast<std::uint64_t>(nowSec - firstSeenSec) >= graceSec;
 }
 
+struct OrphanedBotGroupFacts
+{
+    bool isHeadless = false;
+    bool inWorld = false;
+    bool beingTeleported = false;
+    bool inBattleground = false;
+    bool randomBot = false;
+    bool inWorldLifecycle = false;
+    bool hasMaster = false;
+    bool hired = false;
+    bool pinned = false;
+    bool dungeonCrew = false;
+    bool commandedGroup = false;
+    bool inGroup = false;
+    bool groupHasRealPlayer = false;
+};
+
+inline bool IsOrphanedInBotGroup(OrphanedBotGroupFacts const& f)
+{
+    if (!f.isHeadless || !f.inWorld || f.beingTeleported || f.inBattleground)
+        return false;
+    if (!f.randomBot || !f.inWorldLifecycle || f.hasMaster)
+        return false;
+    if (f.hired || f.pinned || f.dungeonCrew || f.commandedGroup)
+        return false;
+    if (!f.inGroup || f.groupHasRealPlayer)
+        return false;
+    return true;
+}
+
 } // namespace TortoiseBots

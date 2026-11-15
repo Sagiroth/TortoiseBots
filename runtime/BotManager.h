@@ -330,6 +330,9 @@ private:
     void SweepAbandonedInstanceBots(uint32_t diff);
     uint32_t m_instanceSweepElapsedMs = 0;
     std::unordered_map<uint32_t, time_t> m_abandonedInstanceSince; // key = guid counter
+    void SweepOrphanedBotGroups(uint32_t diff);
+    uint32_t m_orphanedGroupSweepElapsedMs = 0;
+    std::unordered_map<uint32_t, time_t> m_orphanedGroupSince; // key = guid counter
     uint8_t m_packetTestStage = 0;
 };
 } // namespace TortoiseBots

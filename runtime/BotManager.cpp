@@ -1050,6 +1050,85 @@ void BotManager::SweepAbandonedInstanceBots(uint32_t diff)
     }
 }
 
+void BotManager::SweepOrphanedBotGroups(uint32_t diff)
+{
+    m_orphanedGroupSweepElapsedMs += diff;
+    if (m_orphanedGroupSweepElapsedMs < INSTANCE_SWEEP_INTERVAL_MS)
+        return;
+    m_orphanedGroupSweepElapsedMs = 0;
+
+    uint32 const graceSec = sPlayerbotAIConfig.abandonedInstanceGraceSec;
+    if (graceSec == 0)
+    {
+        m_orphanedGroupSince.clear();
+        return;
+    }
+
+    time_t const now = time(nullptr);
+    for (auto& [key, entry] : m_bots)
+    {
+        BotRecord& rec = entry.record;
+        ::Player* p = sObjectAccessor.FindPlayer(rec.characterGuid);
+        Group* group = p ? p->GetGroup() : nullptr;
+
+        bool hasRealPlayer = p && GroupHasRealPlayer(p);
+        if (!hasRealPlayer && group)
+        {
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            {
+                if (!IsBot(slot.guid))
+                {
+                    hasRealPlayer = true;
+                    break;
+                }
+            }
+        }
+
+        OrphanedBotGroupFacts facts;
+        facts.isHeadless = p && p->GetSession() && p->GetSession()->IsHeadless();
+        facts.inWorld = p && p->IsInWorld();
+        facts.beingTeleported = p && p->IsBeingTeleported();
+        facts.inBattleground = p && p->InBattleGround();
+        facts.randomBot = rec.random;
+        facts.inWorldLifecycle = rec.lifecycle == BotLifecycle::InWorld;
+        facts.hasMaster = !rec.masterGuid.IsEmpty();
+        facts.hired = HireLifecycle::Instance().IsHired(rec.characterGuid);
+        facts.pinned = sRandomBotFacade.IsPinnedBot(key);
+        facts.dungeonCrew = BotActivityLeaseManager::Instance().GetActivity(key) == BotActivity::Dungeon;
+        facts.commandedGroup = p && BotCommands::IsInCommandedGroup(p);
+        facts.inGroup = group != nullptr;
+        facts.groupHasRealPlayer = hasRealPlayer;
+
+        if (!IsOrphanedInBotGroup(facts))
+        {
+            m_orphanedGroupSince.erase(key);
+            continue;
+        }
+
+        auto it = m_orphanedGroupSince.find(key);
+        if (it == m_orphanedGroupSince.end())
+        {
+            m_orphanedGroupSince.emplace(key, now);
+            continue;
+        }
+        if (!AbandonedInstanceGraceElapsed(it->second, now, graceSec))
+            continue;
+        m_orphanedGroupSince.erase(it);
+
+        WorldPacket leave;
+        p->GetSession()->HandleGroupDisbandOpcode(leave);
+        sLog.outString("TortoiseBots: random bot %s left orphaned bot-only group", p->GetName());
+    }
+
+    for (auto it = m_orphanedGroupSince.begin(); it != m_orphanedGroupSince.end();)
+    {
+        if (m_bots.find(it->first) == m_bots.end())
+            it = m_orphanedGroupSince.erase(it);
+        else
+            ++it;
+    }
+}
+
 // A Headless session must never render an owned bot as an account-level GM.
 // Its Network owner retains all account privileges; this only normalizes the
 // separately logged-in bot character after the core restores saved GM flags.
@@ -2732,6 +2811,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     SweepDeadBots(diff);
     SweepStrandedBots(diff);
     SweepAbandonedInstanceBots(diff);
+    SweepOrphanedBotGroups(diff);
     // Guild public notes queued by map threads (package 7): Guild state is
     // only touched here, on the world thread.
     DrainPublicNoteQueue();
