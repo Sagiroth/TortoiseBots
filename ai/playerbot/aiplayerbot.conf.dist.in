@@ -3277,6 +3277,10 @@ AiPlayerbot.PassiveDelay = 10000
 # Minimum delay between repeating actions (chat messages, emotes etc)
 AiPlayerbot.RepeatDelay = 5000
 
+# Minimum delay before a bot repeats the same error message to a player.
+# A new command from the player resets it, so command replies always arrive.
+AiPlayerbot.ErrorRepeatDelay = 30000
+
 AiPlayerbot.RpgDelay = 10000
 
 AiPlayerbot.SitDelay = 20000

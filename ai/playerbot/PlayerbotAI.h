@@ -1145,6 +1145,7 @@ protected:
     CompositeChatFilter chatFilter;
     PlayerbotSecurity security;
     std::map<std::string, time_t> whispers;
+    std::map<std::string, time_t> errorTells;
     std::pair<ChatMsg, time_t> currentChat;
     static std::set<std::string> unsecuredCommands;
     bool allowActive[MAX_ACTIVITY_TYPE];
