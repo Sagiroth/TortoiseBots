@@ -194,6 +194,22 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.25.1 (2026-11-15)
+
+### Classes & Combat
+- Bots now remove harmful effects from warlock demons and hunter pets, not just from players. [#1622](https://github.com/Sagiroth/TortoiseBots/pull/1622)
+- Bots now clear spreading debuffs first, so fewer allies get re-infected and healers waste less mana. [#1622](https://github.com/Sagiroth/TortoiseBots/pull/1622)
+- Vanity pets are never targeted for cleansing, so cosmetic companions stay out of the way. [#1622](https://github.com/Sagiroth/TortoiseBots/pull/1622)
+
+### Boss Fights & Dungeons
+- Hunter bots no longer pick a spread-out spot inside Auto Shot's dead zone; turn on the new `AiPlayerbot.SpreadRangedMinRange` setting to use this. [#1620](https://github.com/Sagiroth/TortoiseBots/pull/1620)
+- Cancelled bot casts are now labelled with the ability that was stopped, so you can see why a bot held back. [#1620](https://github.com/Sagiroth/TortoiseBots/pull/1620)
+- Bots now hold their position properly during magma phases instead of drifting out of place. [#1620](https://github.com/Sagiroth/TortoiseBots/pull/1620)
+- Bots now ring Arlokk's gong as intended during the Zul'Gurub fight. [#1620](https://github.com/Sagiroth/TortoiseBots/pull/1620)
+- Healer bots are more careful about starting a heal at the wrong moment. [#1620](https://github.com/Sagiroth/TortoiseBots/pull/1620)
+
+---
+
 ## v1.25.0 (2026-11-14)
 
 ### Classes & Combat
