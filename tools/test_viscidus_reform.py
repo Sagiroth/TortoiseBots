@@ -82,7 +82,7 @@ struct WorldTimer{static unsigned getMSTime(){return 10000;}};
 struct Config{void logEvent(void*,const char*,const char*,std::string){}}sPlayerbotAIConfig;
 struct ViscidusCombatAction{Player* bot;void* ai=nullptr;unsigned ringReported=0;bool safe=false,fallback=true,moved=false;int chosen=0;
  bool RingPoint(WorldPosition& p){p.slot=1;return true;}bool CheckedRoute(WorldPosition){return safe;}
- bool RingFallback(WorldPosition& p){p.slot=2;return fallback;}bool MoveTo(WorldPosition p){chosen=p.slot;return moved=true;}
+ bool RingFallback(WorldPosition& p){p.slot=2;return fallback;}bool MoveTo(WorldPosition p,bool,bool,bool,bool,const char*){chosen=p.slot;return moved=true;}
  bool MoveRing();};
 '''+block(s,'bool ViscidusCombatAction::MoveRing(')+r'''
 int main(){Player bot;ViscidusCombatAction a{&bot};assert(a.MoveRing()&&a.chosen==2);

@@ -41,6 +41,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.BossStandOutranksBreathDodge`](#aiplayerbotbossstandoutranksbreathdodge) | `0` | `1`: a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots (recommended on). |
 | [`AiPlayerbot.DungeonRunBossSpreadSlots`](#aiplayerbotdungeonrunbossspreadslots) | `0` | `1`: each ranged bot and healer of a live `spread` row owns a fixed ring slot and stands on it between the doses; off keeps the step-away (recommended on, needs `DungeonRunBossSpread`). |
+| [`AiPlayerbot.SpreadRangedMinRange`](#aiplayerbotspreadrangedminrange) | `0` | `1`: a hunter's spread ring slot never lands nearer the boss than the boss's reach + 8 + 2 yd, out of Auto Shot's dead zone (recommended on, needs `DungeonRunBossSpreadSlots`). |
 | [`AiPlayerbot.DungeonRunBossProtectionPotion`](#aiplayerbotdungeonrunbossprotectionpotion) | `0` | `1`: a `spread` row also names the protection potion its boss calls for (`spell_id`'s school) and who drinks it (`priority`'s role mask); off keeps only the built-in boss list (needs the boss tactics, `AiPlayerbot.DungeonTactics = 1` or a commander-bound run group, and the rows). |
 | [`AiPlayerbot.DungeonRunHealReserve`](#aiplayerbotdungeonrunhealreserve) | `0` | `0` (keep off: walk 75 showed more early deaths, 1.3 to 3.1 deaths by 90 s per fight, though healer mana at 60 s rose 12 points): a live `heal_reserve` row raises the top-up mana line to its percent outside the row's release window; off keeps the `MediumMana` rule. |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
@@ -71,6 +72,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left. |
 | [`AiPlayerbot.RaidTankHealerAssist`](#aiplayerbotraidtankhealerassist) | `0` | `1`: a layout tank healer's second seat on its tank heals a raid member in sight and in range below 70% while the tank is quiet (not on a boss, 90%+ after incoming damage). |
 | [`AiPlayerbot.RaidReactions`](#aiplayerbotraidreactions) | `0` | `1`: the reaction engine answers the universal raid hazards — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread. |
+| [`AiPlayerbot.ReactionHealCastGuardPct`](#aiplayerbotreactionhealcastguardpct) | `0` | The opening percent of a healer's heal that `boss tactics seek` and `raid spread` may still cut; from it on the heal stands (recommended on at `1`). |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunPullGate`](#aiplayerbotdungeonrunpullgate) | `0` | `1`: the run leader never pulls a boss its `pull_gate` row gates while the boss wears the row's aura, and ends the run after the row's seconds (Hakkar needs all of this, seek, charm yield and boss spread, plus the aura tactics). |
 | [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | Every firing stand the run leader picks (an authored stand-pull step's own pull, this key being what gives that step a stand rule, a generic pull's with `AiPlayerbot.DungeonRunPullStand`) is refused when another live pack (its patrol loop included) can reach it; none clear, the stand the key is off for is used (advisory). |
@@ -743,6 +745,17 @@ Whether the reaction engine answers the universal raid hazards.
 
 </details>
 
+### `AiPlayerbot.ReactionHealCastGuardPct`
+Whether a positioning reaction may still break a healer's heal once it is under way, and how far into the cast it may.
+**Default:** `0` · **Values:** `0` off (every reaction breaks a cast at pick time, as before), `1` on (recommended on: only the first percent of the cast may be cut), `1`-`100` the opening percent of the cast that may still be cut (clamped) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Cast guard:** the reaction engine breaks a bot's cast the moment it *picks* a reaction whose action asks for it, before that action's own pass can find it has nothing to do. `boss tactics seek` and `raid spread` are both movement actions, so both asked for the break, and both usually pass without a step (the seek already at the gather, a spread slot already held): walk 102 over 25 Hakkar fights measured 10.5 heals cut per healer per fight (a median cut at 4 % of the cast, 79 % of the cuts under 10 %), 74.5 % of the cuts the diagnostics could label going to the seek and most of the rest to `raid spread`. With the key on, those two actions stand down for a bot that heals, casting a spell that heals outright or over time, once the cast is past this percent; below it the cast still breaks. Every other reaction keeps cutting (freeze, flee, bomb runout, avoid aoe, hazard, potions, victim escape, BoP, the dispels), and a seek or spread that really walks still breaks the cast through the walk itself. With the key off, every reaction breaks the cast as it did.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunBossSpread`
 Whether the boss tactics widen the ranged raid's spacing while a `spread` row's boss fights.
 **Default:** `0` · **Values:** `0` off (the ordinary 10 yd spacing, and a stay order keeps its bot in place), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -771,6 +784,16 @@ Whether a live `heal_reserve` boss-tactic row raises the healer's top-up mana li
 <summary>How it works in detail</summary>
 
 **Healer top-up reserve:** the AI boss tactics table's `heal_reserve` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)). The row names the boss itself (`target_entry` 0), the reserve percent (`param`, 10-100) and the release lead in seconds (`window_s`, 0-120, `0` = never released); its health band arms it. While such a row of the boss's fight is live, the two almost-full top-up gates — the "party member almost full health" trigger and the druid's rejuvenation spread — need `param` % of mana instead of `MediumMana`, and the heal pick skips a refused top-up candidate so the heal falls to a tank, the boss's current victim or a lower heal tier (empty when there is none). The release window opens when the fight's Blood Siphon clock (the `seek_aura` row's) is `window_s` seconds or less away: inside it the healer is back on today's rule, so the gather's expensive casts are not held back. Without `AiPlayerbot.DungeonRunSeekAura` there is no clock, so the reserve is never released: both keys are needed for walk 75. Tanks and the boss's current victim (from the `heal_reserve` row's own boss, not the seek key) always keep today's rule; the medium, low and critical heal tiers, self heals, dispels and tank heals never change, and both gates and the pick classify the tier on the pick's effective health (incoming heals credited, predicted incoming damage applied), never the raw health percent. Several live rows keep the highest `param` with its own window. `BossTacticsHealReserve` logs one row per healer per 5 s with the key on: `mana=`, `reserve=`, `released=`, `refused=` (AI updates on which an almost-full top-up candidate was refused, at most one per healer per update; non-healers and lower-tier targets count nothing) and `due_in=` (`-1` without the seek key).
+
+</details>
+### `AiPlayerbot.SpreadRangedMinRange`
+Whether a spread ring slot keeps a class that shoots from a dead zone far enough from the boss to shoot.
+**Default:** `0` · **Values:** `0` off (the plain rings; a hunter's slot may land inside the dead zone), `1` on (recommended on; needs `AiPlayerbot.DungeonRunBossSpreadSlots`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Minimum range for a shot:** a hunter's Auto Shot cannot hit a target nearer than 8 yd. The ring points are built around the boss anchor with no floor from the boss, so a hunter's slot could land inside that dead zone; the dead-zone step-out then walks her out to about 15 yd and the slot pulls her back, a loop that also cancelled her shot. With the key on, a class that needs a minimum range gets its own ring point moved out along its bearing from the boss until it is at least the boss's combat reach + the shot's 8 yd dead zone + her own combat reach + 2 yd (the distance within which she already counts as standing on it) + 1 yd of margin from the boss (the slot keeps its ring and index), and only the points the group actually owns push her, since an empty ring point is nobody's place to stand. If the moved point lands within the row's spacing of another member's point it steps along the same circle by spacing-sized angles, alternating sides, until it is clear: 8 steps at most, otherwise the roomiest candidate. Every member snaps the boss's position down to the whole yard before it builds that map, so a boss drifting a fraction of a yard between two bots' reads still names the same points. A slot already that far, a caster's and a healer's point, and everything with the key off stay exactly as they are. If the live anchor's circle refuses the moved point (the clamp would move it), the slot is unusable and the bot holds instead of walking back into the dead zone.
 
 </details>
 ### `AiPlayerbot.DungeonRunAvoidCastAll`

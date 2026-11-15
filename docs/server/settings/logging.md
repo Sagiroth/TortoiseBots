@@ -474,5 +474,12 @@ change: info1 is the move type (`walk`, `run`, `run_back`, `swim`, `swim_back`,
 `turn_rate`) and info2 is `rate=<applied rate>|counter=<packet counter>|slowed=<1
 while a speed-reducing aura is worn>`, at most one row per bot per second. They
 show whether a slow aura applies and clears at once on a bot (the Sand Storm's
-Harsh Winds pulses every second). Disable the option after collecting a diagnostic capture.
+Harsh Winds pulses every second). The key also gates the `CastCancel` row: every
+module-side cast cancel (the spread slot's step, the seek walk-out, the
+wasteful-heal interrupt, the AI's interrupt choke point (a walk with no site
+of its own reads `move_to`) and the encounter actions) writes the bot, `site=`, `slot=` (generic, channeled,
+autorepeat or melee), `spell=`, `cast_pct=` (how far the cast had got, `-1` for
+an instant), `target=` (resolved by guid when the row is written, `none` once the unit left the world) and `moved_yd=` (how far the cancel moved the bot). It
+is observation only and changes no cast. Disable the option after collecting a
+diagnostic capture.
 See [column definitions and coverage](../../developers/host-api.md#csv-columns-unchanged-nine-column-layout).

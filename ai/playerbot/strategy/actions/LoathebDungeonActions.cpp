@@ -81,13 +81,15 @@ bool LoathebPositionAction::Execute(Event& event)
             return false;
         if (bot->GetDistance2d(2877.57f, -3967.00f) < 3.0f)
             return false;
-        return MoveTo(bot->GetMapId(), 2877.57f, -3967.00f, bot->GetPositionZ());
+        return MoveTo(bot->GetMapId(), 2877.57f, -3967.00f, bot->GetPositionZ(), false, false, false, false,
+                      "loatheb_tank_spot");
     }
     if (ai->IsRanged(bot))
     {
         if (bot->GetDistance2d(2896.96f, -3980.61f) < 5.0f)
             return false;
-        return MoveTo(bot->GetMapId(), 2896.96f, -3980.61f, bot->GetPositionZ());
+        return MoveTo(bot->GetMapId(), 2896.96f, -3980.61f, bot->GetPositionZ(), false, false, false, false,
+                      "loatheb_ranged_spot");
     }
     return false;
 }

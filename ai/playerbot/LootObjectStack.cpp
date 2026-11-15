@@ -28,7 +28,7 @@ using namespace ai;
 // combat again, so those kills were never looted at all.
 #define LOOT_OBJECT_TTL_SECONDS 180
 
-LootTarget::LootTarget(ObjectGuid guid) : guid(guid), asOfTime(time(0))
+LootTarget::LootTarget(ObjectGuid guid, bool playerOrder) : guid(guid), asOfTime(time(0)), playerOrder(playerOrder)
 {
 }
 
@@ -36,6 +36,7 @@ LootTarget::LootTarget(LootTarget const& other)
 {
     guid = other.guid;
     asOfTime = other.asOfTime;
+    playerOrder = other.playerOrder;
 }
 
 LootTarget& LootTarget::operator=(LootTarget const& other)
@@ -45,6 +46,7 @@ LootTarget& LootTarget::operator=(LootTarget const& other)
 
     guid = other.guid;
     asOfTime = other.asOfTime;
+    playerOrder = other.playerOrder;
 
     return *this;
 }
@@ -65,8 +67,8 @@ void LootTargetList::shrink(time_t fromTime)
     }
 }
 
-LootObject::LootObject(Player* bot, ObjectGuid guid)
-	: guid(), skillId(SKILL_NONE), reqSkillValue(0), reqItem(0)
+LootObject::LootObject(Player* bot, ObjectGuid guid, bool playerOrder)
+	: guid(), playerOrder(playerOrder), skillId(SKILL_NONE), reqSkillValue(0), reqItem(0)
 {
     Refresh(bot, guid);
 }
@@ -156,8 +158,9 @@ static bool CollectCommonChestLoot(LootTemplateAccess const* access, std::vector
 }
 
 // An open chest holding only common/poor items and nothing a quest of this
-// bot needs: a world prop (festive mug, feast food).
-static bool IsCommonWorldProp(Player* bot, GameObject* go)
+// bot needs: a world prop (festive mug, feast food). A player's or commander's
+// explicit order on the object keeps it (playerOrder).
+static bool IsCommonWorldProp(Player* bot, GameObject* go, bool playerOrder)
 {
     if (go->GetGoType() != GAMEOBJECT_TYPE_CHEST || !go->GetGOInfo())
         return false;
@@ -166,6 +169,7 @@ static bool IsCommonWorldProp(Player* bot, GameObject* go)
         return false;
     ai::GameObjectPickupFacts facts;
     facts.isChest = true;
+    facts.playerOrder = playerOrder;
     std::vector<uint32> items;
     facts.onlyCommonLoot = CollectCommonChestLoot(
         reinterpret_cast<LootTemplateAccess const*>(pickupLoot), items, 0);
@@ -354,7 +358,7 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     if (this->guid.IsGameObject() && skillId == SKILL_NONE && !reqItem)
     {
         GameObject* go = ai->GetGameObject(this->guid);
-        if (go && IsCommonWorldProp(bot, go))
+        if (go && IsCommonWorldProp(bot, go, playerOrder))
         {
             if (debug)
                 ai->TellDebug(ai->GetMaster(), "Go is a common world prop.", "debug loot");
@@ -383,6 +387,7 @@ WorldObject* LootObject::GetWorldObject(Player* bot)
 LootObject::LootObject(const LootObject& other)
 {
     guid = other.guid;
+    playerOrder = other.playerOrder;
     skillId = other.skillId;
     reqSkillValue = other.reqSkillValue;
     reqItem = other.reqItem;
@@ -656,7 +661,7 @@ bool LootObjectStack::TakePlayerOrder(ObjectGuid guid)
     return fresh;
 }
 
-bool LootObjectStack::Add(ObjectGuid guid)
+bool LootObjectStack::Add(ObjectGuid guid, bool playerOrder)
 {
     if (!TortoiseBots::HireMayLoot(TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
             sPlayerbotAIConfig.hireLoot))
@@ -674,7 +679,7 @@ bool LootObjectStack::Add(ObjectGuid guid)
     // "add gathering loot" runs every second above travel, and counting the node it had
     // already queued as done took the decision of bots standing next to an ore vein or herb.
     bool const known = availableLoot.erase(LootTarget(guid)) > 0;
-    availableLoot.insert(LootTarget(guid));
+    availableLoot.insert(LootTarget(guid, playerOrder));
 
     if (availableLoot.size() < MAX_LOOT_OBJECT_COUNT)
         return !known;
@@ -756,7 +761,9 @@ std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
                 continue;
         }
 
-        LootObject lootObject(bot, guid);
+        // The entry's own provenance: a player's order on a chest holding only common loot
+        // must survive Refresh here, or it is cleared before GetLoot can return it.
+        LootObject lootObject(bot, guid, i->playerOrder);
         if (!lootObject.IsLootPossible(bot))
             continue;
 

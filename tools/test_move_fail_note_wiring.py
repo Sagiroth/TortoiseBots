@@ -51,7 +51,7 @@ class MoveFailNoteWiringTest(unittest.TestCase):
         self.assertIn("failNoteMark = AI_VALUE(LastMovement&, \"last movement\").moveTries;", body(MOVES, "void MovementAction::BeforeExecute()", "\n}\n"))
         move = body(MOVES, "bool MovementAction::MoveTo2(", "\n}\n")
         self.assertIn("    ++lastMove.moveTries;\n    lastMove.moveFailReason = MOVE_FAIL_NONE;\n    lastMove.movePathType = 0;\n\n    if (!endPos.isValid())", move)
-        unit = body(MOVES, "bool MovementAction::MoveTo(Unit* target, float distance)", "\n}\n")
+        unit = body(MOVES, "bool MovementAction::MoveTo(Unit* target, float distance, const char* castCancelSite)", "\n}\n")
         self.assertIn("    ++unitMove.moveTries;\n    unitMove.moveFailReason = MOVE_FAIL_NONE;", unit)
         self.assertIn("moveTries = other.moveTries;", LASTMOVE)
         self.assertNotIn("moveTries = 0;\n", body(LASTMOVE, "void clear()", "\n        }\n"))

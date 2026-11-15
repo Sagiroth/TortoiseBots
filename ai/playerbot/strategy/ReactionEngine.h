@@ -22,6 +22,7 @@ namespace ai
         void SetDuration(uint32 inDuration) { duration = inDuration; }
         bool ShouldInterruptCast() const { return action ? action->ShouldReactionInterruptCast() : false; }
         bool ShouldInterruptMovement() const { return action ? action->ShouldReactionInterruptMovement() : false; }
+        bool YieldsToHealCast() const { return action ? action->ReactionYieldsToHealCast() : false; }
 
     private:
         Event event;

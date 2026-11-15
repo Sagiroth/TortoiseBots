@@ -90,8 +90,8 @@ class ShadeCoverRow(unittest.TestCase):
     def test_documented(self):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
-        # The newest-entry window drops the row's own line out as later changes land
-        # on top (every feature adds a top entry), so read the changelog itself.
+        # The whole file on purpose (the lead's rule): a released entry is pinned wherever it sits, so a newer entry
+        # never pushes an old pin out.
         self.assertIn("BossTacticsShadeCover", CHANGELOG)
         for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "guard", "on_boss", "other_target",
                      "no_target"):
@@ -107,6 +107,7 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn("Recommended on.", member(DOCS_RUNS, "### `AiPlayerbot.DungeonRunShadeHealerCover`", "</details>"))
         self.assertIn("recommended on", member(CONF, "# Shade healer cover at Jin'do", "AiPlayerbot.DungeonRunShadeHealerCover = 0"))
         self.assertIn("DungeonRunShadeHealerCover", DOCS)
+        # Whole-file on purpose, as above: the entry is permanent, its position in the file is not.
         self.assertIn("DungeonRunShadeHealerCover", CHANGELOG)
 
     def test_the_carrier_pick_reads_the_key(self):

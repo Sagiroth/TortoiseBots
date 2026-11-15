@@ -907,6 +907,10 @@ namespace ai
                     continue;
                 if (ai->HasAuraToDispel(member, DISPEL_POISON))
                     return true;
+                Pet* pet = member->GetPet();
+                if (pet && pet->getPetType() != MINI_PET && sServerFacade.IsAlive(pet) &&
+                    ai->HasAuraToDispel(pet, DISPEL_POISON))
+                    return true;
             }
             return false;
         }
@@ -944,6 +948,10 @@ namespace ai
                 if (!member || member == bot || !sServerFacade.IsAlive(member))
                     continue;
                 if (ai->HasAuraToDispel(member, DISPEL_DISEASE))
+                    return true;
+                Pet* pet = member->GetPet();
+                if (pet && pet->getPetType() != MINI_PET && sServerFacade.IsAlive(pet) &&
+                    ai->HasAuraToDispel(pet, DISPEL_DISEASE))
                     return true;
             }
             return false;

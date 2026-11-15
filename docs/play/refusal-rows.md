@@ -290,6 +290,12 @@ and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<class>)`.
 | 46 | `HealSkip` | `execute-refused` | `HealerDiagnostics::CastAttempt` | no (the execute API returns a bool only) | inventory only |
 | 47 | `HealState` | `snapshot` | `HealerDiagnostics::Sample` | not a refusal (a state sample) | document |
 
+### Cast cancels (event `CastCancel`)
+
+| # | Event | Row text / info1 shape | Emit | Reason today | This branch |
+| ---: | :--- | :--- | :--- | :--- | :--- |
+| 44f | `CastCancel` | `site=<word>,slot=<generic\|channeled\|autorepeat\|melee>,spell=<id>,cast_pct=<0-100\|-1>,target=<name\|none>,moved_yd=%.1f` (`slot` is the slot the site really interrupts, one row per slot a multi-slot cancel drops; `site` names the cancel: `spread_slot` and `spread_cut` for the spread slot's step and 6 s cut, `seek_shot`, `seek_walk_back`, `seek_walk_out`, `heal_full` for the "heal target full health" cancel, `ai` for the AI's interrupt choke point behind the reaction engine, `move_to` for a walk that names no site, `move_follow`/`move_reach`/`move_revive`/`move_travel` for the follow, reach, revive and travel walks, `channel`, `freeze`, `tank_swap`, `avoid_cast`, `stand`, `wand`, `successor_white`, `reset_white`, `carrier_strike`, `victim_escape`, `viscidus_retreat`, `viscidus_target`, `viscidus_keep_distance`, `viscidus_freeze`, `viscidus_handoff`, `viscidus_handoff_walk`, `fankriss`, `fankriss_handoff`, `patchwerk_opening`, `patchwerk_soak_stage`, `patchwerk_soak_engage`, `patchwerk_pull_end`, `patchwerk_filler`, `fishing`, `follow`, `heigan_dance`, `onyxia_breath`, `seek_stop`, `bwl_stealth`, `druid_stealth`, `rogue_stealth`, `rogue_vanish`; `cast_pct` `-1` for an instant; `target` is resolved by guid as the row is written, so a unit already removed in that world tick reads `none`) | `ai::LogCastCancel` / `ai::LogCastCancelStop` / `ai::LogCastCancelNonMelee` (`ai/playerbot/CastCancelLog.cpp`), called before each interrupt with `AiPlayerbot.RaidBossDiagnostics` on | yes: `site=` | new |
+
 ### Unstuck
 
 | # | Event | Row text / info1 shape | Emit | Reason today | This branch |

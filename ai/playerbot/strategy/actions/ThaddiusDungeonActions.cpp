@@ -54,7 +54,7 @@ bool ThaddiusAttackNearestPetAction::Execute(Event& event)
     if (current != target)
         return Attack(bot, target);
 
-    return MoveTo(target, 0.0f);
+    return MoveTo(target, 0.0f, "thaddius_follow");
 }
 
 bool ThaddiusMoveToPlatformAction::Execute(Event& event)
@@ -74,15 +74,15 @@ bool ThaddiusMoveToPlatformAction::Execute(Event& event)
     if (bot->GetPositionZ() >= 309.0f)
     {
         // Leg 1: reach the edge. Arrival (false) falls to leg 2.
-        if (MoveTo(bot->GetMapId(), edgeX, edgeY, 312.00f))
+        if (MoveTo(bot->GetMapId(), edgeX, edgeY, 312.00f, false, false, false, false, "thaddius_edge"))
             return true;
         // Leg 2: off the edge through the low spot. Gravity drops Z;
         // arrival falls to leg 3.
-        if (MoveTo(bot->GetMapId(), lowX, lowY, 304.02f))
+        if (MoveTo(bot->GetMapId(), lowX, lowY, 304.02f, false, false, false, false, "thaddius_low"))
             return true;
     }
     // Leg 3: floor center.
-    return MoveTo(bot->GetMapId(), 3512.19f, -2928.58f, 304.02f);
+    return MoveTo(bot->GetMapId(), 3512.19f, -2928.58f, 304.02f, false, false, false, false, "thaddius_floor");
 }
 
 bool ThaddiusMovePolarityAction::Execute(Event& event)
@@ -100,7 +100,8 @@ bool ThaddiusMovePolarityAction::Execute(Event& event)
         { 3512.19f, -2928.58f }, { 3504.68f, -2936.68f },
     };
     const int idx = side * 2 + (ranged ? 1 : 0);
-    return MoveTo(bot->GetMapId(), spots[idx][0], spots[idx][1], bot->GetPositionZ());
+    return MoveTo(bot->GetMapId(), spots[idx][0], spots[idx][1], bot->GetPositionZ(), false, false, false, false,
+                  "thaddius_polarity");
 }
 
 float ThaddiusEvenHpMultiplier::GetValue(Action* action)

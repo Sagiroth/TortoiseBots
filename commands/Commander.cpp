@@ -2877,6 +2877,10 @@ bool HealerPullStand(Player* lead, Unit* target, Player* healer, float& ox, floa
             continue;
         PathFinder path(healer);
         ai::WorldPosition::ExcludeSteepSlopes(path);
+        // The route must be calculated before it is read: a fresh PathFinder's
+        // end is (0, 0, 0), so the distance check below rejected EVERY stand
+        // and the healer never took its pull spot (found 2026-11-13).
+        path.calculate(px, py, ground, false);
         if (path.getPathType() & PATHFIND_NOPATH)
             continue;
         Vector3 const end = path.getActualEndPosition();
@@ -4916,7 +4920,9 @@ uint32 ItemUseSpell(ItemPrototype const* proto)
 ActStart BeginLootAct(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, TaskTarget const& target)
 {
     ObjectGuid const guid(task.targetRaw);
-    ai::LootObject lootObject(bot, guid);
+    // An explicit order: a chest holding only common loot (the Deadmines gunpowder, its key) is
+    // refused by the automatic pickup filter, not by the order.
+    ai::LootObject lootObject(bot, guid, true);
     if (lootObject.IsEmpty())
         return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed, target.creature
             ? "This corpse has nothing this bot may loot under the group's loot rules (another member's turn, already looted, or not tapped by the group)."
@@ -15709,6 +15715,7 @@ static CommanderTelemetry::AuraRead AuraReadOf(SpellAuraHolder const* holder)
     read.aura.dispelType = DispelLetter(proto->Dispel);
     read.passive = holder->IsDeleted() || holder->IsPassive();
     read.negative = !holder->IsPositive();
+    read.aura.spreading = read.negative && read.aura.dispelType != 0 && PlayerbotAI::IsSpreadingAura(proto);
     return read;
 }
 

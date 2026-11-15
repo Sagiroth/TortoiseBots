@@ -109,12 +109,42 @@ class SpreadSlotsWiring(unittest.TestCase):
             read)
         self.assertLess(read.index("task.verdict = SpreadSlotWanted("), read.index("LogBossSpread("))
         words = re.findall(r'case SpreadSlotVerdict::\w+: return "([a-z_]+)";', POLICY)
-        self.assertEqual(len(words), 12)
-        self.assertEqual(len(set(words)), 12)
+        self.assertEqual(len(words), 13)
+        self.assertEqual(len(set(words)), 13)
         # The action logs no verdict of its own; only a move it could not send.
         action = body(ACTIONS, "bool BossTacticsSpreadSlotAction::Execute(Event& event)")
         self.assertNotIn("SpreadSlotVerdictWord", action)
         self.assertIn('LogBossSpread(ai, bot, "move_failed"', action)
+
+    def test_the_dead_zone_guard_refuses_the_slot_without_the_key(self):
+        # SpreadSlot_DeadZoneVerdict at the call site: a point inside Auto Shot's dead zone is unusable for the move,
+        # the owned slot is tried first and then the spare, and when neither is outside the zone the read answers
+        # DeadZone. The check is unconditional (the spread slots key only owns the row), the shot's minimum range and
+        # the target's reach come from the spell and the units (the same terms HunterStepOutAction uses).
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertIn('ai->GetSpellRange("auto shot", &shotMaxYd, &shotMinYd) && shotMinYd > 0.0f', read)
+        self.assertIn('AI_VALUE(Unit*, "current target")', read)
+        self.assertIn("bot->GetDistance(shotTarget, SizeFactor::CombatReach)", read)
+        self.assertIn("SpreadSlotInsideMinRange(std::sqrt(dx * dx + dy * dy), shotReachYd, shotMinYd)", read)
+        # Owned point first, the spare only when the owned point is refused.
+        self.assertLess(read.index("ownedDeadZone = insideShotMinRange(ownedPoint);"),
+                        read.index("spareDeadZone = insideShotMinRange(spare);"))
+        self.assertIn("ownedUsable = !ownedDeadZone && SpreadSlotPointUsable(", read)
+        self.assertIn("fallbackUsable = !spareDeadZone && SpreadSlotPointUsable(", read)
+        # No usable point outside the zone is the dead-zone verdict, and the verdict takes it.
+        self.assertIn(
+            "const bool deadZone = shotMinRange && ownedDeadZone && (fallback < 0 || spareDeadZone);", read)
+        self.assertIn("slotUsable, inRange, castBlocked, arrived, deadZone);", read)
+        # The key never gates the check: the read's only key mention stays the row's owner.
+        self.assertEqual(read.count("dungeonRunBossSpreadSlots"), 1)
+
+    def test_the_dead_zone_verdict_keeps_the_old_step_away_off(self):
+        # The hunter's own step-out owns her position, so the legacy step-away must answer false on the verdict; the
+        # slot trigger stays without it (no walk, no hold).
+        trigger = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")
+        self.assertIn("slot.verdict == SpreadSlotVerdict::DeadZone", trigger)
+        slot_trigger = body(TRIGGERS, "bool BossTacticsSpreadSlotTrigger::IsActive()")
+        self.assertNotIn("SpreadSlotVerdict::DeadZone", slot_trigger)
 
     def test_the_read_reports_the_owned_slot_not_the_fallback(self):
         read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
@@ -169,6 +199,45 @@ class SpreadSlotsWiring(unittest.TestCase):
     def test_both_contexts_register_the_name(self):
         self.assertIn('creators["boss tactics spread slot"]', TRIGGER_CONTEXT)
         self.assertIn('creators["boss tactics spread slot"]', ACTION_CONTEXT)
+
+    def test_the_hunter_slot_leaves_the_dead_zone_behind_the_key(self):
+        # SpreadSlot_HunterSlotLeavesDeadZone at the call site: the whole group builds and orders one canonical ring
+        # list; the index (and the fallback) pick from it, then every hunter resolves the same owner points
+        # (SpreadSlotOwnerPoints) so the projection steps around another member's point instead of landing on it.
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("SpreadSlotMinRangeApplies(sPlayerbotAIConfig.spreadRangedMinRange,", read)
+        self.assertIn("bot->GetClass() == CLASS_HUNTER", read)
+        # The floor covers the boss's body, the shot's dead zone, the hunter's own body, the arrival slack and a yard.
+        self.assertIn("SpreadSlotMinRangeYd(boss->GetCombatReach(), bot->GetCombatReach())", read)
+        self.assertIn(
+            "        ownerPoints = SpreadSlotOwnerPoints(points, minRangeByIndex, static_cast<std::size_t>(count), "
+            "bossX, bossY,\n"
+            "                                            cx, cy, minYd, spacingYd);",
+            read)
+        # Only the group's own slots are obstacles, and every member rounds the boss to the same 1 yd grid before
+        # building the map, so a fractional drift between two reads still names the same points.
+        self.assertIn("SpreadSlotBossGrid(boss->GetPositionX())", read)
+        self.assertIn("SpreadSlotBossGrid(boss->GetPositionY())", read)
+        self.assertLess(read.index("SpreadSlotBossGrid(boss->GetPositionX())"), read.index("SpreadSlotOwnerPoints("))
+        # The order runs on the plain rings, before any class-specific projection: the shared index names the same
+        # slot for every member. Owner points are resolved only after the owned/fallback index is chosen.
+        self.assertLess(read.index("SpreadSlotOrder(points, prefX, prefY);"), read.index("SpreadSlotMinRangeApplies("))
+        self.assertLess(read.index("const int owned = hasSlot ? index : -1;"), read.index("SpreadSlotOwnerPoints("))
+        self.assertIn("ownedPoint = ownedSlotPoint(owned);", read)
+        self.assertIn("sparePoint(fallback)", read)
+        # The flags name the class of every owner by guid index, so each member resolves the identical list.
+        self.assertIn("SpreadSlotIndexOf(eligible, member->GetObjectGuid().GetRawValue())", read)
+        self.assertIn("member->GetClass() == CLASS_HUNTER", read)
+        # No list-wide class-specific rewrite of the points can come back: only the owners and the spare are moved.
+        self.assertNotIn("for (SpreadSlotPoint& point : points)", read)
+        self.assertEqual(read.count("SpreadSlotOwnerPoints("), 1)
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        self.assertIn('spreadRangedMinRange = config.GetBoolDefault("AiPlayerbot.SpreadRangedMinRange", false);',
+                      config)
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        self.assertIn("\nAiPlayerbot.SpreadRangedMinRange = 0", template)
+        docs = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+        self.assertIn("AiPlayerbot.SpreadRangedMinRange", docs)
 
 
 if __name__ == "__main__":

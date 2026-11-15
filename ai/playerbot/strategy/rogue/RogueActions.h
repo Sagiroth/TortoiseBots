@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/GroupMembers.h"
+#include "playerbot/CastCancelLog.h"
 #include "../../../runtime/policy/class/RogueSapApproachPolicy.h"
 #include "../../../runtime/policy/class/RogueThreatPolicy.h"
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -51,6 +52,7 @@ namespace ai
             {
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_COMBAT);
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_NON_COMBAT);
+                ai::LogCastCancel(ai, "rogue_stealth", CURRENT_MELEE_SPELL);
                 bot->InterruptSpell(CURRENT_MELEE_SPELL);
             }
 
@@ -195,6 +197,7 @@ namespace ai
                     ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_NON_COMBAT);
                 }
 
+                ai::LogCastCancel(ai, "rogue_vanish", CURRENT_MELEE_SPELL);
                 bot->InterruptSpell(CURRENT_MELEE_SPELL);
                 return true;
             }

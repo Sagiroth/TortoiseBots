@@ -37,7 +37,7 @@ bool SapphironHideAction::Execute(Event& event)
         iceblocked->GetPositionX(), iceblocked->GetPositionY(), x, y);
     if (bot->GetDistance2d(x, y) < 2.0f)
         return false;
-    return MoveTo(bot->GetMapId(), x, y, iceblocked->GetPositionZ());
+    return MoveTo(bot->GetMapId(), x, y, iceblocked->GetPositionZ(), false, false, false, false, "sapphiron_hide");
 }
 
 bool SapphironAvoidBlizzardAction::Execute(Event& event)
@@ -61,5 +61,5 @@ bool SapphironAvoidBlizzardAction::Execute(Event& event)
     float x, y;
     SapphironBlizzardExit(closest->GetPositionX(), closest->GetPositionY(),
         bot->GetPositionX(), bot->GetPositionY(), x, y);
-    return MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ());
+    return MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ(), false, false, false, false, "sapphiron_blizzard");
 }

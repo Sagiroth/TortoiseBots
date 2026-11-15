@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/CastCancelLog.h"
 #include "FankrissFocusActions.h"
 #include "FankrissRaidActions.h"
 #include "playerbot/GroupMembers.h"
@@ -105,7 +106,7 @@ void ai::UpdateFankrissFocus(PlayerbotAI* ai) {
  if(FankrissSingleTargetActive(ai)) {
   Player* bot=ai->GetBot();
   for(CurrentSpellTypes type:{CURRENT_GENERIC_SPELL,CURRENT_CHANNELED_SPELL,CURRENT_MELEE_SPELL})
-   if(Spell* spell=bot->GetCurrentSpell(type))if(FankrissAoeSpell(spell->m_spellInfo))bot->InterruptSpell(type,false);
+   if(Spell* spell=bot->GetCurrentSpell(type))if(FankrissAoeSpell(spell->m_spellInfo)){if(spell->getState()!=SPELL_STATE_DELAYED)ai::LogCastCancel(ai,"fankriss",type);bot->InterruptSpell(type,false);}
   std::vector<uint32> remove;
   for(auto const& entry:bot->GetSpellAuraHolderMap())
    if(entry.second&&entry.second->GetCasterGuid()==bot->GetObjectGuid()&&FankrissAoeSpell(entry.second->GetSpellProto()))
@@ -151,6 +152,7 @@ bool FankrissFocusAction::isUseful() {
 bool FankrissFocusAction::Execute(Event&) {
  Unit* spawn=GetFankrissDpsTarget(ai);if(!spawn||!isPossible()||!isUseful())return false;
  // Stop a boss cast only on a real target handoff, never each trigger tick.
+ ai::LogCastCancelNonMelee(ai,"fankriss_handoff",false);
  bot->InterruptNonMeleeSpells(false);
  // Select without a forced reach: the formation owns movement, not the target handoff.
  bool attacked=Attack(GetMaster(),spawn,0.f);

@@ -1265,7 +1265,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         return true;
 
     TravelNodeMap::LastRouteFail().clear();
-    bool canMove = MoveTo(mapId, x, y, z, false, false);
+    bool canMove = MoveTo(mapId, x, y, z, false, false, false, false, "move_travel");
 
     // A move that reports success while the bot does not displace (a spline
     // launched into geometry, a collapsed shortcut) fills the failure budget

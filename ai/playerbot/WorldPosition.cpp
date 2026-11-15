@@ -1526,6 +1526,27 @@ bool WorldPosition::isInSlime(const TerrainInfo* terrain) const
     return ai::IsSlimeHazard(liquid.type_flags, static_cast<uint32>(status));
 }
 
+// The point the core will move a server-moved player to: its own
+// UpdateAllowedPositionZ clamp (swim=true, so a point over liquid answers
+// liquid level - 2 wherever the liquid lies under the floor), then the core's
+// in-magma rule at that height.
+MagmaMoveProbe ai::MagmaAtMoveZ(Unit* mover, float x, float y, float z)
+{
+    MagmaMoveProbe probe;
+    probe.navmeshZ = z;
+    probe.moveZ = z;
+    Map* const map = mover ? mover->FindMap() : nullptr;
+    if (!map)
+        return probe;
+    mover->UpdateAllowedPositionZ(x, y, probe.moveZ);
+    TerrainInfo const* const terrain = map->GetTerrain();
+    probe.moveInMagma = WorldPosition(mover->GetMapId(), x, y, probe.moveZ).isInMagma(terrain);
+    probe.navmeshDry = !WorldPosition(mover->GetMapId(), x, y, z).isInMagma(terrain);
+    probe.navmeshOverrides = probe.moveInMagma && probe.navmeshDry &&
+        z - probe.moveZ > ai::kMagmaDryFloorAboveYd;
+    return probe;
+}
+
 bool WorldPosition::setAtWaterSurface()
 {
     // One terrain lookup instead of one per query; getTerrain() resolves the

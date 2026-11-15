@@ -62,6 +62,17 @@ namespace ai
     // another verdict (or the previous pull) must not cut the first cast.
     constexpr std::uint32_t kSpreadSlotCastGapMs = 1500;
     constexpr int kSpreadSlotMaxRings = 3;
+    // A hunter's Auto Shot has this dead zone: nearer than 8 yd it cannot shoot.
+    constexpr float kSpreadMinRangeShotYd = 8.0f;
+    // The floor's own margin past the arrival slack: a hunter standing `kSpreadSlotArriveYd` inside its point is still
+    // this far outside the dead zone.
+    constexpr float kSpreadMinRangeMarginYd = 1.0f;
+    // The dead-zone guard's margin past the shot's minimum range: a slot this near its target cannot be shot from, so
+    // walking to it cancels the shot and hands the position back to the step-out.
+    constexpr float kSpreadSlotMinRangeMarginYd = 2.0f;
+    // The grid the owner-point search rounds the boss position to: every member reads the same map even when the boss
+    // drifted a fraction of a yard between two of their reads.
+    constexpr float kSpreadSlotBossGridYd = 1.0f;
 
     struct SpreadSlotPoint
     {
@@ -132,6 +143,156 @@ namespace ai
         });
     }
 
+    // Whether the min-range floor applies to this bot: the key is on and the bot's class needs a shot's minimum
+    // range (a hunter's Auto Shot has an 8 yd dead zone). Casters have no dead zone, so their slots stay on the
+    // rings even with the key on.
+    inline bool SpreadSlotMinRangeApplies(bool keyOn, bool needsMinRange)
+    {
+        return keyOn && needsMinRange;
+    }
+
+    // Whether a slot point lies inside the shot's dead zone for its current target: the point's distance to the
+    // target centre, less the reach between the two bodies, is the distance the shot would cover, and it must clear
+    // the shot's minimum range by the margin. A min range of 0 (a class without a dead zone) never bites.
+    inline bool SpreadSlotInsideMinRange(float slotToTargetCentreYd, float reachYd, float minRangeYd)
+    {
+        return minRangeYd > 0 && slotToTargetCentreYd - reachYd < minRangeYd + kSpreadSlotMinRangeMarginYd;
+    }
+
+    // The floor a min-range slot keeps from the boss: the boss's body, the shot's dead zone, the bot's own body, the
+    // arrival slack (an arrived hunter stands up to that far inside its point) and the margin, so an arrived hunter is
+    // never inside the dead zone. A nonsense reach reads as 0 so the floor never drops below the dead zone.
+    inline float SpreadSlotMinRangeYd(float bossCombatReachYd, float playerCombatReachYd)
+    {
+        const float boss = std::isfinite(bossCombatReachYd) && bossCombatReachYd > 0.0f ? bossCombatReachYd : 0.0f;
+        const float self =
+            std::isfinite(playerCombatReachYd) && playerCombatReachYd > 0.0f ? playerCombatReachYd : 0.0f;
+        return boss + kSpreadMinRangeShotYd + self + kSpreadSlotArriveYd + kSpreadMinRangeMarginYd;
+    }
+
+    // The boss position the owner-point search uses, snapped down to the grid: two members that read the boss a
+    // fraction of a yard apart still build one map.
+    inline float SpreadSlotBossGrid(float yd)
+    {
+        if (!std::isfinite(yd))
+            return 0.0f;
+        return std::floor(yd / kSpreadSlotBossGridYd) * kSpreadSlotBossGridYd;
+    }
+
+    // A ring point nearer the boss than `minYd` moves out along its own bearing from the boss to exactly that
+    // range; a point already that far, or one on the boss itself (bearing taken from the centre instead, +y when
+    // that is degenerate too), keeps its ring and slot. The rings have no floor from the boss, so without this a
+    // hunter's slot lands inside Auto Shot's dead zone and the step-out fights the pull back.
+    inline SpreadSlotPoint SpreadSlotMinRangePoint(const SpreadSlotPoint& point, float bossX, float bossY,
+        float centreX, float centreY, float minYd)
+    {
+        if (!(minYd > 0.0f))
+            return point;
+        float dx = point.x - bossX;
+        float dy = point.y - bossY;
+        float yd = std::sqrt(dx * dx + dy * dy);
+        if (!std::isfinite(yd) || yd >= minYd)
+            return point;
+        if (yd < 0.01f)
+        {
+            dx = point.x - centreX;
+            dy = point.y - centreY;
+            yd = std::sqrt(dx * dx + dy * dy);
+            if (yd < 0.01f)
+            {
+                dx = 0.0f;
+                dy = 1.0f;
+                yd = 1.0f;
+            }
+        }
+        SpreadSlotPoint out = point;
+        out.x = bossX + dx / yd * minYd;
+        out.y = bossY + dy / yd * minYd;
+        return out;
+    }
+
+    // The angle between two points on a circle of `radiusYd` that are `spacingYd` apart: the arc step a min-range
+    // scan uses so each candidate is one spacing from the last.
+    inline float SpreadSlotSpacingAngle(float spacingYd, float radiusYd)
+    {
+        if (!(spacingYd > 0.0f) || !(radiusYd > 0.0f))
+            return 0.0f;
+        const float ratio = spacingYd / (2.0f * radiusYd);
+        return 2.0f * std::asin(ratio >= 1.0f ? 1.0f : ratio);
+    }
+
+    // Every slot owner's final point, resolved the same way on every bot. A caster keeps its canonical slot. A
+    // min-range hunter's point is projected out to the min-range circle, then stepped along it by alternating
+    // ±k spacing angles until it is at least the row's spacing from every other OWNED point (an earlier owner's final
+    // point, a later owner's projected start; a caster's point is both), up to 8 steps. An unowned ring point is
+    // nobody's place to stand: it is empty ground and never pushes a hunter off its bearing. When no candidate
+    // clears, the least-crowded one wins and ties keep the earliest. The index order is the guid order, so the same
+    // group yields the same points on every member.
+    inline std::vector<SpreadSlotPoint> SpreadSlotOwnerPoints(const std::vector<SpreadSlotPoint>& canonical,
+        const std::vector<char>& minRangeByIndex, std::size_t ownerCount, float bossX, float bossY, float centreX,
+        float centreY, float minYd, float spacingYd)
+    {
+        const std::size_t owners = std::min(std::min(canonical.size(), minRangeByIndex.size()), ownerCount);
+        std::vector<SpreadSlotPoint> start(owners);
+        std::vector<SpreadSlotPoint> final(owners);
+        for (std::size_t i = 0; i < owners; ++i)
+            start[i] = minRangeByIndex[i] ? SpreadSlotMinRangePoint(canonical[i], bossX, bossY, centreX, centreY,
+                                                                     minYd)
+                                          : canonical[i];
+        const float step = SpreadSlotSpacingAngle(spacingYd, minYd);
+        for (std::size_t i = 0; i < owners; ++i)
+        {
+            const bool moved = start[i].x != canonical[i].x || start[i].y != canonical[i].y;
+            if (!moved || step <= 0.0f)
+            {
+                final[i] = start[i];
+                continue;
+            }
+            const auto clearYd = [&](const SpreadSlotPoint& point) {
+                float nearest = 1.0e30f;
+                for (std::size_t j = 0; j < owners; ++j)
+                {
+                    if (j == i)
+                        continue;
+                    const SpreadSlotPoint& other = j < i ? final[j] : start[j];
+                    const float dx = point.x - other.x;
+                    const float dy = point.y - other.y;
+                    nearest = std::min(nearest, std::sqrt(dx * dx + dy * dy));
+                }
+                return nearest;
+            };
+            SpreadSlotPoint best = start[i];
+            float bestClear = clearYd(start[i]);
+            if (bestClear >= spacingYd)
+            {
+                final[i] = best;
+                continue;
+            }
+            const float bearing = std::atan2(start[i].y - bossY, start[i].x - bossX);
+            for (int t = 1; t <= 8; ++t)
+            {
+                const float sign = (t % 2 == 1) ? 1.0f : -1.0f;
+                const float angle = bearing + sign * static_cast<float>((t + 1) / 2) * step;
+                SpreadSlotPoint candidate = start[i];
+                candidate.x = bossX + minYd * std::cos(angle);
+                candidate.y = bossY + minYd * std::sin(angle);
+                const float clear = clearYd(candidate);
+                if (clear > bestClear)
+                {
+                    best = candidate;
+                    bestClear = clear;
+                }
+                if (clear >= spacingYd)
+                {
+                    best = candidate;
+                    break;
+                }
+            }
+            final[i] = best;
+        }
+        return final;
+    }
+
     // A bot's index in the slot order: the number of slot-eligible members
     // with a lower raw guid. -1 when the bot is not one of them.
     inline int SpreadSlotIndexOf(const std::vector<std::uint64_t>& eligibleGuids, std::uint64_t self)
@@ -191,6 +352,7 @@ namespace ai
         Range,
         Cast,
         Floor,
+        DeadZone,
         NoSlot,
         NoCentre,
         MoveFailed,
@@ -209,6 +371,7 @@ namespace ai
             case SpreadSlotVerdict::Range: return "range";
             case SpreadSlotVerdict::Cast: return "cast";
             case SpreadSlotVerdict::Floor: return "floor";
+            case SpreadSlotVerdict::DeadZone: return "dead_zone";
             case SpreadSlotVerdict::NoSlot: return "no_slot";
             case SpreadSlotVerdict::NoCentre: return "no_centre";
             case SpreadSlotVerdict::MoveFailed: return "move_failed";
@@ -218,9 +381,13 @@ namespace ai
 
     // The slot decision's precedence: the seek and the stand move the bot, a
     // fight duty keeps it, then the geometry. Arrival outranks the cast gate
-    // (a bot at its slot holds there, cast or not).
+    // (a bot at its slot holds there, cast or not). A slot inside the shot's
+    // dead zone is no place to walk to, so it outranks the floor, the range
+    // test and the walk and leaves the position to the bot's own step-out:
+    // the dead-zone point is also what makes the slot unusable, so read after
+    // the floor it could never be named.
     inline SpreadSlotVerdict SpreadSlotWanted(bool seekValid, bool standValid, bool victimOrCharmed, bool walkout,
-        bool hasCentre, bool hasSlot, bool slotUsable, bool inRange, bool castBlocked, bool arrived)
+        bool hasCentre, bool hasSlot, bool slotUsable, bool inRange, bool castBlocked, bool arrived, bool deadZone)
     {
         if (seekValid)
             return SpreadSlotVerdict::Seek;
@@ -234,6 +401,8 @@ namespace ai
             return SpreadSlotVerdict::NoCentre;
         if (!hasSlot)
             return SpreadSlotVerdict::NoSlot;
+        if (deadZone)
+            return SpreadSlotVerdict::DeadZone;
         if (!slotUsable)
             return SpreadSlotVerdict::Floor;
         if (!inRange)

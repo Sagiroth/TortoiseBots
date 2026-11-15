@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "BossTacticsActions.h"
+#include "playerbot/CastCancelLog.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/CheckedMutex.h"
 #include "playerbot/BossEngagedPolicy.h"
@@ -6394,6 +6395,7 @@ bool BossTacticsFreezeAction::Execute(Event& event)
     if (still.attackStop)
     {
         bot->AttackStop();
+        ai::LogCastCancelStop(ai, "freeze");
         bot->CastStop();
     }
     if (still.dropGenerator)
@@ -6427,7 +6429,7 @@ bool BossTacticsFleeAction::Execute(Event& event)
             return false;
         allyYd = bot->GetDistance2d(tank);
         if (allyYd > radius)
-            started = MoveTo(tank, radius);
+            started = MoveTo(tank, radius, "flee");
     }
     else
     {
@@ -7454,7 +7456,10 @@ bool BossTacticsTankSwapHoldAction::Execute(Event& event)
     ObjectGuid const bossGuid = boss->GetObjectGuid();
     if ((generic && generic->m_targets.getUnitTargetGuid() == bossGuid) ||
         (melee && melee->m_targets.getUnitTargetGuid() == bossGuid))
+    {
+        ai::LogCastCancelStop(ai, "tank_swap");
         bot->CastStop();
+    }
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<Unit*>("current target")->Set(nullptr);
     context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
@@ -7749,11 +7754,18 @@ ActiveBossRows DispelRows(const BossTacticsFight& fight)
     return rows;
 }
 
-// The living group members a cure can reach, the bot included.
+// The living group members (and their combat pets) a cure can reach, the bot included.
 std::vector<Unit*> DispelSweepMembers(Player* bot)
 {
     std::vector<Unit*> members;
+    auto addPet = [&](Player* owner)
+    {
+        Pet* pet = owner->GetPet();
+        if (pet && pet->getPetType() != MINI_PET && pet->IsAlive() && pet->GetMapId() == bot->GetMapId())
+            members.push_back(pet);
+    };
     members.push_back(bot);
+    addPet(bot);
     Group* group = bot->GetGroup();
     if (!group)
         return members;
@@ -7762,6 +7774,7 @@ std::vector<Unit*> DispelSweepMembers(Player* bot)
         if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
             continue;
         members.push_back(member);
+        addPet(member);
     }
     return members;
 }
@@ -7897,7 +7910,7 @@ bool ai::DispelCastBlocked(PlayerbotAI* ai, Unit* target, uint32 spellId)
     Player* bot = ai->GetBot();
     if (!bot || !target->IsAlive() || target->GetMapId() != bot->GetMapId())
         return false;
-    // PartyMemberToDispel offers non-summoned pets as well as players; a hunter pet has no Player, so it is placed by
+    // PartyMemberToDispel offers pets as well as players; a pet has no Player, so it is placed by
     // its owner's group and judged like a member. A target that is none of these is unknown, and the cast is refused.
     DispelTargetKind targetKind = DispelTargetKind::Unknown;
     if (target == bot)
@@ -8248,7 +8261,7 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
         // walk (MoveTo2); what is left (a wand's auto-repeat) is stopped only once a walk is under way, so a bot with
         // no way out keeps its heal or bolt.
         bool const casting = bot->IsNonMeleeSpellCasted(true);
-        if (!MoveTo(bot->GetMapId(), spots[i].x, spots[i].y, spots[i].z, false, false, false, true))
+        if (!MoveTo(bot->GetMapId(), spots[i].x, spots[i].y, spots[i].z, false, false, false, true, "avoid_cast"))
             continue;
         // MoveTo can say yes without a walk (a collapsed path rebuilt next tick, a transport or teleport wait): only a
         // walk under way counts; otherwise the next point is tried.
@@ -8261,7 +8274,10 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
         if (casting)
         {
             if (bot->IsNonMeleeSpellCasted(true))
+            {
+                ai::LogCastCancelStop(ai, "avoid_cast");
                 bot->CastStop();
+            }
             stopped = true;
         }
         if (logIt)
@@ -8293,7 +8309,7 @@ bool BossTacticsStepBehindAction::Execute(Event& event)
                          bot->GetPositionX(), bot->GetPositionY(), 3.0f, x, y);
     float z = boss->GetPositionZ();
     bot->UpdateGroundPositionZ(x, y, z);
-    return MoveTo(bot->GetMapId(), x, y, z);
+    return MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, "step_behind");
 }
 
 namespace
@@ -8819,9 +8835,14 @@ bool BossTacticsStandAction::Execute(Event& event)
     // The cast of a bot on its way out is of no use: stop it, as the reactive dodge does - unless it is already close
     // to its seat, where a cast in progress is let finish.
     if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), seatX, seatY))
+    {
+        const float seatDx = bot->GetPositionX() - seatX;
+        const float seatDy = bot->GetPositionY() - seatY;
+        ai::LogCastCancelStop(ai, "stand", std::sqrt(seatDx * seatDx + seatDy * seatDy));
         bot->CastStop();
+    }
     const uint64 key = bot->GetObjectGuid().GetRawValue();
-    if (!MoveTo(bot->GetMapId(), seatX, seatY, z, false, false, false, true))
+    if (!MoveTo(bot->GetMapId(), seatX, seatY, z, false, false, false, true, "stand"))
     {
         // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
         std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
@@ -9321,7 +9342,7 @@ bool BossTacticsUseObjectAction::Execute(Event& event)
         const float z = task.object->GetPositionZ();
         if (logIt)
             LogUseObject(ai, bot, "walk", task, nowMs, 0, nullptr);
-        if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+        if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "use_object"))
             return false;
         lastX = x;
         lastY = y;
@@ -9374,7 +9395,7 @@ bool BossTacticsObjectAnchorAction::Execute(Event& event)
     // The walk point sits between the object and the tank; its z comes from the ground under it.
     float z = anchor.object->GetPositionZ();
     bot->UpdateGroundPositionZ(anchor.x, anchor.y, z);
-    return MoveTo(bot->GetMapId(), anchor.x, anchor.y, z);
+    return MoveTo(bot->GetMapId(), anchor.x, anchor.y, z, false, false, false, false, "use_object_anchor");
 }
 
 bool ai::BossSpreadLive(PlayerbotAI* ai, Player* bot)
@@ -9660,10 +9681,13 @@ BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
     const float prefY = hasSeekSpot ? state.row->spotY : cy;
 
     std::vector<SpreadSlotPoint> points;
+    float spacingYd = kSpreadSettledDistance;
     if (hasCentre)
     {
-        const float spacingYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
+        spacingYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
         points = SpreadSlotPoints(cx, cy, spacingYd, SpreadSlotRings(spacingYd, anchored, radius));
+        // One canonical list the whole group builds the same way: the order runs on the plain rings, never on a
+        // class-specific projection, so a guid index names the same slot for a hunter and a caster.
         SpreadSlotOrder(points, prefX, prefY);
     }
 
@@ -9686,23 +9710,96 @@ BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
     const bool hasSlot = hasCentre && index >= 0 && index < total;
     const int owned = hasSlot ? index : -1;
 
-    // D5: the owned slot; one spare-slot fallback when it is unusable, then the floor verdict.
+    // A hunter's own slot is projected out of Auto Shot's 8 yd dead zone only here, after the shared order and the
+    // index. Every hunter in the group resolves its point the same way (SpreadSlotOwnerPoints), so a projection
+    // never lands on another member's point; a caster keeps its canonical slot.
+    const bool minRange = boss && SpreadSlotMinRangeApplies(sPlayerbotAIConfig.spreadRangedMinRange,
+                                                            bot->GetClass() == CLASS_HUNTER);
+    // One boss position for every member: a drift of a fraction of a yard between two members' reads must not hand
+    // them two different maps.
+    const float bossX = boss ? SpreadSlotBossGrid(boss->GetPositionX()) : 0.0f;
+    const float bossY = boss ? SpreadSlotBossGrid(boss->GetPositionY()) : 0.0f;
+    const float minYd = minRange ? SpreadSlotMinRangeYd(boss->GetCombatReach(), bot->GetCombatReach()) : 0.0f;
+    std::vector<SpreadSlotPoint> ownerPoints;
+    if (minRange)
+    {
+        std::vector<char> minRangeByIndex(static_cast<std::size_t>(total), 0);
+        if (Group* group = bot->GetGroup())
+        {
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!member || member->GetMapId() != bot->GetMapId())
+                    continue;
+                const int memberIndex = SpreadSlotIndexOf(eligible, member->GetObjectGuid().GetRawValue());
+                if (memberIndex >= 0 && memberIndex < total && member->GetClass() == CLASS_HUNTER)
+                    minRangeByIndex[static_cast<std::size_t>(memberIndex)] = 1;
+            }
+        }
+        // Only the first `count` indices own a point; the rest of the ring is empty ground for this group.
+        ownerPoints = SpreadSlotOwnerPoints(points, minRangeByIndex, static_cast<std::size_t>(count), bossX, bossY,
+                                            cx, cy, minYd, spacingYd);
+    }
+    const auto ownedSlotPoint = [&](int slot) {
+        return minRange ? ownerPoints[static_cast<std::size_t>(slot)] : points[static_cast<std::size_t>(slot)];
+    };
+    // The spare slot is nobody's owned point, so it only takes the radial projection, never the collision step.
+    const auto sparePoint = [&](int slot) {
+        const SpreadSlotPoint& canonical = points[static_cast<std::size_t>(slot)];
+        if (!minRange)
+            return canonical;
+        return SpreadSlotMinRangePoint(canonical, bossX, bossY, cx, cy, minYd);
+    };
+
+    // The shot's dead zone: a hunter's slot nearer its own target than Auto Shot's minimum range (plus the margin)
+    // cannot be shot from, so walking to it cancels her shot and the step-out walks her back out. The reach is the
+    // same centre-to-edge term HunterStepOutAction uses.
+    Unit* const shotTarget = AI_VALUE(Unit*, "current target");
+    float shotMaxYd = 0.0f;
+    float shotMinYd = 0.0f;
+    const bool shotMinRange = shotTarget && ai->GetSpellRange("auto shot", &shotMaxYd, &shotMinYd) && shotMinYd > 0.0f;
+    float shotReachYd = 0.0f;
+    if (shotMinRange)
+        shotReachYd = std::max(0.0f, sServerFacade.getDistance2d(bot, shotTarget) -
+                                         bot->GetDistance(shotTarget, SizeFactor::CombatReach));
+    const auto insideShotMinRange = [&](const SpreadSlotPoint& point) {
+        if (!shotMinRange)
+            return false;
+        const float dx = point.x - shotTarget->GetPositionX();
+        const float dy = point.y - shotTarget->GetPositionY();
+        return SpreadSlotInsideMinRange(std::sqrt(dx * dx + dy * dy), shotReachYd, shotMinYd);
+    };
+
+    // D5: the owned slot; one spare-slot fallback when it is unusable, then the floor verdict. A point inside the
+    // dead zone is unusable for the move, but only the floor and the dead zone itself can refuse the position.
     bool ownedUsable = false;
+    bool ownedDeadZone = false;
     int fallback = -1;
     bool fallbackUsable = false;
+    bool spareDeadZone = false;
     float x = 0.0f, y = 0.0f, z = 0.0f;
+    SpreadSlotPoint ownedPoint;
     if (owned >= 0)
     {
-        ownedUsable = SpreadSlotPointUsable(ai, bot, cz, points[static_cast<std::size_t>(owned)], x, y, z);
+        ownedPoint = ownedSlotPoint(owned);
+        ownedDeadZone = insideShotMinRange(ownedPoint);
+        ownedUsable = !ownedDeadZone && SpreadSlotPointUsable(ai, bot, cz, ownedPoint, x, y, z);
         if (!ownedUsable)
         {
             fallback = SpreadSlotFallback(index, count, total);
-            fallbackUsable = fallback >= 0 && fallback < total &&
-                             SpreadSlotPointUsable(ai, bot, cz, points[static_cast<std::size_t>(fallback)], x, y, z);
+            if (fallback >= 0 && fallback < total)
+            {
+                const SpreadSlotPoint spare = sparePoint(fallback);
+                spareDeadZone = insideShotMinRange(spare);
+                fallbackUsable = !spareDeadZone && SpreadSlotPointUsable(ai, bot, cz, spare, x, y, z);
+            }
+            else
+                fallback = -1;
         }
     }
     const SpreadSlotSelection selection = SpreadSlotSelect(owned, fallback, ownedUsable, fallbackUsable);
     const bool slotUsable = selection.moveSlot >= 0;
+    // No owned or spare slot outside the dead zone: the hunter keeps the step-out's position instead of walking back.
+    const bool deadZone = shotMinRange && ownedDeadZone && (fallback < 0 || spareDeadZone);
 
     // The row always reports the owned slot and its distance; the walk and the arrival use the point actually stood on.
     const auto pointYd = [bot](const SpreadSlotPoint& point) {
@@ -9715,12 +9812,15 @@ BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
     bool inRange = true;
     if (owned >= 0)
     {
-        slotYd = pointYd(points[static_cast<std::size_t>(owned)]);
+        slotYd = pointYd(ownedPoint);
         if (selection.moveSlot >= 0)
-            arrived = pointYd(points[static_cast<std::size_t>(selection.moveSlot)]) <= kSpreadSlotArriveYd;
+        {
+            const SpreadSlotPoint movePoint =
+                selection.moveSlot == owned ? ownedPoint : sparePoint(selection.moveSlot);
+            arrived = pointYd(movePoint) <= kSpreadSlotArriveYd;
+        }
         // A healer measures from the boss's victim, a damage dealer from its own target; no target is in range.
-        Unit* const targetUnit = ai->IsHeal(bot) ? (boss ? boss->GetVictim() : nullptr) :
-                                                  AI_VALUE(Unit*, "current target");
+        Unit* const targetUnit = ai->IsHeal(bot) ? (boss ? boss->GetVictim() : nullptr) : shotTarget;
         if (slotUsable && targetUnit)
         {
             const float tx = x - targetUnit->GetPositionX();
@@ -9731,7 +9831,7 @@ BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
 
     const bool castBlocked = MoveBlockedByCast(bot->IsNonMeleeSpellCasted(false, true, true), false);
     task.verdict = SpreadSlotWanted(seek.valid, stand.valid, victimOrCharmed, walkout, hasCentre, hasSlot,
-                                    slotUsable, inRange, castBlocked, arrived);
+                                    slotUsable, inRange, castBlocked, arrived, deadZone);
     task.slot = selection.slot;
     task.fallback = selection.fallback;
     task.slotYd = selection.slot >= 0 ? slotYd : -1.0f;
@@ -10755,6 +10855,7 @@ bool BossTacticsSeekAction::Execute(Event& event)
         if (SeekActionConsumesTick(task.atSpot, moving))
         {
             ai->StopMoving();
+            ai::LogCastCancelStop(ai, "seek_stop");
             bot->CastStop();
             return true;
         }
@@ -10771,13 +10872,24 @@ bool BossTacticsSeekAction::Execute(Event& event)
     if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
         std::fabs(lastY - y) < 1.0f)
         return true;
-    if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+    if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_move"))
         return false;
     lastX = x;
     lastY = y;
     hasLast = true;
     return true;
 }
+
+namespace
+{
+// How far the step to the slot moves the bot (2D): the distance the CastCancel row reports for a slot walk.
+float SlotWalkYd(Player* bot, const BossSpreadSlotTask& task)
+{
+    const float dx = bot->GetPositionX() - task.x;
+    const float dy = bot->GetPositionY() - task.y;
+    return std::sqrt(dx * dx + dy * dy);
+}
+}  // namespace
 
 bool BossTacticsSpreadSlotAction::isUseful()
 {
@@ -10809,6 +10921,7 @@ bool BossTacticsSpreadSlotAction::Execute(Event& event)
         castSeenMs = clock.seenMs;
         if (SpreadSlotCastCutDue(ai->IsHeal(bot), castSinceMs, nowMs))
         {
+            ai::LogCastCancelStop(ai, "spread_cut", SlotWalkYd(bot, task));
             bot->CastStop();
             castSinceMs = 0;
             castSeenMs = 0;
@@ -10838,7 +10951,10 @@ bool BossTacticsSpreadSlotAction::Execute(Event& event)
     if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - task.x) < 1.0f &&
         std::fabs(lastY - task.y) < 1.0f)
         return true;
-    if (!MoveTo(bot->GetMapId(), task.x, task.y, task.z, false, false, false, true))
+    // The walk's own cancel: MoveTo breaks a cast only once it has a path, which is how a healer's heal or a caster's
+    // spell dies between the spread steps. Naming the walk at that interrupt keeps one row per real cancel: a bot
+    // already at the slot and a move that paths nowhere drop nothing and write nothing.
+    if (!MoveTo(bot->GetMapId(), task.x, task.y, task.z, false, false, false, true, "spread_slot"))
     {
         hasLast = false;
         LogBossSpread(ai, bot, "move_failed", task.slot, task.slotYd, task.fallback, nullptr, true);
@@ -10989,6 +11105,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                                         cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0);
                     return true;
                 }
+                ai::LogCastCancelNonMelee(ai, "seek_shot", false);
                 bot->InterruptNonMeleeSpells(false);
                 if (!bot->IsStopped())
                     ai->StopMoving();
@@ -11072,7 +11189,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 ? bot->GetMap()->GetPlayer(ObjectGuid(meetReceiver)) : nullptr;
             const bool meetBack = receiver && receiver->IsInWorld();
             if (bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+            {
+                ai::LogCastCancel(ai, "seek_walk_back", CURRENT_AUTOREPEAT_SPELL);
                 bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+            }
             bot->AttackStop();
             if (meetBack)
                 WalkoutMeetBackPoint(true, receiver->GetPositionX(), receiver->GetPositionY(), tank,
@@ -11093,8 +11213,13 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             return true;
         // A cast, a channel or the auto-repeat running when the walk starts holds the mover: stop it first.
         if (outbound && bot->IsNonMeleeSpellCasted(true))
+        {
+            const float walkX = bot->GetPositionX() - x;
+            const float walkY = bot->GetPositionY() - y;
+            ai::LogCastCancelNonMelee(ai, "seek_walk_out", true, std::sqrt(walkX * walkX + walkY * walkY));
             bot->InterruptNonMeleeSpells(true);
-        const bool moved = MoveTo(bot->GetMapId(), x, y, z, false, false, false, true);
+        }
+        const bool moved = MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_walk_out");
         if (outbound)
         {
             LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
@@ -11295,7 +11420,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
                     std::fabs(lastY - y) < 1.0f)
                     return true;
-                if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+                if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_pull_stand"))
                     return false;
                 lastX = x;
                 lastY = y;
@@ -11341,7 +11466,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
                 std::fabs(lastY - y) < 1.0f)
                 return true;
-            if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+            if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_pull_walk"))
                 return false;
             lastX = x;
             lastY = y;
@@ -11372,7 +11497,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
             std::fabs(lastY - y) < 1.0f)
             return true;
-        if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+        if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_gather"))
             return false;
         lastX = x;
         lastY = y;
@@ -13015,7 +13140,7 @@ bool BossTacticsTankPostAction::Execute(Event& event)
             return true;
         float z = task.z;
         bot->UpdateGroundPositionZ(task.x, task.y, z);
-        if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+        if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true, "tank_post_drag"))
             return false;
         lastX = task.x;
         lastY = task.y;
@@ -13119,7 +13244,7 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     float z = task.z;
     bot->UpdateGroundPositionZ(task.x, task.y, z);
     bot->AttackStop();
-    if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+    if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true, "tank_post_walk"))
         return false;
     lastX = task.x;
     lastY = task.y;

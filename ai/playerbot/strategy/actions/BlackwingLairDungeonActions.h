@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/CastCancelLog.h"
 #include "DungeonActions.h"
 #include "AttackAction.h"
 #include "ChangeStrategyAction.h"
@@ -61,7 +62,8 @@ namespace ai
                 ai->TellPlayerNoFacing(GetMaster(), "Moving to Suppression Device at " + std::to_string((int)closestDist) + " yards");
             }
 
-            return MoveTo(closest.GetMapId(), closest.getX(), closest.getY(), closest.getZ());
+            return MoveTo(closest.GetMapId(), closest.getX(), closest.getY(), closest.getZ(), false, false, false,
+                          false, "bwl_device");
         }
 
         bool isPossible() override
@@ -93,6 +95,7 @@ namespace ai
             {
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_COMBAT);
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_NON_COMBAT);
+                ai::LogCastCancel(ai, "bwl_stealth", CURRENT_MELEE_SPELL);
                 bot->InterruptSpell(CURRENT_MELEE_SPELL);
                 return true;
             }
@@ -300,7 +303,7 @@ namespace ai
             dest.setZ(dest.GetHeight());
             if (!bot->IsWithinLOS(dest.getX(), dest.getY(), dest.getZ() + bot->GetCollisionHeight()))
                 return false;
-            return MoveTo(bot->GetMapId(), dest.getX(), dest.getY(), dest.getZ(), false, IsReaction(), false, true);
+            return MoveTo(bot->GetMapId(), dest.getX(), dest.getY(), dest.getZ(), false, IsReaction(), false, true, "bwl_step_behind");
         }
     };
 

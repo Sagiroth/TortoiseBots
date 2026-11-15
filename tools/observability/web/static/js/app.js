@@ -11236,7 +11236,8 @@
         const chips = dbs.map(d => {
           const dt = DISP[d.dt] || 'none';
           const left = typeof d.l === 'number' && isFinite(d.l) ? ' ' + Math.ceil(d.l / 1000) + 's' : '';
-          return `<span class="fd-db dt-${esc(dt)}" title="${esc(d.n + (dt !== 'none' ? ' (' + dt + ')' : '') + (left ? ', ' + left.trim() + ' left' : ''))}">${esc(d.n)}${d.st > 1 ? ' ×' + d.st : ''}${left}</span>`;
+          const tip = d.n + (dt !== 'none' ? ' (' + dt + ')' : '') + (left ? ', ' + left.trim() + ' left' : '') + (d.sp ? ' — Spreads to nearby allies — dispel first' : '');
+          return `<span class="fd-db dt-${esc(dt)}${d.sp ? ' sp' : ''}" title="${esc(tip)}">${d.sp ? '<span class="fd-sp" aria-hidden="true">!</span>' : ''}${esc(d.n)}${d.st > 1 ? ' ×' + d.st : ''}${left}</span>`;
         }).join('');
         const dispel = dbs.some(d => !!DISP[d.dt]);
         const aria = `${t.name}, ${t.cls}, ${t.hpPct}% health${tag}${dead ? ', dead' : ''}${t.mc ? ', mind controlled' : ''}${dbs.length ? ', ' + dbs.map(d => d.n).join(', ') : ''}`;

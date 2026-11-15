@@ -175,6 +175,10 @@ namespace ai
         bool isUseful() override;
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+        // Most spacing passes end in a no-op (a slot hold, an existing gap), so as a reaction it must not break a
+        // healer's heal at pick time (walk 102: the second cut source after the seek; ReactionCastGuardPolicy.h,
+        // AiPlayerbot.ReactionHealCastGuardPct). A step it really starts still breaks the cast (MoveTo).
+        bool ReactionYieldsToHealCast() const override { return true; }
     private:
         // Why the hover hold did or did not stop the spacing step: None the hold does not apply, Held it applies,
         // Spread it would apply but a group member stands inside the spread radius, so the step goes ahead.

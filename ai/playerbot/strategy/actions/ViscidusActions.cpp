@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/CastCancelLog.h"
 #include "ViscidusActions.h"
 #include "playerbot/ViscidusPolicy.h"
 #include "playerbot/GroupMembers.h"
@@ -251,7 +252,7 @@ bool ViscidusCombatAction::MoveRing()
     bool fallback = false;
     bool safe = CheckedRoute(point);
     if (!safe) { fallback = true; safe = RingFallback(point); }
-    bool moved = safe && (WorldPosition(bot).distance(point) < 1.0f || MoveTo(point));
+    bool moved = safe && (WorldPosition(bot).distance(point) < 1.0f || MoveTo(point, false, false, false, false, "viscidus_ring"));
     uint32 now = WorldTimer::getMSTime();
     if (!ringReported || uint32(now - ringReported) > 3000)
     {
@@ -291,8 +292,9 @@ bool ViscidusCombatAction::Retreat()
         WorldPosition point = WorldPosition(boss) + WorldPosition(0, radius * std::cos(angle + offset), radius * std::sin(angle + offset), 0);
         point.setZ(point.GetHeight());
         if (!CheckedRoute(point)) continue;
+        ai::LogCastCancelNonMelee(ai, "viscidus_retreat", false);
         bot->InterruptNonMeleeSpells(false);
-        moved = MoveTo(point);
+        moved = MoveTo(point, false, false, false, false, "viscidus_retreat");
         if (moved) break;
     }
     uint32 now = WorldTimer::getMSTime();
@@ -445,6 +447,7 @@ bool ViscidusCombatAction::Execute(Event&)
     bool selected = AI_VALUE(Unit*, "current target") != target || bot->GetVictim() != target;
     if (selected)
     {
+        ai::LogCastCancelNonMelee(ai, "viscidus_target", false);
         bot->InterruptNonMeleeSpells(false);
         if (!Attack(GetMaster(), target)) return false;
         RESET_AI_VALUE(Unit*, "dps target");
@@ -490,6 +493,7 @@ void ViscidusCombatAction::Update()
     }
     if (KeepDistance() && ai->CanMove())
     {
+        ai::LogCastCancelNonMelee(ai, "viscidus_keep_distance", false);
         bot->InterruptNonMeleeSpells(false);
         ai->SetActionDuration(uint32(0));
         return;
@@ -500,19 +504,32 @@ void ViscidusCombatAction::Update()
             if ((spell->m_targets.getUnitTargetGuid() == boss->GetObjectGuid() ||
                  AI_VALUE(Unit*, "current target") == boss) &&
                 ViscidusBlocksSpell(ai, spell->m_spellInfo->Id, boss))
-            { bot->InterruptSpell(type, false); ai->SetActionDuration(uint32(0)); }
+            {
+                // The core's InterruptSpell(type, false) leaves a delayed cast alone: only a real cancel writes a row.
+                if (spell->getState() != SPELL_STATE_DELAYED)
+                    ai::LogCastCancel(ai, "viscidus_freeze", type);
+                bot->InterruptSpell(type, false);
+                ai->SetActionDuration(uint32(0));
+            }
     Unit* target = Target();
     if (!target || ai->IsHeal(bot) || !isPossible() || InsideViscidusToxin(ai)) return;
     if (target->GetEntry() == 15667 && bot->GetClass() == CLASS_MAGE)
         for (CurrentSpellTypes type : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
             if (Spell* spell = bot->GetCurrentSpell(type))
                 if (!IsPositiveSpell(spell->m_spellInfo) && (IsChanneledSpell(spell->m_spellInfo) || GetSpellCastTime(spell->m_spellInfo, bot)))
-                { bot->InterruptSpell(type, false); ai->SetActionDuration(uint32(0)); }
+                {
+                    // The core's InterruptSpell(type, false) leaves a delayed cast alone: only a real cancel writes a row.
+                    if (spell->getState() != SPELL_STATE_DELAYED)
+                        ai::LogCastCancel(ai, "viscidus_handoff", type);
+                    bot->InterruptSpell(type, false);
+                    ai->SetActionDuration(uint32(0));
+                }
     bool change = AI_VALUE(Unit*, "current target") != target || bot->GetVictim() != target;
     if (!change) return;
     // Prompt target selection only: movement/casting remain engine actions.
     // An ongoing cast at the boss must not postpone a mage's glob handoff.
     if (target->GetEntry() == 15299 && Frozen(target) && WaitingCaster(ai)) return;
+    ai::LogCastCancelNonMelee(ai, "viscidus_handoff_walk", false);
     bot->InterruptNonMeleeSpells(false);
     if (Attack(GetMaster(), target))
     {

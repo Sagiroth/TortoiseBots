@@ -169,6 +169,7 @@ inline char RankKind(uint32_t rank, bool bindsInstance, bool planBoss)
 
 // One aura the dashboard shows: a boss's own buff or form, or a boss debuff one of its bots carries. dispelType is the
 // letter the dashboard colours it by (m magic, c curse, p poison, d disease); 0 for one that cannot be dispelled.
+// spreading is true for a dispellable debuff that spreads to the carrier's nearby allies.
 struct AuraInfo
 {
     uint32_t id = 0;
@@ -176,6 +177,7 @@ struct AuraInfo
     uint32_t stacks = 1; // 1 = a single stack (the wire omits it)
     uint32_t leftMs = 0; // 0 = permanent or unknown (the wire omits it)
     char dispelType = 0;
+    bool spreading = false;
 };
 
 // One aura as the module reads it off a unit's holder map and hands to the selectors below. The selectors are pure, so the
@@ -209,8 +211,8 @@ inline std::vector<AuraInfo> SelectUnitAuras(std::vector<AuraRead> const& reads,
     return out;
 }
 
-// The debuffs a boss put on a bot: a negative aura from outside its own group, the dispellable ones first and then the one
-// that runs out last, at most max.
+// The debuffs a boss put on a bot: a negative aura from outside its own group, the dispellable ones first, spreading before
+// non-spreading, and then the one that runs out last, at most max.
 inline std::vector<AuraInfo> SelectBotDebuffs(std::vector<AuraRead> const& reads, size_t max = kMaxBotDebuffs)
 {
     std::vector<AuraInfo> out;
@@ -222,6 +224,8 @@ inline std::vector<AuraInfo> SelectBotDebuffs(std::vector<AuraRead> const& reads
         bool const da = a.dispelType != 0, db = b.dispelType != 0;
         if (da != db)
             return da;
+        if (a.spreading != b.spreading)
+            return a.spreading;
         return a.leftMs > b.leftMs;
     });
     if (out.size() > max)
@@ -800,7 +804,7 @@ inline std::string Fixed2(float v)
 }
 
 // One aura object: `st` only past a single stack, `l` only while the aura runs out, `dt` only for a boss debuff whose
-// dispel type the dashboard colours it by.
+// dispel type the dashboard colours it by, `sp` only for a spreading debuff.
 inline void AppendAuraJson(std::ostringstream& ss, AuraInfo const& a, bool withDispel)
 {
     ss << "{\"id\":" << a.id << ",\"n\":\"" << JsonEscape(Clip(a.name, kMaxCastName)) << "\"";
@@ -810,6 +814,8 @@ inline void AppendAuraJson(std::ostringstream& ss, AuraInfo const& a, bool withD
         ss << ",\"l\":" << a.leftMs;
     if (withDispel && (a.dispelType == 'm' || a.dispelType == 'c' || a.dispelType == 'p' || a.dispelType == 'd'))
         ss << ",\"dt\":\"" << a.dispelType << "\"";
+    if (withDispel && a.spreading)
+        ss << ",\"sp\":1";
     ss << "}";
 }
 

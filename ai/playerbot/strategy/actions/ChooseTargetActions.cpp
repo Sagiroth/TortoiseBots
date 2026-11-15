@@ -541,7 +541,7 @@ bool SelectNewTargetAction::Execute(Event& event)
 
     // Stop attacking
     bot->SetSelectionGuid(ObjectGuid());
-    ai->InterruptSpell();
+    ai->InterruptSpell(true, "target_select");
     bot->AttackStop();
 
 
