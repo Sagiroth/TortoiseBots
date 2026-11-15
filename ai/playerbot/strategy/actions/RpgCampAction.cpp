@@ -210,6 +210,38 @@ bool RpgCampAction::Execute(Event& /*event*/)
         bot->SetFacingTo(state.orientation);
         ai->DoSpecificAction("use", Event("rpg camp", ChatHelper::formatQItem(TortoiseBots::CAMP_TENT_ITEM_ID)), true);
 
+        state.startedMs = now;
+        state.phase = PlayerbotAI::CampPhase::WaitingTentCast;
+        ai->SetActionDuration(500);
+        return true;
+    }
+
+    if (state.phase == PlayerbotAI::CampPhase::WaitingTentCast)
+    {
+        if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId)
+        {
+            ai->AbandonCamp();
+            return false;
+        }
+
+        bool const isCasting = bot->IsNonMeleeSpellCasted(false, true, true);
+        bool const tentSpawned = HasTentNearPoint(bot, state.x, state.y, state.z, TortoiseBots::CAMP_TENT_EXCLUSION_RANGE_YD);
+        uint64_t const elapsedMs = static_cast<uint64_t>(now - state.startedMs);
+        TortoiseBots::CampCastWaitResult const res = TortoiseBots::EvaluateTentCastWait(
+            isCasting, tentSpawned, elapsedMs, TortoiseBots::CAMP_TENT_CAST_TIMEOUT_MS);
+
+        if (res == TortoiseBots::CampCastWaitResult::Wait)
+        {
+            ai->SetActionDuration(500);
+            return true;
+        }
+        if (res == TortoiseBots::CampCastWaitResult::Failed)
+        {
+            ai->AbandonCamp();
+            state.cooldownUntilMs = now + TortoiseBots::CAMP_ROLL_RETRY_COOLDOWN_MS;
+            return false;
+        }
+
         TortoiseBots::ActiveCampInfo info;
         info.botGuid = bot->GetGUIDLow();
         info.mapId = bot->GetMapId();
@@ -221,7 +253,7 @@ bool RpgCampAction::Execute(Event& /*event*/)
         sCampMgr.SetActiveCamp(info);
 
         state.phase = PlayerbotAI::CampPhase::MovingToFire;
-        ai->SetActionDuration(1500);
+        ai->SetActionDuration(500);
         return true;
     }
 
@@ -254,10 +286,36 @@ bool RpgCampAction::Execute(Event& /*event*/)
             sServerFacade.IsSpellReady(bot, TortoiseBots::CAMP_FIRE_SPELL_ID))
         {
             ai->CastSpell(TortoiseBots::CAMP_FIRE_SPELL_ID, bot);
+            state.startedMs = now;
+            state.phase = PlayerbotAI::CampPhase::WaitingFireCast;
+            ai->SetActionDuration(500);
+            return true;
         }
 
         state.phase = PlayerbotAI::CampPhase::MovingToSeat;
-        ai->SetActionDuration(1200);
+        ai->SetActionDuration(500);
+        return true;
+    }
+
+    if (state.phase == PlayerbotAI::CampPhase::WaitingFireCast)
+    {
+        if (!ai->IsAutonomousCampEligible() || bot->GetMapId() != state.mapId)
+        {
+            ai->AbandonCamp();
+            return false;
+        }
+
+        bool const isCasting = bot->IsNonMeleeSpellCasted(false, true, true);
+        TortoiseBots::CampCastWaitResult const res = TortoiseBots::EvaluateSpellCastWait(
+            isCasting, static_cast<uint64_t>(now - state.startedMs), TortoiseBots::CAMP_FIRE_CAST_TIMEOUT_MS);
+        if (res == TortoiseBots::CampCastWaitResult::Wait)
+        {
+            ai->SetActionDuration(500);
+            return true;
+        }
+
+        state.phase = PlayerbotAI::CampPhase::MovingToSeat;
+        ai->SetActionDuration(500);
         return true;
     }
 
@@ -319,6 +377,12 @@ bool RpgCampAction::Execute(Event& /*event*/)
         }
 
         TryGreetNearbyPlayer(ai, bot, context, state, now);
+
+        if (bot->IsNonMeleeSpellCasted(false, true, true))
+        {
+            ai->SetActionDuration(500);
+            return true;
+        }
 
         if (now >= state.nextEmoteMs)
         {

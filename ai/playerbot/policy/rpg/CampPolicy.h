@@ -33,7 +33,41 @@ inline constexpr float CAMP_QUARTER_PI = 0.7853981633974483f;
 inline constexpr uint32_t CAMP_SCAN_COOLDOWN_MS = 10000;
 inline constexpr uint32_t CAMP_ROLL_RETRY_COOLDOWN_MS = 30000;
 inline constexpr uint32_t CAMP_TENT_SPAWN_GRACE_MS = 5000;
+inline constexpr uint32_t CAMP_TENT_CAST_TIMEOUT_MS = 13000;
+inline constexpr uint32_t CAMP_FIRE_CAST_TIMEOUT_MS = 5000;
 inline constexpr uint32_t CAMP_EMOTE_ROTATE_MS = 12000;
+
+enum class CampCastWaitResult : uint8_t
+{
+    Wait = 0,
+    Complete = 1,
+    Failed = 2
+};
+
+inline CampCastWaitResult EvaluateTentCastWait(bool isCasting,
+                                                 bool tentSpawned,
+                                                 uint64_t elapsedMs,
+                                                 uint64_t timeoutMs)
+{
+    if (tentSpawned)
+        return CampCastWaitResult::Complete;
+    if (elapsedMs >= timeoutMs)
+        return CampCastWaitResult::Failed;
+    if (isCasting)
+        return CampCastWaitResult::Wait;
+    return CampCastWaitResult::Failed;
+}
+
+inline CampCastWaitResult EvaluateSpellCastWait(bool isCasting,
+                                                  uint64_t elapsedMs,
+                                                  uint64_t timeoutMs)
+{
+    if (!isCasting)
+        return CampCastWaitResult::Complete;
+    if (elapsedMs >= timeoutMs)
+        return CampCastWaitResult::Failed;
+    return CampCastWaitResult::Wait;
+}
 
 enum class CampEmoteStep : uint8_t
 {

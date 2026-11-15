@@ -1265,9 +1265,11 @@ public:
         Idle = 0,
         MovingToSpot = 1,
         SettingUp = 2,
-        MovingToFire = 3,
-        MovingToSeat = 4,
-        Camping = 5
+        WaitingTentCast = 3,
+        MovingToFire = 4,
+        WaitingFireCast = 5,
+        MovingToSeat = 6,
+        Camping = 7
     };
 
     struct CampSessionState

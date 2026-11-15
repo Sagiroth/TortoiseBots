@@ -99,6 +99,19 @@ int main()
     // Joiner seat and owner seat are distinct and both face the fire
     assert(std::hypot(joinerSeat.x - ownerSeat.x, joinerSeat.y - ownerSeat.y) > 2.0f);
 
+    // Tent cast wait phase logic
+    assert(EvaluateTentCastWait(true, false, 1500, 13000) == CampCastWaitResult::Wait);
+    assert(EvaluateTentCastWait(true, false, 9500, 13000) == CampCastWaitResult::Wait);
+    assert(EvaluateTentCastWait(false, true, 10000, 13000) == CampCastWaitResult::Complete);
+    assert(EvaluateTentCastWait(true, true, 10000, 13000) == CampCastWaitResult::Complete);
+    assert(EvaluateTentCastWait(false, false, 2000, 13000) == CampCastWaitResult::Failed);  // interrupted before spawn
+    assert(EvaluateTentCastWait(true, false, 13000, 13000) == CampCastWaitResult::Failed);  // timed out
+
+    // Generic spell cast wait (campfire / cooking / class flavour)
+    assert(EvaluateSpellCastWait(true, 1000, 5000) == CampCastWaitResult::Wait);
+    assert(EvaluateSpellCastWait(false, 1500, 5000) == CampCastWaitResult::Complete);
+    assert(EvaluateSpellCastWait(true, 5000, 5000) == CampCastWaitResult::Failed);
+
     // Abandonment decision
     assert(!ShouldAbandonCamp(false, true, true, true, 1000, 1200000, true, true));
     assert(ShouldAbandonCamp(true, true, true, true, 1000, 1200000, true, true));    // combat
