@@ -59,6 +59,7 @@ namespace ai
         bool UseItemInternal(Player* requester, uint32 itemId, Unit* target, GameObject* gameObjectTarget, Item* itemTarget);
         bool UseQuestGiverItem(Player* requester, Item* item);
         bool OpenItem(Player* requester, Item* item);
+        GameObject* NearestLockFor(uint32 keyItemId);
     };
 
     // `.bot cmd use` / `.bot cmd open` of the remote commander: use an item (on a unit or a game

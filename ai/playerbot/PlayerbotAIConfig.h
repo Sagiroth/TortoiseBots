@@ -97,7 +97,7 @@ public:
 	bool IsInPvpProhibitedZone(uint32 id);
 
     bool enabled;
-    uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
+    uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay, errorRepeatDelay,
         rpgDelay, sitDelay, returnDelay, lootDelay;
     float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance,
         gatheringDistance, groupMemberGatheringDistance, groupMemberGatheringDistanceWithActiveMaster, shootDistance,

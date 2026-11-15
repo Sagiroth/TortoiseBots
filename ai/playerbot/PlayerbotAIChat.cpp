@@ -481,6 +481,14 @@ bool PlayerbotAI::TellError(Player* player, std::string text, PlayerbotSecurityL
     if (!ignoreSilent && HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
+    // Errors raised every tick (nowhere to flee, cast failed) would otherwise
+    // flood the player's chat for the whole fight.
+    time_t const now = time(0);
+    time_t& lastSaid = errorTells[text];
+    if (lastSaid && (now - lastSaid) < sPlayerbotAIConfig.errorRepeatDelay / 1000)
+        return false;
+    lastSaid = now;
+
     if (player)
         TellPlayer(player, text);
 
@@ -505,7 +513,7 @@ bool PlayerbotAI::IsTellAllowed(Player* player, PlayerbotSecurityLevel securityL
 
 bool PlayerbotAI::TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool ignoreSilent)
 {
-    if (!TellPlayerNoFacing(player, text, securityLevel, isPrivate, ignoreSilent))
+    if (!TellPlayerNoFacing(player, text, securityLevel, isPrivate, false, ignoreSilent))
         return false;
 
     if (player && !player->IsBeingTeleported() && !sServerFacade.isMoving(bot) && !sServerFacade.IsInCombat(bot) && bot->GetMapId() == player->GetMapId() && !bot->IsTaxiFlying() && !bot->IsFlying())
