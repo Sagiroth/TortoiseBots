@@ -154,7 +154,7 @@ static std::string InventoryItemFlags(PlayerbotAI* ai, Player* bot, Player* requ
 }
 
 // TBM:INV_BEGIN|<bot>|<copper>
-// TBM:INV_EQ|<slot>|<itemId>|<durability>|<maxDurability>
+// TBM:INV_EQ|<slot>|<itemId>|<durability>|<maxDurability>[|<bagSize>]
 // TBM:INV_ITEM|<bag>|<slot>|<itemId>|<count>|<flags>
 // TBM:INV_END|<bot>|<freeSlots>|<totalSlots>
 static void SendInventorySnapshot(ChatHandler* handler, Player* bot, Player* requester)
@@ -171,6 +171,15 @@ static void SendInventorySnapshot(ChatHandler* handler, Player* bot, Player* req
             continue;
         handler->PSendSysMessage("TBM:INV_EQ|%u|%u|%u|%u", static_cast<uint32>(slot), item->GetEntry(),
             item->GetUInt32Value(ITEM_FIELD_DURABILITY), item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY));
+    }
+    for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+    {
+        Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bagSlot);
+        Bag* bag = (bagItem && bagItem->IsBag()) ? (Bag*)bagItem : nullptr;
+        if (!bag)
+            continue;
+        handler->PSendSysMessage("TBM:INV_EQ|%u|%u|0|0|%u", static_cast<uint32>(bagSlot),
+            bag->GetEntry(), bag->GetBagSize());
     }
 
     uint32 freeSlots = 0;
