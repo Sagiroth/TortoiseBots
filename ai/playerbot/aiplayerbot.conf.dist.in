@@ -223,6 +223,10 @@ AiPlayerbot.RepopAtGraveyard = 1
 # Teleport a dead bot out of a hopeless corpse run (grim clueless solo graveyard
 # with no reachable spirit) to the graveyard it would repop at
 #AiPlayerbot.RelocateHopelessDeaths = 1
+# Grace period in seconds before a masterless random or autonomous bot left
+# inside a dungeon or raid instance without a real player in its group is
+# teleported back to its homebind. 0 disables. Default 90.
+AiPlayerbot.AbandonedInstanceGraceSec = 90
 # Level at which random bots learn the Swift Riding Turtle (quest 40302
 # "Torta's Egg" -> item 23720 -> spell 30174), as if they did the quest.
 # Applies on seed/refresh at TurtleMountAtLevel..39 and on level-up for the

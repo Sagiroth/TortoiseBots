@@ -649,6 +649,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotNamesFile = config.GetStringDefault("AiPlayerbot.RandomBotNamesFile", "");
     allowIsolatedCustomStartingZones = config.GetBoolDefault("AiPlayerbot.AllowIsolatedCustomStartingZones", false);
     relocateHopelessDeaths = config.GetBoolDefault("AiPlayerbot.RelocateHopelessDeaths", true);
+    abandonedInstanceGraceSec = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.AbandonedInstanceGraceSec", 90)));
     repopAtGraveyard = config.GetBoolDefault("AiPlayerbot.RepopAtGraveyard", true);
     turtleMountAtLevel = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.TurtleMountAtLevel", 18));
     levelUpMounts = config.GetBoolDefault("AiPlayerbot.LevelUpMounts", true);
