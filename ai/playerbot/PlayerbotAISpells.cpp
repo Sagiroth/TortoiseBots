@@ -6,6 +6,8 @@
 #include "playerbot/GroupMembers.h"
 #include "../../runtime/RemoteCommanderTasks.h"
 #include "playerbot/InterruptCastingPolicy.h"
+#include "playerbot/CastCancelLog.h"
+#include "playerbot/DungeonPlanMgr.h"
 #include "playerbot/policy/combat/TargetFacingPolicy.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/values/LastSpellCastValue.h"
@@ -53,6 +55,22 @@ SpellCastResult CheckSpellPower(SpellEntry const* spellInfo, Unit* caster, Item*
         return caster->GetHealth() > cost ? SPELL_CAST_OK : SPELL_FAILED_CASTER_AURASTATE;
 
     return caster->GetPower(Powers(spellInfo->powerType)) < cost ? SPELL_FAILED_NO_POWER : SPELL_CAST_OK;
+}
+
+// The diminishing groups a stun lands in (SpellEntry::GetDiminishingReturnsGroup).
+bool IsStunDiminishingGroup(DiminishingGroup group)
+{
+    return group == DIMINISHING_CONTROL_STUN || group == DIMINISHING_TRIGGER_STUN ||
+        group == DIMINISHING_KIDNEYSHOT;
+}
+
+// The target's stun diminishing return is at immune: a stun there lands for
+// nothing, so it is no interrupt either. GetDiminishing is an in-memory scan
+// of the unit's few DR slots, cheap enough for this path.
+bool StunDiminished(Unit* target, SpellEntry const* stunSpell, bool triggered)
+{
+    DiminishingGroup const group = stunSpell->GetDiminishingReturnsGroup(triggered);
+    return IsStunDiminishingGroup(group) && target->GetDiminishing(group) == DIMINISHING_LEVEL_IMMUNE;
 }
 } // namespace
 
@@ -1785,7 +1803,7 @@ void PlayerbotAI::WaitForSpellCast(Spell *spell)
     SetAIInternalUpdateDelay(GetSpellCastDuration(spell));
 }
 
-void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto)
+void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto, const char* site, float movedYd)
 {
     for (int type = CURRENT_MELEE_SPELL; type < CURRENT_CHANNELED_SPELL; type++)
     {
@@ -1797,6 +1815,10 @@ void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto)
         Spell* currentSpell = bot->GetCurrentSpell((CurrentSpellTypes)type);
         if (currentSpell && currentSpell->m_spellInfo && (currentSpell->m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT))
         {
+            // The CastCancel row: this is the one choke point every ai->InterruptSpell() caller's cancel goes through
+            // (the reaction engine, movement, target picks), so a cast lost here is named even when the caller is not.
+            // The slot is the one about to be interrupted, never whichever cast happens to be live first.
+            LogCastCancel(this, site ? site : "ai", (CurrentSpellTypes)type, movedYd);
             bot->InterruptSpell((CurrentSpellTypes)type);
             SpellInterrupted(currentSpell->m_spellInfo->Id);
         }
@@ -1859,14 +1881,59 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell, u
     ai::InterruptSpellInfo interrupt;
     interrupt.interruptFlags = spellInfo->InterruptFlags;
     interrupt.preventionType = spellInfo->PreventionType;
+    bool const allowStun = sPlayerbotAIConfig.interruptAllowStun;
+    if (allowStun)
+    {
+        // IsImmuneToSpellEffect is not enough to say a target can be stunned:
+        // it reads the effect's mechanic, and Bash/Hammer of Justice carry
+        // STUN as the spell's Mechanic with an empty effect mechanic. Ask the
+        // spell-level check too, and read the creature's raw mask. Bosses are
+        // treated as unstunnable without the bit: they are the fights where a
+        // wasted 60 s stun cooldown hurts most.
+        ai::InterruptStunImmunity& stunImmunity = interrupt.stunImmunity;
+        stunImmunity.spellImmune = target->IsImmuneToSpell(spellInfo, false);
+        stunImmunity.alreadyStunned = !target->GetAurasByType(SPELL_AURA_MOD_STUN).empty();
+        stunImmunity.stunDiminished = StunDiminished(target, spellInfo, false);
+        if (target->IsCreature())
+        {
+            Creature* const creature = static_cast<Creature*>(target);
+            CreatureInfo const* const info = creature->GetCreatureInfo();
+            stunImmunity.stunMechanicImmune = ai::StunMechanicImmune(info->mechanic_immune_mask);
+            stunImmunity.boss = creature->IsWorldBoss() ||
+                info->rank == CREATURE_ELITE_WORLDBOSS ||
+                ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry());
+        }
+    }
     for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2 && i < ai::InterruptSpellInfo::MAX_EFFECTS; ++i)
     {
         interrupt.effect[i] = spellInfo->Effect[i];
         interrupt.effectAura[i] = spellInfo->EffectApplyAuraName[i];
         interrupt.effectImmune[i] = target->IsImmuneToSpellEffect(spellInfo, (SpellEffectIndex)i, true);
+        // Intercept's stun is one level away: its charge triggers 20253, which
+        // is the MOD_STUN aura. Follow the trigger once, and take the immunity
+        // answer from the triggered spell's own spell and effect, so a
+        // stun-immune target still refuses.
+        if (allowStun && spellInfo->Effect[i] == SPELL_EFFECT_TRIGGER_SPELL)
+        {
+            SpellEntry const* triggered = sServerFacade.LookupSpellInfo(spellInfo->EffectTriggerSpell[i]);
+            if (triggered && !target->IsImmuneToSpell(triggered, false) &&
+                !StunDiminished(target, triggered, true))
+            {
+                for (int32 j = EFFECT_INDEX_0; j <= EFFECT_INDEX_2; ++j)
+                {
+                    if (triggered->Effect[j] == SPELL_EFFECT_APPLY_AURA &&
+                        triggered->EffectApplyAuraName[j] == SPELL_AURA_MOD_STUN &&
+                        !target->IsImmuneToSpellEffect(triggered, (SpellEffectIndex)j, true))
+                    {
+                        interrupt.effectTriggeredStun[i] = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
     (void)effectMask;
-    return ai::ShouldInterruptTargetCasting(genericSlot, channeledSlot, interrupt);
+    return ai::ShouldInterruptTargetCasting(genericSlot, channeledSlot, interrupt, allowStun);
 }
 
 bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType, const DispelOverride* override)

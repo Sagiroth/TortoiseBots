@@ -79,8 +79,8 @@ public:
 public:
     bool Initialize();
     // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*) and the `.reload`-able combat
-    // keys (AiPlayerbot.InterruptIgnoresThreat, AiPlayerbot.SpellFacingPrecheck), read from the loaded aiplayerbot.conf:
-    // by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
+    // keys (AiPlayerbot.InterruptIgnoresThreat, AiPlayerbot.InterruptAllowStun, AiPlayerbot.SpellFacingPrecheck), read
+    // from the loaded aiplayerbot.conf: by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
     void LoadDungeonRunKeys();
     // The two-file gate's aiplayerbot.conf half (AiPlayerbot.ObservabilityRaids): read by Initialize, and again by
     // ReloadDungeonRunKeys, so the file that turned the feed on can turn it off on a `.reload config`.
@@ -642,6 +642,11 @@ public:
     // its target off the tank (bot threat plus the spell's flat threat under 110 % of the tank's in melee, 130 %
     // ranged). Earth Shock and Death Coil interrupt rows stay gated. Off = as before (vetoed at the high line).
     bool interruptIgnoresThreat = false;
+    // A stun counts as an interrupt (InterruptCastingPolicy): Bash, Hammer of Justice, War Stomp, Repentance and
+    // Intercept's triggered stun interrupt a cast the target is not stun-immune to, even where the spell has no
+    // interrupt-cast effect and the victim's cast is not silence-prevented. Off = as before (only silence / interrupt
+    // effects count, and the tank stun rows never fire).
+    bool interruptAllowStun = false;
     // PlayerbotAI::CanCastSpell refuses a unit-target cast the target's facing makes impossible (Gouge from behind,
     // Backstab from the front) before it probes the core's CheckCast, which broadcasts a spell failure on every probe.
     // Off = as before (the probe runs, and a Gouge from behind reads as castable and fails in the real cast).
@@ -860,6 +865,14 @@ public:
     // The fixed ranged slots of a live spread row (each ranged bot and healer owns a ring point and stands on it
     // whenever the seek does not need it): off, today's step-away (default off, recommended on).
     bool dungeonRunBossSpreadSlots = false;
+    // The spread ring slots' minimum range for a class that shoots from a dead zone (a hunter's Auto Shot, 8 yd):
+    // on, such a bot's slot never lands nearer the boss than the boss's reach + 8 + 2 yd; off, the rings as they
+    // are (default off, recommended on).
+    bool spreadRangedMinRange = false;
+    // The opening percent of a healer's heal that a positioning reaction (`boss tactics seek`, `raid spread`) may
+    // still cut; from it on the heal stands (ReactionCastGuardPolicy.h). Off, every reaction breaks the cast at pick
+    // time, as before (default 0 = off, recommended on at 1).
+    int reactionHealCastGuardPct = 0;
     // One BossStand row per bot's stand episode (assigned, arrived, unseated, released) into bot_events.csv: off, the
     // stand code writes nothing and reads no episode state (needs the boss stand rows and the bot_events.csv log;
     // default off).

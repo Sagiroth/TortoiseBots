@@ -247,6 +247,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BotLog.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BotActionLog.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BotDiagnostics.cpp"
+    "${TORTOISEBOTS_ROOT}/ai/playerbot/CastCancelLog.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BossTacticsMgr.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BossStandMgr.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BotAreaTriggers.cpp"

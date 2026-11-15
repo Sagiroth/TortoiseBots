@@ -1,4 +1,5 @@
 #include "playerbot/strategy/actions/ViscidusActions.h"
+#include "playerbot/CastCancelLog.h"
 #include <vector>
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
@@ -8,6 +9,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/TransportSnapPolicy.h"
 #include "playerbot/CharmYieldPolicy.h"
+#include "playerbot/ReactionCastGuardPolicy.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
 #include "playerbot/playerbot.h"
@@ -546,6 +548,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             if (Spell* channel = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
                 if (channel->m_spellInfo && std::string(channel->m_spellInfo->SpellName[0]).find("Fishing") == 0)
                 {
+                    ai::LogCastCancel(this, "fishing", CURRENT_CHANNELED_SPELL);
                     bot->InterruptSpell(CURRENT_CHANNELED_SPELL);
                     isCasting = bot->IsNonMeleeSpellCasted(true);
                 }
@@ -948,7 +951,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(slot)))
                     if (PatchwerkOpeningBlocksSpell(this, spell->m_spellInfo->Id,
                         aiObjectContext->GetValue<Unit*>("current target")->Get()))
+                    {
+                        ai::LogCastCancel(this, "patchwerk_opening", CurrentSpellTypes(slot));
                         bot->InterruptSpell(CurrentSpellTypes(slot));
+                    }
             if (Pet* pet = bot->GetPet())
                 if (pet->GetVictim() && pet->GetVictim()->GetEntry() == 16028)
                     pet->AttackStop();
@@ -978,6 +984,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         {
             if (!soakWasStaging)
             {
+                ai::LogCastCancelNonMelee(this, "patchwerk_soak_stage", false);
                 bot->InterruptNonMeleeSpells(false);
                 ResetAIInternalUpdateDelay();
                 if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
@@ -1005,6 +1012,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             if (!soakWasActive)
             {
                 WakePatchwerkPullMain(this);
+                ai::LogCastCancelNonMelee(this, "patchwerk_soak_engage", false);
                 bot->InterruptNonMeleeSpells(false);
                 ResetAIInternalUpdateDelay();
                 if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
@@ -1068,6 +1076,21 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     SC_PHASE("UpdateAI.exit", bot ? bot->GetName() : "(null)");
 }
 
+// The reaction cast guard's heal read (ReactionCastGuardPolicy.h): the spell heals outright (Flash Heal, Holy
+// Light, Regrowth's direct part) or over time (Renew, a Regrowth's bloom), by its effects. The bot role read
+// (IsHealSpell) also carries class-icon shortcuts and the max-health heal; the guard wants the heal itself.
+static bool ReactionCastIsHeal(const SpellEntry* entry)
+{
+    if (!entry)
+        return false;
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (entry->Effect[i] == SPELL_EFFECT_HEAL || entry->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEAL)
+            return true;
+    }
+    return false;
+}
+
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 {
     bool reactionFound;
@@ -1086,9 +1109,33 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
         const Reaction* reaction = reactionEngine->GetReaction();
         if(reaction)
         {
-            if(reaction->ShouldInterruptCast())
+            // The pick decides the break, before the action's Execute can find it has nothing to do. A positioning
+            // reaction that ends in a no-op more often than not (`boss tactics seek`, `raid spread`) therefore leaves
+            // a healer's heal alone once it is under way (ReactionCastGuardPolicy.h, AiPlayerbot.ReactionHealCastGuardPct).
+            const bool interruptCast = reaction->ShouldInterruptCast();
+            ReactionCastRead cast;
+            if (interruptCast)
             {
-                InterruptSpell();
+                // The generic slot as the core counts it: a cast bar counts down in PREPARING, the channel phase is
+                // CASTING (this core has no separate channeling state). Any other state is a spell left behind after
+                // its cast finished, not a heal under way, and stays 0 so the break goes ahead.
+                if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+                {
+                    cast.state = spell->getState();
+                    cast.remainingMs = spell->GetCastedTime();
+                    // A channel counts its duration down, while GetCastTime() holds the pre-channel cast time
+                    // (usually 0); a cast bar counts its cast time down.
+                    cast.totalMs = cast.state == SPELL_STATE_CASTING && spell->m_spellInfo
+                        ? spell->m_spellInfo->CalculateDuration(bot) : spell->GetCastTime();
+                    cast.isHeal = ReactionCastIsHeal(spell->m_spellInfo);
+                }
+            }
+
+            if (ReactionCastBreakDue(interruptCast, reaction->YieldsToHealCast(),
+                    sPlayerbotAIConfig.reactionHealCastGuardPct, IsHeal(bot), &cast))
+            {
+                // The reaction engine's own cancel: the label splits it from the target picks and the walks.
+                InterruptSpell(true, "reaction_cast");
             }
 
             if (reaction->ShouldInterruptMovement())
@@ -2659,7 +2706,7 @@ void PlayerbotAI::Reset(bool full)
         RESET_AI_VALUE2(std::string, "manual string", "future travel purpose");
         RESET_AI_VALUE2(int, "manual int", "future travel relevance");
 
-        InterruptSpell();
+        InterruptSpell(true, "ai_reset");
 
         StopMoving();
 
@@ -3903,7 +3950,7 @@ void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
 
 void PlayerbotAI::ReInitCurrentEngine()
 {
-    InterruptSpell();
+    InterruptSpell(true, "engine_reinit");
     currentEngine->Init();
 }
 

@@ -19,7 +19,8 @@ bool UseOssirianCrystalAction::Execute(Event& event)
         return false;
 
     if (bot->GetDistance(crystal) > INTERACTION_DISTANCE)
-        return MoveTo(bot->GetMapId(), crystal->GetPositionX(), crystal->GetPositionY(), crystal->GetPositionZ());
+        return MoveTo(bot->GetMapId(), crystal->GetPositionX(), crystal->GetPositionY(), crystal->GetPositionZ(), false,
+                      false, false, false, "ossirian_crystal");
 
     // In range: hold position until the buff is up (or the weakness is
     // nearly out) and Ossirian is close. Returning true keeps the engine

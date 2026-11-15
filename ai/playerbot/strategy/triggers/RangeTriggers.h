@@ -10,6 +10,9 @@
 #include "playerbot/strategy/values/Formations.h"
 #include "playerbot/FormationStationPolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
+#include "playerbot/WorldPosition.h"
+#include "host/ModuleLog.h"
+#include <ctime>
 
 namespace ai
 {
@@ -481,16 +484,35 @@ namespace ai
             WorldLocation loc = formation->GetLocation();
             if (Formation::IsNullLocation(loc) || loc.mapId == -1 || bot->GetMapId() != loc.mapId)
                 return false;
-            // A slot in magma is no station (the lead tank's slot once lay in
-            // a lava basin); MoveTo2 would refuse the walk anyway
-            // (MagmaHazardPolicy.h).
-            if (MagmaGuardApplies(bot->GetMap()->IsDungeon()) && WorldPosition(loc).isInMagma())
-                return false;
+            // A slot whose CORE move point sinks is no station: a point over
+            // a thin floor above magma is dry at the navmesh z and liquid
+            // level - 2 at the clamp (MagmaHazardPolicy.h, MagmaAtMoveZ). A
+            // dry navmesh z above the clamp is a floor MoveTo walks, so only
+            // a clamp the navmesh cannot rescue skips the station.
+            if (MagmaGuardApplies(bot->GetMap()->IsDungeon()))
+            {
+                ai::MagmaMoveProbe const move = ai::MagmaAtMoveZ(bot, loc.x, loc.y, loc.z);
+                if (move.moveInMagma)
+                {
+                    time_t const now = time(nullptr);
+                    if (!stationMagmaLogAt || now - stationMagmaLogAt >= 10)
+                    {
+                        stationMagmaLogAt = now;
+                        TB_LOG_BASIC("TortoiseBots: %s: magma formation station at %.1f %.1f %.1f: move z %.1f, "
+                            "navmesh z %.1f (map %u)", bot->GetName(), loc.x, loc.y, loc.z, move.moveZ,
+                            move.navmeshZ, bot->GetMapId());
+                    }
+                    if (ai::PlanMagmaMoveZ(true, move.moveInMagma, move.navmeshDry, move.navmeshZ, move.moveZ) ==
+                        ai::MagmaMoveZPlan::Refuse)
+                        return false;
+                }
+            }
             return FormationStationStep(memory, formation->GetSerial(), bot->GetPositionX(), bot->GetPositionY(), loc.x, loc.y);
         }
 
     private:
         FormationStationMemory memory;
+        time_t stationMagmaLogAt = 0;
     };
 
     class StopFollowTrigger : public Trigger

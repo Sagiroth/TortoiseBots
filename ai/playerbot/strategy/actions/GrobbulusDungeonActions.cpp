@@ -36,5 +36,5 @@ bool GrobbulusGoBehindAction::Execute(Event& event)
     // Reaction context: IsReaction() idiom (sibling hazard rows) so the move
     // issues without booking a multi-second WaitForReach that would hold
     // the reaction and stall combat.
-    return MoveTo(bot->GetMapId(), x, y, boss->GetPositionZ(), false, IsReaction(), false, true);
+    return MoveTo(bot->GetMapId(), x, y, boss->GetPositionZ(), false, IsReaction(), false, true, "grobbulus_behind");
 }

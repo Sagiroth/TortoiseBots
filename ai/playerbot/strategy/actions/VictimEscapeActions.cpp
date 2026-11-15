@@ -5,6 +5,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/VictimEscapePolicy.h"
+#include "playerbot/CastCancelLog.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
@@ -268,7 +269,13 @@ void StopOwnCast(Player* bot)
 {
     // A cast or a channel in progress would refuse the escape (PlayerbotAI::CastSpell's in-progress gate).
     if (bot->IsNonMeleeSpellCasted(false))
+    {
+        // The registry lookup takes a lock, so the diagnostics key gates it first.
+        if (sPlayerbotAIConfig.raidBossDiagnostics)
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+                ai::LogCastCancelNonMelee(ai, "victim_escape", false);
         bot->InterruptNonMeleeSpells(false);
+    }
 }
 
 struct EscapePlan

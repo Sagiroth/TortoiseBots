@@ -4,6 +4,7 @@
 #include <string>
 #include "ObjectAccessor.h"
 #include "BossTacticsTriggers.h"
+#include "playerbot/CastCancelLog.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/GroupMembers.h"
@@ -146,6 +147,7 @@ void InterruptCarrierStrikeCast(PlayerbotAI* ai, Player* bot, uint32 shadeEntry)
         uint32 const spellId = AI_VALUE2(uint32, "spell id", spell);
         if (spellId != 0 && spellId == current->m_spellInfo->Id)
         {
+            ai::LogCastCancelNonMelee(ai, "carrier_strike", false);
             bot->InterruptNonMeleeSpells(false);
             return;
         }

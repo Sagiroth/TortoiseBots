@@ -27,15 +27,24 @@ using ai::SpreadCastClock;
 using ai::SpreadCentreFor;
 using ai::SpreadCentreKind;
 using ai::SpreadCentreWord;
+using ai::kSpreadMinRangeShotYd;
+using ai::kSpreadSlotArriveYd;
+using ai::SpreadSlotBossGrid;
 using ai::SpreadSlotCastCutDue;
 using ai::SpreadSlotCastStart;
 using ai::SpreadSlotFallback;
 using ai::SpreadSlotIndexOf;
+using ai::SpreadSlotInsideMinRange;
+using ai::SpreadSlotMinRangeApplies;
+using ai::SpreadSlotMinRangePoint;
+using ai::SpreadSlotMinRangeYd;
 using ai::SpreadSlotOrder;
+using ai::SpreadSlotOwnerPoints;
 using ai::SpreadSlotPoint;
 using ai::SpreadSlotPoints;
 using ai::SpreadSlotRings;
 using ai::SpreadSlotSelect;
+using ai::SpreadSlotSpacingAngle;
 using ai::SpreadSlotVerdict;
 using ai::SpreadSlotVerdictWord;
 using ai::SpreadSlotWanted;
@@ -234,6 +243,240 @@ int main()
     }
     std::cout << "  [PASS] the slot order runs nearest to the seek spot first\n";
 
+    // SpreadSlot_HunterSlotLeavesDeadZone: the rings have no floor from the boss, so a hunter's slot can sit inside
+    // Auto Shot's 8 yd dead zone. With the key on and a class that needs a minimum range, a slot nearer the boss
+    // than the boss's reach + 8 + 2 yd moves out radially to exactly that range; a slot already that far keeps its
+    // point, and the key off (or a caster) hands the ring back untouched.
+    CHECK(!SpreadSlotMinRangeApplies(false, true));
+    CHECK(!SpreadSlotMinRangeApplies(true, false));
+    CHECK(SpreadSlotMinRangeApplies(true, true));
+    // The scan step is the angle that separates two points by the row's spacing on the min-range circle.
+    CHECK(SpreadSlotSpacingAngle(0.0f, 15.0f) == 0.0f);
+    CHECK(SpreadSlotSpacingAngle(10.0f, 0.0f) == 0.0f);
+    CHECK(std::fabs(SpreadSlotSpacingAngle(10.0f, 15.0f) - 2.0f * std::asin(1.0f / 3.0f)) < 0.0001f);
+    CHECK(std::fabs(SpreadSlotSpacingAngle(40.0f, 15.0f) - 3.1415926536f) < 0.0001f);
+    // The floor: the boss's body + Auto Shot's dead zone + the hunter's own body + the arrival slack + 1 yd.
+    CHECK(std::fabs(SpreadSlotMinRangeYd(0.0f, 0.0f) - 11.0f) < 0.001f);
+    CHECK(std::fabs(SpreadSlotMinRangeYd(9.0f, 1.5f) - 21.5f) < 0.001f);
+    CHECK(std::fabs(SpreadSlotMinRangeYd(-5.0f, -2.0f) - 11.0f) < 0.001f);
+    CHECK(std::fabs(SpreadSlotMinRangeYd(3.0f, 1.5f) - SpreadSlotMinRangeYd(3.0f, 0.0f) - 1.5f) < 0.001f);
+    // SlotInsideHunterMinRange: the runtime guard the spread read uses, independent of the floor. A slot 10 yd from
+    // the target centre with 7.5 yd of reach between the two bodies leaves 2.5 yd of shot, inside Auto Shot's 8 yd
+    // minimum plus the 2 yd margin; at 25 yd it leaves 17.5 yd and clears. A class with no minimum range never bites.
+    CHECK(SpreadSlotInsideMinRange(10.0f, 7.5f, 8.0f));
+    CHECK(!SpreadSlotInsideMinRange(25.0f, 7.5f, 8.0f));
+    CHECK(!SpreadSlotInsideMinRange(0.0f, 0.0f, 0.0f));
+    CHECK(SpreadSlotInsideMinRange(9.99f, 0.0f, 8.0f));  // inside by the margin alone
+    CHECK(!SpreadSlotInsideMinRange(10.0f, 0.0f, 8.0f));  // exactly at min + margin: outside
+    CHECK(SpreadSlotInsideMinRange(14.9f, 5.0f, 8.0f));  // 9.9 yd of shot, still inside
+    CHECK(!SpreadSlotInsideMinRange(15.1f, 5.0f, 8.0f));  // 10.1 yd of shot, outside
+    // SpreadSlot_ArrivedHunterStaysOutOfTheDeadZone: HunterTargetInDeadZone takes both combat reaches off the target
+    // distance and compares the rest with Auto Shot's 8 yd minimum. A hunter reads as arrived while up to
+    // kSpreadSlotArriveYd inside its point, so the floor must clear the dead zone by that slack plus its own margin.
+    for (const float bossReach : { 0.0f, 5.0f, 10.0f, 14.0f })
+        for (const float selfReach : { 0.0f, 1.5f, 2.5f })
+        {
+            const float floorYd = SpreadSlotMinRangeYd(bossReach, selfReach);
+            const float arrivedYd = floorYd - kSpreadSlotArriveYd;
+            CHECK(arrivedYd - bossReach - selfReach > kSpreadMinRangeShotYd);
+        }
+    {
+        const SpreadSlotPoint inside{12.0f, 0.0f, 1, 0};
+        const SpreadSlotPoint out = SpreadSlotMinRangePoint(inside, 0.0f, 0.0f, 0.0f, 0.0f, 19.0f);
+        CHECK(std::fabs(out.x - 19.0f) < 0.001f && std::fabs(out.y) < 0.001f);
+        CHECK(out.ring == 1 && out.j == 0);
+        const SpreadSlotPoint outside{0.0f, 24.0f, 2, 3};
+        const SpreadSlotPoint kept = SpreadSlotMinRangePoint(outside, 0.0f, 0.0f, 0.0f, 0.0f, 19.0f);
+        CHECK(kept.x == 0.0f && kept.y == 24.0f);
+        const SpreadSlotPoint off = SpreadSlotMinRangePoint(inside, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        CHECK(off.x == 12.0f && off.y == 0.0f);
+        // An off-centre boss: the bearing is the boss->slot one, so the point lands exactly minYd from the boss.
+        const SpreadSlotPoint bossOff = SpreadSlotMinRangePoint(inside, 3.0f, 0.0f, 0.0f, 0.0f, 14.0f);
+        const float dx = bossOff.x - 3.0f;
+        CHECK(std::fabs(std::sqrt(dx * dx + bossOff.y * bossOff.y) - 14.0f) < 0.001f);
+        // A slot on the boss itself takes the centre's bearing instead, and always lands on the floor.
+        const SpreadSlotPoint onBoss{5.0f, 5.0f, 0, 0};
+        const SpreadSlotPoint pushed = SpreadSlotMinRangePoint(onBoss, 5.0f, 5.0f, 0.0f, 0.0f, 19.0f);
+        const float px = pushed.x - 5.0f;
+        const float py = pushed.y - 5.0f;
+        CHECK(std::fabs(std::sqrt(px * px + py * py) - 19.0f) < 0.001f);
+        CHECK(pushed.x > 5.0f && pushed.y > 5.0f);
+    }
+    std::cout << "  [PASS] a min-range slot outside the dead zone, the key off and a caster keep the ring\n";
+
+    // SpreadSlot_MixedGroupSpacingSurvivesProjection: two hunters and two casters each build and order the same
+    // canonical list around an off-centre boss, then resolve the owner points the way every member does. Production
+    // sizing throughout: the ring holds all 36 points and the flags cover all of them, but only the 4 the group owns
+    // are obstacles. All four compute the same final array; a hunter steps off its bearing when the radial projection
+    // would land inside the row's spacing of another owner's point; and no two final points are closer than the
+    // spacing, while empty ring points never push anyone.
+    {
+        const float spacingYd = 10.0f;
+        const float cx = 0.0f;
+        const float cy = 0.0f;
+        const float bossX = 6.0f;   // the boss stands off the ring centre
+        const float bossY = -4.0f;
+        const float prefX = bossX + 12.0f;
+        const float prefY = bossY - 8.0f;
+        const std::uint64_t hunterGuid = 10;
+        const std::uint64_t secondHunterGuid = 20;
+        const std::uint64_t mageGuid = 30;
+        const std::uint64_t priestGuid = 40;
+        const std::vector<std::uint64_t> eligible = { hunterGuid, secondHunterGuid, mageGuid, priestGuid };
+        const auto canonical = [&]() {
+            std::vector<SpreadSlotPoint> points =
+                SpreadSlotPoints(cx, cy, spacingYd, SpreadSlotRings(spacingYd, true, 60.0f));
+            SpreadSlotOrder(points, prefX, prefY);
+            return points;
+        };
+        const std::vector<SpreadSlotPoint> shared = canonical();
+        CHECK(shared.size() == 36);
+        // Every member builds the same class-independent order.
+        for (const std::vector<SpreadSlotPoint>& same : {canonical(), canonical(), canonical()})
+            for (std::size_t i = 0; i < shared.size(); ++i)
+                CHECK(shared[i].x == same[i].x && shared[i].y == same[i].y && shared[i].ring == same[i].ring &&
+                      shared[i].j == same[i].j);
+        const int hunterIndex = SpreadSlotIndexOf(eligible, hunterGuid);
+        const int secondHunterIndex = SpreadSlotIndexOf(eligible, secondHunterGuid);
+        const int mageIndex = SpreadSlotIndexOf(eligible, mageGuid);
+        const int priestIndex = SpreadSlotIndexOf(eligible, priestGuid);
+        CHECK(hunterIndex == 0 && secondHunterIndex == 1 && mageIndex == 2 && priestIndex == 3);
+        const std::size_t ownerCount = eligible.size();
+        std::vector<char> minRangeByIndex(shared.size(), 0);
+        minRangeByIndex[0] = 1;
+        minRangeByIndex[1] = 1;
+        const auto apart = [](const SpreadSlotPoint& a, const SpreadSlotPoint& b) {
+            const float dx = a.x - b.x;
+            const float dy = a.y - b.y;
+            return std::sqrt(dx * dx + dy * dy);
+        };
+        const auto bossYd = [&](const SpreadSlotPoint& point) {
+            const float dx = point.x - bossX;
+            const float dy = point.y - bossY;
+            return std::sqrt(dx * dx + dy * dy);
+        };
+        // Realistic boss reaches: the min-range circle moves from the inner ring out past the outer one, and the
+        // owner points keep the spacing at every one of them.
+        for (const float reach : { 0.0f, 5.0f, 10.0f, 14.0f })
+        {
+            const float minYd = SpreadSlotMinRangeYd(reach, 1.5f);
+            const std::vector<SpreadSlotPoint> owners =
+                SpreadSlotOwnerPoints(shared, minRangeByIndex, ownerCount, bossX, bossY, cx, cy, minYd, spacingYd);
+            // One point per owner, never one per ring point: the unowned ring is empty ground.
+            CHECK(owners.size() == ownerCount);
+            // The same group yields the same points on every member: each one resolves from its own fresh list.
+            for (int member = 0; member < 4; ++member)
+            {
+                const std::vector<SpreadSlotPoint> rebuilt = SpreadSlotOwnerPoints(
+                    canonical(), minRangeByIndex, ownerCount, bossX, bossY, cx, cy, minYd, spacingYd);
+                CHECK(rebuilt.size() == owners.size());
+                for (std::size_t i = 0; i < owners.size(); ++i)
+                    CHECK(rebuilt[i].x == owners[i].x && rebuilt[i].y == owners[i].y);
+            }
+            // Inner-to-outer ring pairs included: no projected point inside the spread's own spacing.
+            for (std::size_t i = 0; i < owners.size(); ++i)
+                for (std::size_t j = i + 1; j < owners.size(); ++j)
+                    CHECK(apart(owners[i], owners[j]) >= spacingYd - 0.001f);
+            for (const int hunterSlot : { hunterIndex, secondHunterIndex })
+            {
+                const SpreadSlotPoint canonicalPoint = shared[static_cast<std::size_t>(hunterSlot)];
+                const SpreadSlotPoint ownerPoint = owners[static_cast<std::size_t>(hunterSlot)];
+                CHECK(bossYd(ownerPoint) >= minYd - 0.001f);
+                if (bossYd(canonicalPoint) < minYd - 0.001f)
+                    CHECK(ownerPoint.x != canonicalPoint.x || ownerPoint.y != canonicalPoint.y);
+            }
+            for (const int casterSlot : { mageIndex, priestIndex })
+                CHECK(owners[static_cast<std::size_t>(casterSlot)].x ==
+                          shared[static_cast<std::size_t>(casterSlot)].x &&
+                      owners[static_cast<std::size_t>(casterSlot)].y ==
+                          shared[static_cast<std::size_t>(casterSlot)].y);
+        }
+    }
+    std::cout << "  [PASS] two hunters and two casters keep the spacing after the projection\n";
+
+    // SpreadSlot_BossDriftKeepsTheMap: every member reads the live boss on its own tick, so a drift of a fraction of a
+    // yard between two reads must still resolve to one map. The position is snapped to the 1 yd grid before the owner
+    // points are built, and a 0.6 yd drift over the test's boss (6,-4) stays in the same cell.
+    {
+        const float spacingYd = 10.0f;
+        const float minYd = SpreadSlotMinRangeYd(5.0f, 1.5f);
+        std::vector<SpreadSlotPoint> shared = SpreadSlotPoints(0.0f, 0.0f, spacingYd,
+                                                               SpreadSlotRings(spacingYd, true, 60.0f));
+        SpreadSlotOrder(shared, 18.0f, -12.0f);
+        std::vector<char> minRangeByIndex(shared.size(), 0);
+        minRangeByIndex[0] = 1;
+        CHECK(SpreadSlotBossGrid(6.0f) == SpreadSlotBossGrid(6.6f));
+        CHECK(SpreadSlotBossGrid(-4.0f) == SpreadSlotBossGrid(-3.4f));
+        const std::vector<SpreadSlotPoint> here = SpreadSlotOwnerPoints(
+            shared, minRangeByIndex, 4, SpreadSlotBossGrid(6.0f), SpreadSlotBossGrid(-4.0f), 0.0f, 0.0f, minYd,
+            spacingYd);
+        const std::vector<SpreadSlotPoint> drifted = SpreadSlotOwnerPoints(
+            shared, minRangeByIndex, 4, SpreadSlotBossGrid(6.6f), SpreadSlotBossGrid(-3.4f), 0.0f, 0.0f, minYd,
+            spacingYd);
+        CHECK(here.size() == 4 && drifted.size() == here.size());
+        for (std::size_t i = 0; i < here.size(); ++i)
+            CHECK(here[i].x == drifted[i].x && here[i].y == drifted[i].y);
+    }
+    std::cout << "  [PASS] a fractional boss drift still resolves to one slot map\n";
+
+    // SpreadSlot_MinRangeFallbackLeastCrowded: an artificially dense min-range circle (a caster every 39 degrees on
+    // it) leaves every stepped candidate inside the spacing. The resolver then takes the least-crowded candidate,
+    // which here is one step off the bearing, not the untouched projected point, and every member computes the same.
+    {
+        constexpr float kPi = 3.1415926536f;
+        const float spacingYd = 10.0f;
+        const float minYd = SpreadSlotMinRangeYd(5.0f, 0.0f);
+        std::vector<SpreadSlotPoint> slots;
+        slots.push_back(SpreadSlotPoint{ 10.0f, 0.0f, 1, 0 });  // the hunter's canonical ring slot
+        for (int k = 0; k < 10; ++k)
+        {
+            const float angle = static_cast<float>(k) * 39.0f * kPi / 180.0f;
+            SpreadSlotPoint caster;
+            caster.x = minYd * std::cos(angle);
+            caster.y = minYd * std::sin(angle);
+            caster.ring = 2;
+            caster.j = k;
+            slots.push_back(caster);
+        }
+        std::vector<char> minRangeByIndex(slots.size(), 0);
+        minRangeByIndex[0] = 1;
+        const std::vector<SpreadSlotPoint> owners =
+            SpreadSlotOwnerPoints(slots, minRangeByIndex, slots.size(), 0.0f, 0.0f, 0.0f, 0.0f, minYd, spacingYd);
+        const auto apart = [](const SpreadSlotPoint& a, const SpreadSlotPoint& b) {
+            const float dx = a.x - b.x;
+            const float dy = a.y - b.y;
+            return std::sqrt(dx * dx + dy * dy);
+        };
+        const auto clearance = [&](const SpreadSlotPoint& point) {
+            float nearest = 1.0e30f;
+            for (std::size_t j = 1; j < slots.size(); ++j)
+                nearest = std::min(nearest, apart(point, slots[j]));
+            return nearest;
+        };
+        const SpreadSlotPoint start = SpreadSlotMinRangePoint(slots[0], 0.0f, 0.0f, 0.0f, 0.0f, minYd);
+        const float step = SpreadSlotSpacingAngle(spacingYd, minYd);
+        CHECK(step > 0.0f);
+        const float bearing = std::atan2(start.y, start.x);
+        float bestClear = clearance(start);
+        CHECK(bestClear < spacingYd);  // the untouched projected point is crowded too
+        for (int t = 1; t <= 8; ++t)
+        {
+            const float sign = (t % 2 == 1) ? 1.0f : -1.0f;
+            const float angle = bearing + sign * static_cast<float>((t + 1) / 2) * step;
+            const SpreadSlotPoint candidate{ minYd * std::cos(angle), minYd * std::sin(angle), 1, 0 };
+            const float clear = clearance(candidate);
+            CHECK(clear < spacingYd);  // no candidate clears: the fallback has to choose
+            bestClear = std::max(bestClear, clear);
+        }
+        CHECK(clearance(owners[0]) >= bestClear - 0.001f);
+        CHECK(owners[0].x != start.x || owners[0].y != start.y);
+        // Every member recomputes the same fallback point.
+        const std::vector<SpreadSlotPoint> rebuilt =
+            SpreadSlotOwnerPoints(slots, minRangeByIndex, slots.size(), 0.0f, 0.0f, 0.0f, 0.0f, minYd, spacingYd);
+        CHECK(rebuilt[0].x == owners[0].x && rebuilt[0].y == owners[0].y);
+    }
+    std::cout << "  [PASS] a crowded min-range circle takes the least-crowded candidate\n";
+
     // The index counts lower guids only, and a bot outside the list has none.
     const std::vector<std::uint64_t> guids = { 50, 10, 30 };
     CHECK(SpreadSlotIndexOf(guids, 10) == 0);
@@ -262,31 +505,44 @@ int main()
     }
     std::cout << "  [PASS] fallback keeps the owned slot telemetry\n";
 
-    // The verdict precedence of the slot decision, in D6 order.
-    CHECK(SpreadSlotWanted(true, true, true, true, false, false, false, false, true, true) ==
+    // The verdict precedence of the slot decision, in D6 order. The last argument is the dead-zone guard: it sits
+    // before the floor (the dead-zone point is what makes the slot unusable, so a floor answer would hide it) and
+    // before the range test.
+    CHECK(SpreadSlotWanted(true, true, true, true, false, false, false, false, true, true, false) ==
           SpreadSlotVerdict::Seek);
-    CHECK(SpreadSlotWanted(false, true, true, true, true, true, true, true, false, false) ==
+    CHECK(SpreadSlotWanted(false, true, true, true, true, true, true, true, false, false, false) ==
           SpreadSlotVerdict::Stand);
-    CHECK(SpreadSlotWanted(false, false, true, true, true, true, true, true, false, false) ==
+    CHECK(SpreadSlotWanted(false, false, true, true, true, true, true, true, false, false, false) ==
           SpreadSlotVerdict::Victim);
-    CHECK(SpreadSlotWanted(false, false, false, true, true, true, true, true, false, false) ==
+    CHECK(SpreadSlotWanted(false, false, false, true, true, true, true, true, false, false, false) ==
           SpreadSlotVerdict::Walkout);
-    CHECK(SpreadSlotWanted(false, false, false, false, false, true, true, true, false, false) ==
+    CHECK(SpreadSlotWanted(false, false, false, false, false, true, true, true, false, false, false) ==
           SpreadSlotVerdict::NoCentre);
-    CHECK(SpreadSlotWanted(false, false, false, false, true, false, true, true, false, false) ==
+    CHECK(SpreadSlotWanted(false, false, false, false, true, false, true, true, false, false, false) ==
           SpreadSlotVerdict::NoSlot);
-    CHECK(SpreadSlotWanted(false, false, false, false, true, true, false, true, false, false) ==
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, false, true, false, false, false) ==
           SpreadSlotVerdict::Floor);
-    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, false, false, false) ==
+    // SpreadSlot_DeadZoneVerdict: a slot inside the shot's dead zone leaves the read with no usable point (the zone
+    // is what refused it), so the dead zone outranks the floor; it also outranks the range test and the walk, and
+    // the hunter keeps the step-out's position.
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, false, true, false, false, true) ==
+          SpreadSlotVerdict::DeadZone);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, false, false, false, false, true) ==
+          SpreadSlotVerdict::DeadZone);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, false, false, false, false) ==
           SpreadSlotVerdict::Range);
-    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, false, true) ==
-          SpreadSlotVerdict::SlotHold);
-    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, true, false) ==
-          SpreadSlotVerdict::Cast);
-    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, false, false) ==
+    // A usable point outside the zone is still a walk.
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, false, false, false) ==
           SpreadSlotVerdict::SlotMove);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, false, false, false, false) !=
+          SpreadSlotVerdict::DeadZone);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, false, true, false) ==
+          SpreadSlotVerdict::SlotHold);
+    CHECK(SpreadSlotWanted(false, false, false, false, true, true, true, true, true, false, false) ==
+          SpreadSlotVerdict::Cast);
     CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::SlotHold)) == "slot_hold");
     CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::NoCentre)) == "no_centre");
+    CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::DeadZone)) == "dead_zone");
     CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::MoveFailed)) == "move_failed");
     std::cout << "  [PASS] slot verdict precedence and words\n";
 

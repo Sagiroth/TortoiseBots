@@ -97,7 +97,8 @@ bool FollowAction::WalkLeadTrail(Unit* followTarget, bool& moved)
         return false;
 
     ai::FollowTrailPoint const& point = trail[static_cast<std::size_t>(index)];
-    moved = MoveTo2(WorldPosition(bot->GetMapId(), point.x, point.y, point.z));
+    moved = MoveTo2(WorldPosition(bot->GetMapId(), point.x, point.y, point.z), false, false, false, false,
+        nullptr, "move_follow");
     return moved;
 }
 
@@ -267,7 +268,7 @@ bool FollowAction::RescueStalledDungeonFollow(Unit* followTarget, bool& moved)
         if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
             destination = WorldPosition(loc);
     }
-    moved = MoveTo2(destination);
+    moved = MoveTo2(destination, false, false, false, false, nullptr, "move_follow");
     followStallWatch.Walked(nowMs, moved);
     if (moved)
         ai->TellDebug(GetMaster(), "Core follow stood still in a dungeon - walking the path to you", "debug move");
@@ -490,7 +491,7 @@ bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
         if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
             destination = WorldPosition(loc);
     }
-    moved = MoveTo2(destination, false, false, false, false, &packHold);
+    moved = MoveTo2(destination, false, false, false, false, &packHold, "move_follow");
 
     // MoveTo2 can return without launching a move (path collapsed, no route, a
     // clip that left nothing). A core follow started before the gate opened would
@@ -623,7 +624,7 @@ bool FormationStationAction::Execute(Event& event)
     WorldLocation loc = formation->GetLocation();
     if (Formation::IsNullLocation(loc) || bot->GetMapId() != loc.mapId)
         return false;
-    return MoveTo(loc.mapId, loc.x, loc.y, loc.z, true);
+    return MoveTo(loc.mapId, loc.x, loc.y, loc.z, true, false, false, false, "move_follow");
 }
 
 bool FormationStationAction::isUseful()

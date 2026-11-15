@@ -565,6 +565,27 @@ namespace ai
 
         std::vector<GameObjectDataPair const*> data;
     };
+
+    // The point the core will move `mover` to at (x, y, z), and whether that
+    // point is in magma: WorldObject::UpdateAllowedPositionZ is applied to a
+    // copy of z exactly as the core's server-moved follow/chase and spline
+    // do, then the core's in-magma rule is read at the result. Over a thin
+    // floor above liquid the clamp answers liquid level - 2, inside the
+    // magma, so every guard that probed the unclamped z read "dry" while the
+    // core moved the bot to its death (RFC first-bridge deaths 2026-11-14).
+    // `navmeshZ` is the caller's z, `moveZ` the clamp; `navmeshDry` is the
+    // caller's point by its own z; `navmeshOverrides` is MagmaHazardPolicy.h's
+    // dry-navmesh-z rescue (see PlanMagmaMoveZ).
+    struct MagmaMoveProbe
+    {
+        float navmeshZ = 0.0f;
+        float moveZ = 0.0f;
+        bool moveInMagma = false;
+        bool navmeshDry = false;
+        bool navmeshOverrides = false;
+    };
+
+    MagmaMoveProbe MagmaAtMoveZ(Unit* mover, float x, float y, float z);
 }
 
 namespace std

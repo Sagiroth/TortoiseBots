@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/CastCancelLog.h"
 #include "PatchwerkSoakerActions.h"
 #include "PatchwerkSafety.h"
 #include "playerbot/PatchwerkSoakerPolicy.h"
@@ -243,7 +244,8 @@ bool PatchwerkSoakStageAction::Execute(Event& event)
     }
     // A friendly rendezvous, never an Attack/Chase of an idle boss. Use the
     // standard checked path to the main's current point, including on stay.
-    bool const moved = MoveTo(mainTank->GetMapId(), mainTank->getPositionX(), mainTank->getPositionY(), mainTank->getPositionZ());
+    bool const moved = MoveTo(mainTank->GetMapId(), mainTank->getPositionX(), mainTank->getPositionY(), mainTank->getPositionZ(),
+                              false, false, false, false, "patchwerk_rendezvous");
     if (moved) ai->SetActionDuration(std::min<uint32>(GetDuration(), 250));
     return moved;
 }
@@ -265,6 +267,7 @@ bool PatchwerkMainEngageAction::Execute(Event& event)
     // is identical. This also consumes the request: a peer cannot repeat it.
     if (!ai->DoSpecificAction("pull end", event, true))
         return false;
+    ai::LogCastCancel(ai, "patchwerk_pull_end", CURRENT_AUTOREPEAT_SPELL);
     bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
     ai->ClearActionClock();
     if (!Attack(GetMaster(), boss))
@@ -521,7 +524,7 @@ bool PatchwerkMeleeRetreatAction::Execute(Event& event)
                 sServerFacade.getDistance2d(unit,point.getX(),point.getY()) < sPlayerbotAIConfig.aggroDistance)
                 safe = false;
         }
-        if (safe && MoveTo(533,point.getX(),point.getY(),point.getZ(),false,IsReaction(),false,true))
+        if (safe && MoveTo(533,point.getX(),point.getY(),point.getZ(),false,IsReaction(),false,true,"patchwerk_safe_spot"))
         {
             if (IsReaction())
                 WaitForReach(start.distance(point));

@@ -291,7 +291,7 @@ class SeekRolesWiring(unittest.TestCase):
         # the target set, so the rotation went back to the boss and the Son stayed out of the fight).
         self.assertIn("SeekTankPullStep(", tank)
         self.assertIn("SeekPullStep::Walk", tank)
-        self.assertIn("MoveTo(bot->GetMapId(), x, y, z, false, false, false, true)", tank)
+        self.assertIn('MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_pull_walk")', tank)
         self.assertIn("DoSpecificAction(\"shoot\", event, true)", tank)
         # The gather's own radius comes from the spot's read; without the third tank the search widens to the
         # fallback (M3).
@@ -312,7 +312,7 @@ class SeekRolesWiring(unittest.TestCase):
         # The Walk step's own MoveTo (the anchored ranged shot's walk to its stand comes before it in the branch).
         walk = pull.index("if (step == SeekPullStep::Walk)")
         self.assertGreater(pull.find("MoveTo(bot->GetMapId(), x, y, z", walk), walk)
-        self.assertIn("MoveTo(bot->GetMapId(), x, y, z, false, false, false, true)", pull)
+        self.assertIn('MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, "seek_pull_walk")', pull)
         self.assertIn("return Attack(bot, task.source);", pull)  # the Hit step
         self.assertIn("LogSeekPull(ai, bot, task.source, yd, step)", pull)
         self.assertIn('"seek pull: %s -> %u %.1f yd %s"', ACTIONS)

@@ -7,6 +7,7 @@
  */
 
 #include "CancelChannelAction.h"
+#include "playerbot/CastCancelLog.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 
@@ -14,6 +15,7 @@ bool CancelChannelAction::Execute(Event& /*event*/)
 {
     if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
     {
+        ai::LogCastCancel(ai, "channel", CURRENT_CHANNELED_SPELL);
         bot->InterruptSpell(CURRENT_CHANNELED_SPELL);
 
         return true;

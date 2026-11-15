@@ -461,7 +461,7 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
         verticalSpeed = -verticalSpeed;
 
         // stop casting
-        InterruptSpell(false);
+        InterruptSpell(false, "knockback");
 
         // stop movement
         StopMoving();
