@@ -369,6 +369,7 @@ public:
     void HandleCommands();
     // Chat commands waiting for the next reaction pass (HandleCommands drains them).
     size_t QueuedChatCommandCount() const { return chatCommands.size(); }
+    void QueueChatCommand(std::string const& command, Player* owner, time_t at) { chatCommands.push(ChatCommandHolder(command, owner, CHAT_MSG_WHISPER, at)); }
 private:
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 public:
