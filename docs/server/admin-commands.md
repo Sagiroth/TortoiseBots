@@ -28,6 +28,7 @@ Admin commands manage the managed bot pool, the synthetic auction house seller, 
 | [`.bot ah rebuild`](#bot-ah-rebuild) | GM & Console | Triggers a market evaluation pass. |
 | [`.bot ah item`](#bot-ah-item) | GM & Console | Inspects, resets, or overrides item pricing rules. |
 | [`.ahbot`](#ahbot) | GM & Console | Shorthand alias for `.bot ah` commands. |
+| [`.bot camp`](#bot-camp) | GM (In-Game) | Validates, previews, and removes autonomous bot camp spots. |
 | [`.reload config`](#reload-config) | GM & Console | Reloads core configuration (module keys need a restart, with exceptions). |
 
 ---
@@ -138,6 +139,46 @@ Shorthand alias for `.bot ah` commands.
 ```
 
 Accepts the same arguments as `.bot ah status`, `.bot ah reload`, `.bot ah rebuild`, and `.bot ah item`. Bare `.ahbot` prints the same help as `.bot ah`.
+
+---
+
+## Autonomous Camp Spot Management (`.bot camp`)
+
+In-game GameMasters can add, preview, and remove autonomous bot camp spots stored in `ai_playerbot_camp_spot` and loaded into `CampMgr`.
+
+### `.bot camp`
+
+Lists the available `.bot camp` subcommands.
+
+```text
+.bot camp
+```
+
+### `.bot camp add [name]`
+
+Validates and saves a camp spot (`source = 1`) at your current position and facing. Defaults the name to `<zone name> camp` if omitted.
+
+```text
+.bot camp add [name]
+```
+
+Before saving, checks that no existing spot is within 25 yd, that all four layout points (tent, cast, fire, seat) are outdoors, out of liquid, and reachable on the navmesh, and that the 4-point elevation spread is within 3 yd. On success, inserts the row into the world database and adds it to `CampMgr` live without a restart.
+
+### `.bot camp show`
+
+Finds the nearest camp spot within 60 yd and spawns temporary visuals (faction tent, Basic Campfire, and a seat marker) where a bot places them. Visuals despawn automatically after 3 minutes and are never saved to the database. Replies with the spot id, name, distance, and measured 4-point Z spread.
+
+```text
+.bot camp show
+```
+
+### `.bot camp remove`
+
+Removes the nearest camp spot within 10 yd (any source) from the world database and `CampMgr` live. Note that a removed `source = 0` spot returns on the next server boot unless also deleted from `data/sql/world/20261115180000_world.sql`.
+
+```text
+.bot camp remove
+```
 
 ---
 

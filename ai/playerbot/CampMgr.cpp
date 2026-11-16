@@ -49,6 +49,14 @@ void CampMgr::Load()
 
 std::optional<CampSpot> CampMgr::FindNearestSpot(uint32 mapId, float x, float y, float z, float maxRangeYd) const
 {
+    std::optional<std::pair<CampSpot, float>> found = FindNearestSpotWithDist(mapId, x, y, z, maxRangeYd);
+    if (!found)
+        return std::nullopt;
+    return found->first;
+}
+
+std::optional<std::pair<CampSpot, float>> CampMgr::FindNearestSpotWithDist(uint32 mapId, float x, float y, float z, float maxRangeYd) const
+{
     std::lock_guard<std::mutex> lock(m_spotsMutex);
     float bestDistSq = maxRangeYd * maxRangeYd;
     CampSpot const* best = nullptr;
@@ -68,7 +76,23 @@ std::optional<CampSpot> CampMgr::FindNearestSpot(uint32 mapId, float x, float y,
     }
     if (!best)
         return std::nullopt;
-    return *best;
+    return std::make_pair(*best, std::sqrt(bestDistSq));
+}
+
+void CampMgr::AddSpot(CampSpot const& spot)
+{
+    std::lock_guard<std::mutex> lock(m_spotsMutex);
+    m_spots.push_back(spot);
+}
+
+bool CampMgr::RemoveSpotById(uint32 id)
+{
+    std::lock_guard<std::mutex> lock(m_spotsMutex);
+    auto it = std::find_if(m_spots.begin(), m_spots.end(), [id](CampSpot const& s) { return s.id == id; });
+    if (it == m_spots.end())
+        return false;
+    m_spots.erase(it);
+    return true;
 }
 
 void CampMgr::SetActiveCamp(ActiveCampInfo const& info)
