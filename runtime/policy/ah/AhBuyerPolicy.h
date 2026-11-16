@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 // Pure policy for the organic AH buyer trip (issue #405 rework, review 2).
@@ -74,6 +75,73 @@ namespace ai
     {
         (void)botMapId;
         return sameMapHouseExists;
+    }
+
+    // Organic AH buyer pricing & bid decision rules (moved from removed synthetic policy):
+    // Quality price multiplier in percent of the base price (POOR..ARTIFACT).
+    inline uint32_t AhBuyerQualityMultiplier(uint32_t quality)
+    {
+        switch (quality)
+        {
+            case 0: return 50;
+            case 1: return 100;
+            case 2: return 200;
+            case 3: return 400;
+            case 4: return 800;
+            case 5: return 1600;
+            case 6: return 3200;
+            default: return 100;
+        }
+    }
+
+    inline uint32_t AhBuyerBasePrice(uint32_t buyPrice, uint32_t sellPrice, uint32_t quality)
+    {
+        uint32_t qualityMultiplier = AhBuyerQualityMultiplier(quality);
+        uint64_t base = buyPrice;
+        if (!base || (sellPrice && buyPrice / sellPrice > 5))
+            base = uint64_t(sellPrice) * (quality <= 1 ? 4 : 5);
+        if (!base)
+            base = 1;
+        return uint32_t(std::min<uint64_t>(base * qualityMultiplier / 100, 0x7fffffffULL));
+    }
+
+    inline uint32_t AhBuyerVariedPrice(uint32_t price, int32_t deltaPercent)
+    {
+        int64_t varied = int64_t(price) + (int64_t(price) * deltaPercent / 100);
+        if (varied <= 0)
+            return 1;
+        return static_cast<uint32_t>(std::min<int64_t>(varied, 0x7fffffffLL));
+    }
+
+    // A bot never bids on its own listing, a same-account listing, or one it
+    // already holds the high bid on.
+    inline bool AhBuyerExcluded(uint32_t auctionOwner, uint32_t auctionOwnerAccount,
+        uint32_t currentBidder, uint32_t buyerGuidLow, uint32_t buyerAccountId)
+    {
+        return auctionOwner == buyerGuidLow ||
+               auctionOwnerAccount == buyerAccountId ||
+               currentBidder == buyerGuidLow;
+    }
+
+    inline uint64_t AhBuyerWillingness(uint32_t baseUnitPrice, uint32_t medianUnitPrice,
+        uint32_t count, uint32_t buyValuePercent)
+    {
+        uint32_t fairUnit = baseUnitPrice;
+        if (medianUnitPrice > 0)
+            fairUnit = (baseUnitPrice + medianUnitPrice) / 2;
+        return (uint64_t(fairUnit) * count * buyValuePercent) / 100;
+    }
+
+    inline bool AhBuyerTargetPrice(uint64_t willingness, uint32_t buyout, uint32_t currentBid,
+        uint32_t outbid, uint32_t startbid, uint32_t& targetPrice)
+    {
+        uint32_t nextBid = currentBid ? (currentBid + outbid) : startbid;
+        bool canBuyout = (buyout > 0 && willingness >= buyout);
+        bool canBid = (!canBuyout && willingness >= nextBid && (buyout == 0 || nextBid < buyout));
+        if (!canBuyout && !canBid)
+            return false;
+        targetPrice = canBuyout ? buyout : nextBid;
+        return true;
     }
 
 } // namespace ai

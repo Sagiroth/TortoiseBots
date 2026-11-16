@@ -1,5 +1,7 @@
 #include "RandomBotAccountRegistry.h"
 
+#include "AhBotSellerAccount.h"
+#include "runtime/policy/ah/AhBotSellerAccountPolicy.h"
 #include "runtime/policy/infra/PoolResetPolicy.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
@@ -148,6 +150,18 @@ RegistryLoadResult RandomBotAccountRegistry::LoadValidatedAccounts()
 
     for (PoolAccount const& account : loaded)
     {
+        if (AhBotSellerAccount::Instance().IsSellerAccount(account.accountId) ||
+            ai::SellerAccountNameEquals(account.username, sPlayerbotAIConfig.ahBotAccountName))
+        {
+            error = "managed-account registry contains AH bot seller account " +
+                std::to_string(account.accountId) + " ('" + account.username + "'); refusing pool operations";
+            m_lastError = error;
+            m_accounts.clear();
+            m_accountIds.clear();
+            m_ids.clear();
+            sLog.outError("TortoiseBots: %s", error.c_str());
+            return RegistryLoadResult::Failed;
+        }
         if (!ValidateAgainstLoginDatabase(account, error))
         {
             m_lastError = error;
@@ -211,6 +225,14 @@ RegisterResult RandomBotAccountRegistry::RegisterCreatedAccount(uint32_t account
 {
     if (!accountId || username.empty())
         return RegisterResult::InvalidInput;
+
+    if (AhBotSellerAccount::Instance().IsSellerAccount(accountId) ||
+        ai::SellerAccountNameEquals(username, sPlayerbotAIConfig.ahBotAccountName))
+    {
+        sLog.outError("TortoiseBots: refusing to register AH bot seller account %u ('%s') in pool registry",
+            accountId, NormalizeAccountUsername(username).c_str());
+        return RegisterResult::InvalidInput;
+    }
 
     std::string normalized = NormalizeAccountUsername(username);
     if (normalized.empty())
@@ -329,6 +351,9 @@ bool RandomBotAccountRegistry::DiscoverPrefixMatches(std::vector<LegacyAccount>&
         account.accountId = fields[0].GetUInt32();
         account.username = fields[1].GetCppString();
         if (!account.accountId || !AccountUsernameHasPrefix(account.username, prefix))
+            continue;
+        if (AhBotSellerAccount::Instance().IsSellerAccount(account.accountId) ||
+            ai::SellerAccountNameEquals(account.username, sPlayerbotAIConfig.ahBotAccountName))
             continue;
         out.push_back(std::move(account));
     } while (rows->NextRow());

@@ -3222,13 +3222,139 @@
     { key: 'buyout', label: 'Buyout' },
     { key: 'expire', label: 'Time left', title: 'Bots always list for the same duration, so the most time left is the newest listing' }
   ];
-  const ah = { filter: { q: '', quality: '', min_level: '', max_level: '', seller: '', kind: '', house: '' }, sort: 'expire', desc: true, page: 0, data: null, error: null, seq: 0 };
+  const ah = { filter: { q: '', quality: '', min_level: '', max_level: '', seller: '', kind: '', house: '' }, sort: 'expire', desc: true, page: 0, ahbotHouse: '', data: null, error: null, seq: 0 };
 
   function ahTimeLeft(expireAt) {
     const sec = expireAt - Math.floor(Date.now() / 1000);
     if (sec <= 0) return 'expiring';
     const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  function ahBotHouseLabel(h) {
+    if (h === 'alliance') return 'Alliance';
+    if (h === 'horde') return 'Horde';
+    if (h === 'neutral') return 'Neutral';
+    return h || '–';
+  }
+
+  function ahBotSellerStateBadge(s) {
+    if (s === 'ok') return '<span class="badge badge-success">ok</span>';
+    if (s === 'deleted') return '<span class="badge badge-error">deleted</span>';
+    if (s === 'wrong_account') return '<span class="badge badge-warn">wrong account</span>';
+    return '<span class="badge badge-error">missing</span>';
+  }
+
+  function renderAhBot(ahbot) {
+    const body = document.getElementById('ahbot-body');
+    const badge = document.getElementById('ahbot-status-badge');
+    const note = document.getElementById('ahbot-status-note');
+    const houseSeg = document.getElementById('ahbot-house');
+    if (!body || !badge || !note) return;
+
+    if (!ahbot || !ahbot.enabled) {
+      const reason = ahbot && ahbot.health && ahbot.health.note ? ahbot.health.note : '';
+      badge.innerHTML = '<span class="badge">AH bot off</span>';
+      note.textContent = reason && reason !== 'AH bot off' ? reason : '';
+      if (houseSeg) houseSeg.style.display = 'none';
+      body.innerHTML = `<div class="empty-hint">AH bot off${reason && !reason.startsWith('AH bot off') ? ` · ${esc(reason)}` : ''}.</div>`;
+      return;
+    }
+
+    const health = ahbot.health || {};
+    const rates = ahbot.rates || {};
+    const statusCls = health.status === 'healthy' ? 'badge-success' : health.status === 'degraded' ? 'badge-warn' : 'badge-error';
+    const statusText = health.status === 'healthy' ? 'Healthy' : health.status === 'degraded' ? 'Degraded' : 'Unhealthy';
+    badge.innerHTML = `<span class="badge ${statusCls}">${statusText}</span>`;
+    note.textContent = health.note || '';
+    if (houseSeg) houseSeg.style.display = '';
+
+    const housePills = (ahbot.by_house || []).map(h =>
+      `<span class="ahbot-house-chip"><strong>${esc(ahBotHouseLabel(h.house))}</strong> ${esc(h.total || 0)}</span>`).join('');
+
+    const soldVal = rates.derivable ? `${rates.sold_per_hour}/h` : '–';
+    const boughtVal = rates.derivable ? `${rates.bought_per_hour}/h` : '–';
+    const rateSub = rates.derivable ? 'last 1 h mail' : 'seller mail purged / N/A';
+
+    const kpis = `<div class="kpi-row ahbot-kpis">
+      <div class="kpi">
+        <div class="kpi-label">AH bot listings</div>
+        <div class="kpi-value">${esc(ahbot.total || 0)}</div>
+        <div class="kpi-sub">${esc(ahbot.with_bid || 0)} with bid · ${formatMoney(ahbot.buyout_value || 0)}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">By house</div>
+        <div class="ahbot-house-chips">${housePills || '<span class="cell-muted">–</span>'}</div>
+        <div class="kpi-sub">Alliance · Horde · Neutral</div>
+      </div>
+      <div class="kpi" title="${esc(rates.note || '')}">
+        <div class="kpi-label">Sold / Bought (1h)</div>
+        <div class="kpi-value">${esc(soldVal)} <span class="cell-muted">/</span> ${esc(boughtVal)}</div>
+        <div class="kpi-sub">${esc(rateSub)} · ${esc(rates.active_bids || 0)} active bids</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Seller account</div>
+        <div class="kpi-value">${esc(health.healthy_total || 0)}<span class="cell-muted">/${esc(health.sellers_total || 0)}</span></div>
+        <div class="kpi-sub">Alliance ${esc(health.alliance_ok || 0)}/${esc(health.alliance_total || 0)} · Horde ${esc(health.horde_ok || 0)}/${esc(health.horde_total || 0)}</div>
+      </div>
+    </div>`;
+
+    const allRows = ahbot.breakdown || [];
+    const shown = ah.ahbotHouse ? allRows.filter(r => r.house === ah.ahbotHouse) : allRows;
+    const quals = [1, 2, 3, 4];
+    const hasPoor = shown.some(r => r.by_quality && r.by_quality[0]);
+    const hasLeg = shown.some(r => r.by_quality && r.by_quality[5]);
+    if (hasPoor) quals.unshift(0);
+    if (hasLeg) quals.push(5);
+
+    const matrixRows = shown.length ? shown.map(r => {
+      const qCells = quals.map(q => {
+        const c = (r.by_quality && r.by_quality[q]) || 0;
+        return `<td class="mono">${c ? `<span class="quality-text-${q}">${esc(c)}</span>` : '<span class="cell-muted">–</span>'}</td>`;
+      }).join('');
+      return `<tr><td>${esc(ahBotHouseLabel(r.house))}</td><td>${esc(r.category)}</td>${qCells}<td class="mono"><strong>${esc(r.total)}</strong></td></tr>`;
+    }).join('') : `<tr><td colspan="${3 + quals.length}" class="table-empty">No AH bot listings${ah.ahbotHouse ? ` in ${esc(ahBotHouseLabel(ah.ahbotHouse))}` : ''}.</td></tr>`;
+
+    let totalRow = '';
+    if (shown.length) {
+      const qSums = {};
+      let grand = 0;
+      shown.forEach(r => {
+        grand += r.total || 0;
+        quals.forEach(q => { qSums[q] = (qSums[q] || 0) + ((r.by_quality && r.by_quality[q]) || 0); });
+      });
+      totalRow = `<tr class="ahbot-total-row"><td colspan="2"><strong>Total</strong></td>${quals.map(q =>
+        `<td class="mono">${qSums[q] ? `<strong class="quality-text-${q}">${esc(qSums[q])}</strong>` : '<span class="cell-muted">–</span>'}</td>`).join('')}<td class="mono"><strong>${esc(grand)}</strong></td></tr>`;
+    }
+
+    const matrix = `<div class="table-container ahbot-matrix-wrap">
+      <table class="data-table">
+        <thead><tr><th>House</th><th>Category</th>${quals.map(q => `<th class="quality-text-${q}">${esc(qualityName(q))}</th>`).join('')}<th>Total</th></tr></thead>
+        <tbody>${matrixRows}${totalRow}</tbody>
+      </table>
+    </div>`;
+
+    const sellers = ahbot.sellers || [];
+    const accDesc = health.account_checked
+      ? (health.account_exists ? `Account ${health.account_name ? esc(health.account_name) + ' ' : ''}#${esc(health.account_id)} OK${health.account_banned ? ' (banned)' : health.account_locked ? ' (locked)' : ''}` : `Account #${esc(health.account_id)} missing`)
+      : `Account #${esc(health.account_id || 0)}`;
+    const sellerTable = sellers.length ? `<details class="ahbot-sellers-details"${health.status !== 'healthy' ? ' open' : ''}>
+      <summary>Seller characters (${esc(health.healthy_total || 0)}/${esc(health.sellers_total || 0)} healthy · ${accDesc})</summary>
+      <div class="table-container">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Faction</th><th>GUID</th><th>Listings</th><th>Status</th></tr></thead>
+          <tbody>${sellers.map(s => `<tr>
+            <td>${s.name ? esc(s.name) : '<span class="cell-muted">(missing)</span>'}</td>
+            <td>${esc(ahBotHouseLabel(s.faction))}</td>
+            <td class="mono">${esc(s.guid)}</td>
+            <td class="mono">${esc(s.listings || 0)}</td>
+            <td>${ahBotSellerStateBadge(s.state)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </details>` : '';
+
+    body.innerHTML = kpis + matrix + sellerTable;
   }
 
   function fetchAuctions() {
@@ -3256,11 +3382,14 @@
     }).join('') + '</tr>';
 
     if (ah.error) {
+      renderAhBot(null);
       body.innerHTML = `<tr><td colspan="${AH_COLS.length}" class="table-empty">Could not load the auction house: ${esc(ah.error)}</td></tr>`;
       return;
     }
     const d = ah.data;
     if (!d) return;
+
+    renderAhBot(d.ahbot);
 
     const s = d.summary || {};
     const byQ = s.by_quality || {};
@@ -3290,7 +3419,8 @@
       const icon = iconUrl ? `<img src="${iconUrl}" style="width: 20px; height: 20px; border-radius: 3px; vertical-align: middle; margin-right: 6px;" onerror="this.style.display='none';">` : '';
       const count = r.count > 1 ? ` <span class="cell-muted">×${esc(r.count)}</span>` : '';
       let seller;
-      if (r.seller_kind === 'bot') seller = `${botLink(r.seller_guid, r.seller_name, classNameById(r.seller_class))} <span class="badge badge-info">bot</span>`;
+      if (r.seller_kind === 'ahbot') seller = `${esc(r.seller_name || '?')} <span class="badge badge-pvp">AH bot</span>`;
+      else if (r.seller_kind === 'bot') seller = `${botLink(r.seller_guid, r.seller_name, classNameById(r.seller_class))} <span class="badge badge-info">bot</span>`;
       else if (r.seller_kind === 'market') seller = '<span class="cell-muted">AH market</span>';
       else seller = `${esc(r.seller_name || '?')} <span class="badge badge-success">player</span>`;
       const bid = r.bid > 0 ? formatMoney(r.bid) : `<span class="cell-muted">${formatMoney(r.start_bid)}</span>`;
@@ -3319,6 +3449,8 @@
     bindInput('ah-max-level', 'max_level', true);
     bindSeg(document.getElementById('ah-kind'), v => { ah.filter.kind = v; refetch(); });
     bindSeg(document.getElementById('ah-house'), v => { ah.filter.house = v; refetch(); });
+    const ahbotHouseSeg = document.getElementById('ahbot-house');
+    if (ahbotHouseSeg) bindSeg(ahbotHouseSeg, v => { ah.ahbotHouse = v; if (ah.data) renderAhBot(ah.data.ahbot); });
     document.getElementById('ah-refresh').addEventListener('click', fetchAuctions);
     document.getElementById('ah-prev').addEventListener('click', () => { if (ah.page > 0) { ah.page--; fetchAuctions(); } });
     document.getElementById('ah-next').addEventListener('click', () => { ah.page++; fetchAuctions(); });

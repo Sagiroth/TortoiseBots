@@ -592,7 +592,7 @@ static bool TraceVisible() { return sPlayerbotAIConfig.runTrace; }
 static bool RunVisible() { return RemoteCommander::RunSurfaceOn(CurrentCommanderGates()); }
 
 static BotCommandEntry const botCommands[] = {
-    {"ah", HandleAhBot, "ah <status|reload|rebuild|item ...>", {"ahbot"}, AlwaysVisible},
+    {"ah", HandleAhBot, "ah <status|reload|empty|update>", {"ahbot"}, AlwaysVisible},
     {"camp", HandleCamp, "camp <add [name]|show|remove>", {}, AlwaysVisible},
     {"action", HandleAction, "action <intent>", {}, AlwaysVisible},
     {"commander", HandleCommander, "commander <bind|unbind|status|view ...>", {}, CommanderVisible},

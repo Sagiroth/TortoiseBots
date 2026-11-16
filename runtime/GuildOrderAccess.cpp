@@ -4,6 +4,7 @@
 #include "AltBotService.h"
 #include "ClaimLifecycle.h"
 #include "RandomBotAccountRegistry.h"
+#include "AhBotSellerAccount.h"
 #include "../commands/CommandShared.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAIStorage.h"
@@ -140,6 +141,8 @@ bool IsRankableBot(ObjectGuid guid)
     if (!guidLow)
         return false;
     if (AltBotService::Instance().IsAutonomous(guidLow))
+        return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guidLow))
         return false;
     if (ClaimLifecycle::Instance().IsClaimed(guidLow))
         return true;

@@ -10,6 +10,7 @@
 #include "runtime/policy/hire/HirePvpPolicy.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
+#include "AhBotSellerAccount.h"
 #include "RandomBotPoolReset.h"
 #include "../host/BotSessionAdapter.h"
 #include "../host/ModuleLog.h"
@@ -74,6 +75,13 @@ bool HireLifecycle::Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ow
 {
     if (botGuid.IsEmpty() || !characterAccountId)
         return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(botGuid.GetCounter()) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(characterAccountId))
+    {
+        sLog.outError("TortoiseBots: refusing to record AH bot seller character %u on account %u in hire ledger",
+            botGuid.GetCounter(), characterAccountId);
+        return false;
+    }
 
     // Durable hire ledger first: it is written exactly once per hire and is the
     // only proof that this character was created by Hire(). Deleting a hired
@@ -1048,6 +1056,15 @@ bool HireLifecycle::ProcessDeletion(PendingDeletion& entry, time_t now)
         "SELECT `account` FROM `characters` WHERE `guid` = '%u'", guidLow));
     bool characterExists = character != nullptr;
     uint32_t accountId = characterExists ? character->Fetch()[0].GetUInt32() : 0;
+
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guidLow) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(accountId) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(ledgerAccountId))
+    {
+        sLog.outError("TortoiseBots: refusing to delete AH bot seller character %u on account %u",
+            guidLow, accountId);
+        return true;
+    }
 
     if (!characterExists)
     {

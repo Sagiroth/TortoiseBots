@@ -6,6 +6,7 @@
 #include "runtime/policy/lfg/LftDungeonRangePolicy.h"
 
 #include "BotManager.h"
+#include "AhBotSellerAccount.h"
 #include "HireLifecycle.h"
 #include "PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -126,6 +127,7 @@ bool LftBotFillService::IsEligibleCandidate(Player* bot) const
     if (!bot) return false;
     if (!bot->IsInWorld()) return false;
     if (!bot->GetSession() || !bot->GetSession()->IsHeadless()) return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(bot->GetGUIDLow())) return false;
     if (!BotManager::Instance().IsRandomBot(bot->GetObjectGuid())) return false;
     if (sLFTMgr.IsQueued(bot->GetObjectGuid()) || sLFTMgr.IsInOffer(bot->GetObjectGuid())) return false;
     if (bot->InBattleGround() || bot->InBattleGroundQueue()) return false;
@@ -148,6 +150,7 @@ bool LftBotFillService::IsModuleOwnedHeadlessBot(Player const* bot) const
 {
     if (!bot) return false;
     if (!bot->GetSession() || !bot->GetSession()->IsHeadless()) return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(bot->GetGUIDLow())) return false;
     if (!BotManager::Instance().IsRandomBot(bot->GetObjectGuid())) return false;
     const Player* p = bot;
     // Human-owned bots (with active master) preserve manual role semantics – not owned by fill.

@@ -10,6 +10,7 @@
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireGearCache.h"
 #include "../runtime/RandomBotService.h"
+#include "../runtime/AhBotService.h"
 #include "../runtime/AhMarketService.h"
 #include "../runtime/BattlegroundQueueService.h"
 #include "../runtime/BotLfgService.h"
@@ -266,6 +267,7 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     HireLifecycle::Instance().Update(diff);
     GuildOrders::Update(diff);
     AhMarketService::Instance().Update(diff);
+    AhBotService::Instance().Update(diff);
     BattlegroundQueueService::Instance().Update(diff);
     ObservabilityEmitter::Instance().Update(diff);
     // Item-leg skip (spec D7): first world tick after startup: the crash

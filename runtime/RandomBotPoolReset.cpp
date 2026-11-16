@@ -1,5 +1,6 @@
 #include "RandomBotPoolReset.h"
 
+#include "AhBotSellerAccount.h"
 #include "RandomBotAccountRegistry.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
@@ -167,6 +168,9 @@ bool RandomBotPoolReset::SnapshotTargets(std::string& error)
             error = "a managed character row is invalid (missing guid or account)";
             return false;
         }
+        if (AhBotSellerAccount::Instance().IsSellerGuid(target.guidLow) ||
+            AhBotSellerAccount::Instance().IsSellerAccount(target.accountId))
+            continue;
         m_targets.push_back(std::move(target));
     } while (rows->NextRow());
 
@@ -449,6 +453,14 @@ bool RandomBotPoolReset::DeleteNextTarget(std::string& error)
     Target const& target = m_targets[m_next];
     ObjectGuid guid(HIGHGUID_PLAYER, target.guidLow);
     m_lastTargetBlocked = false;
+
+    if (AhBotSellerAccount::Instance().IsSellerGuid(target.guidLow) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(target.accountId))
+    {
+        error = "refusing to delete AH bot seller character " + target.name + " (" +
+            std::to_string(target.guidLow) + ")";
+        return false;
+    }
 
     // Revalidate the snapshotted ownership: a character that moved to another
     // account between planning and deletion is not ours to delete.

@@ -24,6 +24,7 @@
 #include "BotActivityLease.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
+#include "AhBotSellerAccount.h"
 #include "RandomBotService.h"
 #include "../host/BotSessionAdapter.h"
 #include "../host/ModuleLog.h"
@@ -891,6 +892,8 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
     // dismissed hire's row still counts (the core refuses until the row is deleted): no credit.
     auto accountEligible = [&](uint32_t id) -> bool
     {
+        if (AhBotSellerAccount::Instance().IsSellerAccount(id))
+            return false;
         std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
             "SELECT guid, race, account FROM characters WHERE account = '%u' AND deleteDate IS NULL", id));
         uint32_t count = 0;

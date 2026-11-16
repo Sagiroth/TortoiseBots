@@ -235,6 +235,7 @@ func main() {
 		DBPassword: *dbPass,
 		CharDB:     *dbChar,
 		WorldDB:    *dbWorld,
+		LogonDB:    *dbName,
 		DBCDir:     *dbcDir,
 	})
 	if err != nil {

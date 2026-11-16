@@ -48,6 +48,7 @@ using RandomBotService = Service<4>;
 using HireProvisionService = Service<5>;
 using HireLifecycle = Service<6>;
 using AhMarketService = Service<7>;
+using AhBotService = Service<19>;
 using BattlegroundQueueService = Service<8>;
 using ObservabilityEmitter = Service<9>;
 using BotChatAdapter = Service<10>;
@@ -90,11 +91,11 @@ int main() {
     // up to the bound the command drain returned, then the services (the
     // remote commander sweep, 12, right after the bot update; the observed-raid sampler, 16, after it; the run trace, 13, then the decision capture, 17, last).
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,18,17}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,19,8,9,14,13,18,17}));
     assert(adapter.m_ticks == 1);
     sPlayerbotAIConfig.enabled = false;
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,18,17,10,13,17,18}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,19,8,9,14,13,18,17,10,13,17,18}));
     assert(adapter.m_ticks == 1);
     // A config reload: the run leader's keys are read again once, on the next tick, enabled or not.
     assert(sPlayerbotAIConfig.reloads == 0);

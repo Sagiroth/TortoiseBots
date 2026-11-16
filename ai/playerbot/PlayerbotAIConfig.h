@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <unordered_set>
 #include "Config/Config.h"
@@ -90,6 +91,12 @@ public:
     // (BotHostAdapter::OnUpdate). False when the AI is disabled or the file could not be read; the keys are then
     // left as they were.
     bool ReloadDungeonRunKeys();
+    // Reloads aiplayerbot.conf and re-reads AH bot service keys (.bot ah reload).
+    void LoadAhBotServiceKeys();
+    void LoadAhBotPriceKeys();
+    void LoadAhBotPoolKeys();
+    void LoadAhBotPhaseKeys();
+    bool ReloadAhBotConfig();
     bool IsInRandomAccountList(uint32 id);
     bool IsFreeAltBot(uint32 guid);
     bool IsFreeAltBot(Player* player) {return IsFreeAltBot(player->GetGUIDLow());}
@@ -174,16 +181,14 @@ public:
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
     uint32 auctionPriceRefreshInterval = 60; // seconds between price mirror refreshes
-    // Default-off bounded AH market population (module-only, native transaction path).
+    // Default-on bounded AH market population (module-only, native transaction path).
     bool ahMarketEnabled = false;
     uint32 ahMarketInterval = 120; // seconds between market ticks
     uint32 ahMarketBatchSize = 1;  // max auctions posted per tick
-    // Synthetic AH Supply and Buyer Engine with Work Budgets (Issue #88)
-    bool ahMarketSyntheticSupply = false;
+    // Organic AH buyer (bots standing at an auctioneer bid with their own gold)
     bool ahMarketBuyer = false;
     uint32 ahMarketBudgetUs = 2000;         // Max execution microseconds per world tick (budget cap)
     uint32 ahMarketMaxOperations = 32;      // Max work operations per world tick (op-count cap)
-    uint32 ahMarketChanceSell = 10;         // Chance % per cycle to enter Gather/Post
     uint32 ahMarketChanceBuy = 10;          // Chance % per cycle to enter Buy
     // Observability telemetry UDP emitter (module-only). Zero/empty means
     // "not set here"; the emitter then falls back to the module config.
@@ -200,16 +205,174 @@ public:
     bool observabilityRaidsDetail = false;
     uint32 ahMarketBuyValue = 80;           // Buyer evaluation willingness % (relative to fair value)
     uint32 ahMarketMaxSpendPerBot = 0;      // Max spend per bot (0 = unlimited up to AH budget)
-    uint32 ahMarketMaxQuality = 4;          // Max quality for synthetic supply (0=Poor..4=Epic)
-    uint32 ahMarketMaxLevel = 60;           // Max required level for synthetic items
-    bool ahMarketDynamicLevel = false;      // Dynamic level cap based on online players
-    uint32 ahMarketLevelRefresh = 600;      // Dynamic level refresh interval in seconds
     uint32 ahMarketVariance = 10;           // Random price variance (+/- %)
-    uint32 ahMarketBidMin = 75;             // Min start bid % of buyout
-    uint32 ahMarketBidMax = 90;             // Max start bid % of buyout
-    uint32 ahMarketTimeMin = 8;             // Min auction duration (hours)
-    uint32 ahMarketTimeMax = 24;            // Max auction duration (hours)
+    // AhBot price
+    static constexpr size_t kAhBotMaxItemClass = 16;
+    bool ahBotCompleteItemValueOverrideEnabled = false;
+    std::string ahBotCompleteItemValueOverrideItems;
+    bool ahBotCompleteItemValueOverrideDoApplyBidVariations = false;
+    bool ahBotCompleteItemValueOverrideDoApplyBuyoutVariations = false;
+    uint32 ahBotMaxBuyoutPriceInCopper = 1000000000;
+    float ahBotBuyoutVariationReducePercent = 0.15f;
+    float ahBotBuyoutVariationAddPercent = 0.25f;
+    float ahBotBidVariationHighReducePercent = 0.0f;
+    float ahBotBidVariationLowReducePercent = 0.25f;
+    bool ahBotBuyoutBelowVendorVariationAddPercentEnabled = true;
+    float ahBotBuyoutBelowVendorVariationAddPercent = 0.25f;
+    float ahBotBuyerAcceptablePriceModifier = 1.0f;
+    bool ahBotPriceMinimumCenterBaseUseItemSellPriceIfHigher = true;
+    uint32 ahBotPriceMinimumCenterBaseConsumable = 10;
+    uint32 ahBotPriceMinimumCenterBaseContainer = 50;
+    uint32 ahBotPriceMinimumCenterBaseWeapon = 25;
+    uint32 ahBotPriceMinimumCenterBaseArmor = 25;
+    uint32 ahBotPriceMinimumCenterBaseReagent = 20;
+    uint32 ahBotPriceMinimumCenterBaseProjectile = 1;
+    uint32 ahBotPriceMinimumCenterBaseTradeGood = 5;
+    uint32 ahBotPriceMinimumCenterBaseGeneric = 20;
+    uint32 ahBotPriceMinimumCenterBaseRecipe = 20;
+    uint32 ahBotPriceMinimumCenterBaseQuiver = 25;
+    uint32 ahBotPriceMinimumCenterBaseQuest = 20;
+    uint32 ahBotPriceMinimumCenterBaseKey = 25;
+    uint32 ahBotPriceMinimumCenterBaseMisc = 20;
+    std::string ahBotPriceMinimumCenterBaseOverrideItems;
+    bool ahBotAdvancedPricingConsumablePotionEnabled = true;
+    bool ahBotAdvancedPricingConsumableElixirEnabled = true;
+    bool ahBotAdvancedPricingConsumableFlaskEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodClothEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodHerbEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodMetalStoneEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodLeatherEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodEnchantingEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodElementalEnabled = true;
+    bool ahBotAdvancedPricingTradeGoodMeatEnabled = true;
+    bool ahBotAdvancedPricingMiscJunkEnabled = true;
+    bool ahBotAdvancedPricingMiscMountEnabled = true;
+    bool ahBotAdvancedPricingMiscPetEnabled = true;
+    float ahBotPriceMultiplierCategoryConsumable = 1.0f;
+    float ahBotPriceMultiplierCategoryContainer = 1.0f;
+    float ahBotPriceMultiplierCategoryWeapon = 1.0f;
+    float ahBotPriceMultiplierCategoryArmor = 1.0f;
+    float ahBotPriceMultiplierCategoryReagent = 1.0f;
+    float ahBotPriceMultiplierCategoryProjectile = 1.0f;
+    float ahBotPriceMultiplierCategoryTradeGood = 1.0f;
+    float ahBotPriceMultiplierCategoryGeneric = 1.0f;
+    float ahBotPriceMultiplierCategoryRecipe = 1.0f;
+    float ahBotPriceMultiplierCategoryQuiver = 1.0f;
+    float ahBotPriceMultiplierCategoryQuest = 1.0f;
+    float ahBotPriceMultiplierCategoryKey = 1.0f;
+    float ahBotPriceMultiplierCategoryMisc = 1.0f;
+    float ahBotPriceMultiplierQualityPoor = 1.0f;
+    float ahBotPriceMultiplierQualityNormal = 1.0f;
+    float ahBotPriceMultiplierQualityUncommon = 1.8f;
+    float ahBotPriceMultiplierQualityRare = 1.9f;
+    float ahBotPriceMultiplierQualityEpic = 2.1f;
+    float ahBotPriceMultiplierQualityLegendary = 3.0f;
+    float ahBotPriceMultiplierQualityArtifact = 3.0f;
+    float ahBotPriceMultiplierItemLevelCategoryConsumable = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryContainer = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryWeapon = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryArmor = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryReagent = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryProjectile = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryTradeGood = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryGeneric = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryRecipe = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryQuiver = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryQuest = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryKey = 0.0f;
+    float ahBotPriceMultiplierItemLevelCategoryMisc = 0.0f;
+    float ahBotPriceMultiplierCategoryQuality[kAhBotMaxItemClass][MAX_ITEM_QUALITY]{};
+    float ahBotPriceMultiplierCategoryMountQuality[MAX_ITEM_QUALITY]{};
+    float ahBotPriceMultiplierCategoryPetQuality[MAX_ITEM_QUALITY]{};
+    uint32 ahBotListingStackRandomRatioConsumable = 50;
+    uint32 ahBotListingStackRandomRatioContainer = 0;
+    uint32 ahBotListingStackRandomRatioWeapon = 0;
+    uint32 ahBotListingStackRandomRatioArmor = 0;
+    uint32 ahBotListingStackRandomRatioReagent = 50;
+    uint32 ahBotListingStackRandomRatioProjectile = 100;
+    uint32 ahBotListingStackRandomRatioTradeGood = 75;
+    uint32 ahBotListingStackRandomRatioGeneric = 100;
+    uint32 ahBotListingStackRandomRatioRecipe = 0;
+    uint32 ahBotListingStackRandomRatioQuiver = 0;
+    uint32 ahBotListingStackRandomRatioQuest = 10;
+    uint32 ahBotListingStackRandomRatioKey = 10;
+    uint32 ahBotListingStackRandomRatioMisc = 100;
+    uint32 ahBotListingStackRandomStackIncrementConsumable = 5;
+    uint32 ahBotListingStackRandomStackIncrementContainer = 1;
+    uint32 ahBotListingStackRandomStackIncrementWeapon = 1;
+    uint32 ahBotListingStackRandomStackIncrementArmor = 1;
+    uint32 ahBotListingStackRandomStackIncrementReagent = 1;
+    uint32 ahBotListingStackRandomStackIncrementProjectile = 1000;
+    uint32 ahBotListingStackRandomStackIncrementTradeGood = 5;
+    uint32 ahBotListingStackRandomStackIncrementGeneric = 1;
+    uint32 ahBotListingStackRandomStackIncrementRecipe = 1;
+    uint32 ahBotListingStackRandomStackIncrementQuiver = 1;
+    uint32 ahBotListingStackRandomStackIncrementQuest = 1;
+    uint32 ahBotListingStackRandomStackIncrementKey = 1;
+    uint32 ahBotListingStackRandomStackIncrementMisc = 1;
+    uint32 ahBotListingStackMaxStackSizeConsumable = 0;
+    uint32 ahBotListingStackMaxStackSizeContainer = 0;
+    uint32 ahBotListingStackMaxStackSizeWeapon = 0;
+    uint32 ahBotListingStackMaxStackSizeArmor = 0;
+    uint32 ahBotListingStackMaxStackSizeReagent = 0;
+    uint32 ahBotListingStackMaxStackSizeProjectile = 0;
+    uint32 ahBotListingStackMaxStackSizeTradeGood = 0;
+    uint32 ahBotListingStackMaxStackSizeGeneric = 0;
+    uint32 ahBotListingStackMaxStackSizeRecipe = 0;
+    uint32 ahBotListingStackMaxStackSizeQuiver = 0;
+    uint32 ahBotListingStackMaxStackSizeQuest = 0;
+    uint32 ahBotListingStackMaxStackSizeKey = 0;
+    uint32 ahBotListingStackMaxStackSizeMisc = 0;
+    // AhBot service
+    bool ahBotEnabled = false;
+    std::string ahBotMinutesBetweenSellCycle = "1";
+    std::string ahBotMinutesBetweenBuyCycle = "1";
+    uint32 ahBotItemsPerCycle = 150;
+    uint32 ahBotListingExpireTimeInSecondsMin = 900;
+    uint32 ahBotListingExpireTimeInSecondsMax = 86400;
+    uint32 ahBotAllianceMinItems = 3000;
+    uint32 ahBotAllianceMaxItems = 3000;
+    uint32 ahBotHordeMinItems = 3000;
+    uint32 ahBotHordeMaxItems = 3000;
+    uint32 ahBotNeutralMinItems = 3000;
+    uint32 ahBotNeutralMaxItems = 3000;
+    bool ahBotBuyerEnabled = false;
+    std::string ahBotBuyerBuyCandidatesPerBuyCycle = "1";
+    bool ahBotBuyerAlwaysBidMaxCalculatedPrice = false;
+    bool ahBotBuyerPreventOverpayingForVendorItems = true;
+    bool ahBotBuyerBidAgainstPlayers = false;
+    uint32 ahBotTickBudgetUs = 2000;
+    uint32 ahBotMaxListingsPerTick = 10;
     //
+    // AhBot seller
+    std::string ahBotAccountName = "TBAHBOT";
+    uint32 ahBotSellersPerFaction = 4;
+    uint32 ahBotSellerRepairIntervalSeconds = 300;
+    //
+    // AhBot pool
+    bool ahBotListedItemLevelRestrictEnabled = false;
+    bool ahBotListedItemLevelRestrictUseCrafted = true;
+    uint32 ahBotListedItemLevelMin = 0;
+    uint32 ahBotListedItemLevelMax = 999;
+    std::string ahBotListedItemLevelExceptionItemIds;
+    bool ahBotListedItemIdRestrictEnabled = false;
+    uint32 ahBotListedItemIdMin = 0;
+    uint32 ahBotListedItemIdMax = 200000;
+    std::string ahBotListedItemIdExceptionItemIds;
+    bool ahBotEquipLevelRestrictEnabled = true;
+    uint32 ahBotEquipLevelMin = 0;
+    uint32 ahBotEquipLevelMax = 60;
+    std::string ahBotEquipLevelExceptionItemIds;
+    bool ahBotDisabledItemTextFilter = true;
+    bool ahBotDisabledRecipeProducedItemFilterEnabled = false;
+    std::string ahBotDisabledRecipeProducedItemClassSubClasses;
+    std::string ahBotDisabledInvalidItemIds;
+    std::string ahBotDisabledCustomItemIds;
+    std::array<std::array<uint32, 7>, 16> ahBotListProportions{};
+    std::string ahBotListMultipliedItemIds;
+    //
+    // AhBot phase
+    bool ahBotRespectContentPhase = true;
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
     // characters, create only the deficit toward the configured Min/Max target
