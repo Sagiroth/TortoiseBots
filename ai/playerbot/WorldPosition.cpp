@@ -551,7 +551,8 @@ void WorldPosition::EnsureHostileTownIndex()
                 // client locales. Numeric literal: the cmangos shim only aliases
                 // the INVISIBLE bit. strstr cost is build-time only.
                 uint32 constexpr GUARD_EXTRA_FLAG = 0x00000400;
-                bool isGuard = (info->flags_extra & GUARD_EXTRA_FLAG) != 0;
+                bool isGuard = (info->flags_extra & GUARD_EXTRA_FLAG) != 0 ||
+                    sPlayerbotAIConfig.IsExtraTownGuard(entry);
                 if (!isGuard && info->name.c_str() != nullptr)
                 {
                     const char* n = info->name.c_str();
