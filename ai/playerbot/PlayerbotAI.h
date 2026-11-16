@@ -1008,9 +1008,17 @@ public:
     // 15-min/30-min shape, shorter because the killer is one named player).
     void SetAvoidPlayerKiller(std::string const& name) { avoidPlayerKiller_ = name; avoidPlayerKillerMs_ = WorldTimer::getMSTime(); }
     bool ShouldAvoidPlayerKiller(std::string const& name) const;
+    void SetOwnerTradedItemIds(std::set<uint32> itemIds) { m_ownerTradedItemIds = std::move(itemIds); }
+    std::set<uint32> TakeOwnerTradedItemIds()
+    {
+        std::set<uint32> out = std::move(m_ownerTradedItemIds);
+        m_ownerTradedItemIds.clear();
+        return out;
+    }
+    std::set<uint32> m_ownerTradedItemIds;
     // Open-world PvP kill/death notes from the unit-death hook: the killer
-    // camps the victim's corpse for WorldPvpCampSeconds, then ignores the
-    // victim for WorldPvpCampIgnoreSeconds. Deaths feed the PvP death counter.
+    // ignores the victim for WorldPvpKillIgnoreSeconds. Deaths feed the PvP
+    // death counter.
     void NotePvpKill(Player* victim);
     void NotePvpDeath(Player* killer);
     // Open-world PvP seek: the level-gap decision per (bot, target) pair stays
@@ -1026,12 +1034,14 @@ public:
     // up after WorldPvpPursuitSeconds or when the target leaves sight range.
     uint32 worldPvpPursuitGuidLow_ = 0;
     uint32 worldPvpPursuitStartMs_ = 0;
-    // Camp after a kill: who was killed and when; after WorldPvpCampSeconds
-    // the victim is ignored for WorldPvpCampIgnoreSeconds (0 = none).
-    uint32 worldPvpCampGuidLow_ = 0;
-    uint32 worldPvpCampStartMs_ = 0;
+    // Last player killed and when: ignored for WorldPvpKillIgnoreSeconds (0 = none).
     uint32 worldPvpIgnoreGuidLow_ = 0;
     uint32 worldPvpIgnoreStartMs_ = 0;
+    // When an autonomous ghost first found its revive point unsafe (0 = not),
+    // and the ghost time of that corpse, so a later death starts clean.
+    uint32 safeReviveUnsafeSinceMs_ = 0;
+    time_t safeReviveCorpseGhostTime_ = 0;
+    bool safeReviveNoSafePoint_ = false;
     // Last seek-role roll (world-thread ms, 0 = never) and its next deadline
     // with jitter applied by RandomBotService.
     uint32 worldPvpSeekRollMs_ = 0;
@@ -1260,6 +1270,52 @@ protected:
     void UpdateEvadeProbe();
 
 public:
+    enum class CampPhase : uint8
+    {
+        Idle = 0,
+        MovingToSpot = 1,
+        SettingUp = 2,
+        WaitingTentCast = 3,
+        MovingToFire = 4,
+        WaitingFireCast = 5,
+        MovingToSeat = 6,
+        Camping = 7
+    };
+
+    struct CampSessionState
+    {
+        CampPhase phase = CampPhase::Idle;
+        uint32 spotId = 0;
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float orientation = 0.0f;
+        std::string spotName;
+        uint32 startedMs = 0;
+        uint32 moveStartedMs = 0;
+        uint32 stayCapMs = 0;
+        uint32 nextEmoteMs = 0;
+        uint32 lastScanMs = 0;
+        uint32 cooldownUntilMs = 0;
+        uint32 lastGreetMs = 0;
+        uint8 emoteStep = 0;
+        bool isJoiner = false;
+        float savedRestBonus = 0.0f;
+        bool hasSavedRestBonus = false;
+    };
+
+    CampSessionState& GetCampState() { return m_campState; }
+    CampSessionState const& GetCampState() const { return m_campState; }
+    bool IsAutonomousCampEligible();
+    void AbandonCamp(char const* reason = "abandoned");
+
+protected:
+    CampSessionState m_campState;
+
+public:
+
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }
     bool IsRecordingMessages() const { return m_recordMessages; }
     bool IsRecordingIncommingMessages() const { return m_recordIncommingMessages; }

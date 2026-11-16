@@ -17,6 +17,7 @@
 #endif
 
 #include "ObservabilityEmitter.h"
+#include "../ai/playerbot/CampMgr.h"
 
 #include "BotManager.h"
 #include "AltBotService.h"
@@ -1580,7 +1581,26 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         firstCount = false;
         ss << "{\"class\":\"" << EscapeJson(kv.first.first) << "\",\"role\":\"" << EscapeJson(kv.first.second) << "\",\"count\":" << kv.second << "}";
     }
-    ss << "]}";
+    std::vector<TortoiseBots::ActiveCampInfo> const activeCamps = sCampMgr.GetActiveCamps();
+    ss << "],\"camps_active\":" << activeCamps.size();
+    if (!activeCamps.empty())
+    {
+        ss << ",\"camps\":[";
+        for (size_t i = 0; i < activeCamps.size(); ++i)
+        {
+            TortoiseBots::ActiveCampInfo const& c = activeCamps[i];
+            if (i > 0) ss << ",";
+            ss << "{\"bot\":" << c.botGuid
+               << ",\"map\":" << c.mapId
+               << ",\"zone\":" << c.zoneId
+               << ",\"x\":" << std::fixed << std::setprecision(1) << c.x
+               << ",\"y\":" << c.y
+               << ",\"z\":" << c.z
+               << ",\"name\":\"" << EscapeJson(c.spotName) << "\"}";
+        }
+        ss << "]";
+    }
+    ss << "}";
 
     SendDatagram(ss.str());
 
@@ -2061,6 +2081,7 @@ void ObservabilityEmitter::EmitServerInfo()
        << ",\"level_up_mounts\":\"" << flag(sPlayerbotAIConfig.levelUpMounts) << "\""
        << ",\"turtle_mount_at_level\":" << sPlayerbotAIConfig.turtleMountAtLevel
        << ",\"remote_commander\":\"" << flag(sPlayerbotAIConfig.remoteCommander) << "\""
+       << ",\"camps_enabled\":\"" << flag(sPlayerbotAIConfig.campEnabled) << "\""
        << "}"
        << ",\"diagnostics\":{"
        << "\"perf_mon\":\"" << flag(sPlayerbotAIConfig.perfMonEnabled) << "\""

@@ -3,6 +3,7 @@
 #include "DeadValues.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/LowbieGraveyardPolicy.h"
+#include "playerbot/policy/death/SafeRevivePolicy.h"
 
 using namespace ai;
 
@@ -209,6 +210,13 @@ bool ShouldSpiritHealerValue::Calculate()
         if (mapEntry->IsDungeon())
             return false;
     }
+
+    // The body has stayed among hostile mobs too long: revive at the healer
+    // instead of dying again on the corpse.
+    if (ai->safeReviveCorpseGhostTime_ == corpse->GetGhostTime() &&
+        (ai->safeReviveNoSafePoint_ ||
+         TortoiseBots::SafeReviveWaitExpired(ai->safeReviveUnsafeSinceMs_, WorldTimer::getMSTime())))
+        return true;
 
     uint32 deadTime = time(nullptr) - corpse->GetGhostTime();
 

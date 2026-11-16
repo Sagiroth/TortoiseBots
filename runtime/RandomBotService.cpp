@@ -1775,14 +1775,6 @@ void RandomBotService::Update(uint32_t diff)
         if (PlayerbotAI* seekAi = PlayerbotAIStorage::Instance().GetAI(player))
         {
             uint32 const nowMs = WorldTimer::getMSTime();
-            if (seekAi->worldPvpCampGuidLow_ && seekAi->worldPvpCampStartMs_ &&
-                WorldPvpCampExpired(seekAi->worldPvpCampStartMs_, nowMs))
-            {
-                seekAi->worldPvpIgnoreGuidLow_ = seekAi->worldPvpCampGuidLow_;
-                seekAi->worldPvpIgnoreStartMs_ = nowMs;
-                seekAi->worldPvpCampGuidLow_ = 0;
-                seekAi->worldPvpCampStartMs_ = 0;
-            }
             bool const holdsSeek = seekAi->HasStrategy("world pvp", BotState::BOT_STATE_NON_COMBAT) ||
                 seekAi->HasStrategy("world pvp", BotState::BOT_STATE_COMBAT);
             if (holdsSeek && !AiFactory::IsWorldPvpSeekEligible(player, seekAi))

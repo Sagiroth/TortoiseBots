@@ -12577,13 +12577,41 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 if (ai::OwnedByLaterStep(*slot.run.plan, OwnerFrom(slot.run), unit->GetEntry(),
                         unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), f.team))
                     continue;
+                bool const stealthed = IsStealthed(unit);
+                bool const evading = unit->IsCreature() && static_cast<Creature*>(unit)->IsInEvadeMode();
+                bool const attackable = GroupCanAttack(judge, unit); // never pulled when it cannot be attacked
+                if (stealthed || evading || !attackable)
+                    continue;
+                bool const los = lead->IsWithinLOSInMap(unit);
+                if (!los)
+                    continue;
+                float const ux = unit->GetPositionX();
+                float const uy = unit->GetPositionY();
+                float const uz = unit->GetPositionZ();
+                PathFinder path(lead);
+                ai::WorldPosition::ExcludeSteepSlopes(path);
+                path.calculate(ux, uy, uz, false);
+                uint32 const type = static_cast<uint32>(path.getPathType());
+                Vector3 const end = path.getActualEndPosition();
+                bool const fallback = (type & PATHFIND_NOT_USING_PATH) != 0 ||
+                    DryChordFallback(f.dryWalk, (type & PATHFIND_UNDERWATER) != 0, DryAt(lead, ux, uy, uz));
+                float pathYd = 0.0f;
+                Movement::PointsArray const& way = path.getPath();
+                for (size_t i = 1; i < way.size(); ++i)
+                    pathYd += ai::PlanDistance(way[i - 1].x, way[i - 1].y, way[i - 1].z, way[i].x, way[i].y, way[i].z);
+                float const straightYd = ai::PlanDistance(
+                    lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), ux, uy, uz);
+                if (way.size() < 2 || !TortoiseBots::DungeonRun::HopUnitReachable(
+                        los, (type & PATHFIND_NOPATH) != 0, (type & PATHFIND_INCOMPLETE) != 0,
+                        (type & PATHFIND_SHORTCUT) != 0, fallback, end.x, end.y, end.z, ux, uy, uz, pathYd, straightYd))
+                    continue;
                 UnitFact fact;
                 fact.guid = unit->GetObjectGuid().GetRawValue();
                 fact.entry = unit->GetEntry();
                 fact.distLead = lead->GetDistance(unit);
-                fact.stealthed = IsStealthed(unit);
-                fact.evading = unit->IsCreature() && static_cast<Creature*>(unit)->IsInEvadeMode();
-                fact.attackable = GroupCanAttack(judge, unit); // never pulled when it cannot be attacked
+                fact.stealthed = stealthed;
+                fact.evading = evading;
+                fact.attackable = GroupCanAttack(judge, unit);
                 if (f.pullStand)
                     fact.losLead = lead->IsWithinLOSInMap(unit);
                 f.hopUnits.push_back(fact);

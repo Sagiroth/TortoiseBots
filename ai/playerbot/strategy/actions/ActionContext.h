@@ -37,6 +37,7 @@
 #include "RandomBotUpdateAction.h"
 #include "RemoveAuraAction.h"
 #include "RpgAction.h"
+#include "RpgCampAction.h"
 #include "TravelAction.h"
 #include "RtiAction.h"
 #include "BattleGroundTactics.h"
@@ -120,6 +121,7 @@ namespace ai
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
             creators["rpg"] = [](PlayerbotAI* ai) { return new RpgAction(ai); };
+            creators["rpg camp"] = [](PlayerbotAI* ai) { return new RpgCampAction(ai); };
             creators["crpg"] = [](PlayerbotAI* ai) { return new CRpgAction(ai); };
             creators["choose rpg target"] = [](PlayerbotAI* ai) { return new ChooseRpgTargetAction(ai); };
             creators["move to rpg target"] = [](PlayerbotAI* ai) { return new MoveToRpgTargetAction(ai); };

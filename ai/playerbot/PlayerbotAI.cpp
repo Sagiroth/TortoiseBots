@@ -91,6 +91,8 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "CampMgr.h"
+#include "policy/rpg/CampPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
 #include "playerbot/Talentspec.h"
 #include "../../behavior/PlayerConvenience.h"
@@ -267,6 +269,9 @@ bool PlayerbotAI::IsOwnedBot() const
 
 PlayerbotAI::~PlayerbotAI()
 {
+    if (bot && m_campState.phase != CampPhase::Idle)
+        AbandonCamp("shutdown");
+
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         if (engines[i])
@@ -1515,6 +1520,7 @@ bool PlayerbotAI::IsGroupMemberNearInCombat()
 
 void PlayerbotAI::OnCombatStarted()
 {
+    AbandonCamp("combat");
     if(!IsStateActive(BotState::BOT_STATE_COMBAT))
     {
         // Reset the combat start timestamp
@@ -1780,6 +1786,20 @@ void PlayerbotAI::EnsureAutoToolsKit()
             bot->LearnSpell(TortoiseBots::PICK_LOCK_SPELL_ID, false);
         EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
     }
+    if (TortoiseBots::BotWantsCampKit(
+            sPlayerbotAIConfig.campEnabled,
+            sRandomBotFacade.IsFreeBot(bot),
+            HasRealPlayerMaster(),
+            TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
+            false,
+            bot->GetLevel(),
+            sPlayerbotAIConfig.campMinLevel) &&
+        IsAutonomousCampEligible())
+    {
+        if (bot->GetSkillValuePure(SKILL_SURVIVAL2) < TortoiseBots::CAMP_SURVIVAL_SKILL_CAP)
+            bot->SetSkill(SKILL_SURVIVAL2, TortoiseBots::CAMP_SURVIVAL_SKILL_CAP, TortoiseBots::CAMP_SURVIVAL_SKILL_CAP);
+        EnsureCheatItem(TortoiseBots::CAMP_TENT_ITEM_ID, 1);
+    }
     // MC rune douse: map gate first so open-world bots skip the bag counts;
     // one Quintessence while inside Molten Core so the rune actions never
     // silently skip for lack of the item.
@@ -1836,6 +1856,88 @@ void PlayerbotAI::EnsureAutoToolsKit()
             }
         }
     }
+}
+
+bool PlayerbotAI::IsAutonomousCampEligible()
+{
+    if (!bot || !bot->IsInWorld())
+        return false;
+
+    bool hasRealPlayerInGroup = false;
+    if (Group* group = bot->GetGroup())
+    {
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (member && member->IsInWorld() && IsRealPlayer(member))
+            {
+                hasRealPlayerInGroup = true;
+                break;
+            }
+        }
+    }
+
+    return TortoiseBots::IsBotEligibleForCamp(
+        sPlayerbotAIConfig.campEnabled,
+        sRandomBotFacade.IsFreeBot(bot),
+        HasRealPlayerMaster(),
+        TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
+        hasRealPlayerInGroup,
+        bot->GetLevel(),
+        sPlayerbotAIConfig.campMinLevel,
+        bot->GetMap() && bot->GetMap()->IsDungeon(),
+        bot->InBattleGround());
+}
+
+void PlayerbotAI::AbandonCamp(char const* reason)
+{
+    if (m_campState.phase == CampPhase::Idle)
+        return;
+
+    if (bot)
+    {
+        sLog.outDetail("TortoiseBots: [Camp] %s: abandoned (%s) at spot %u (%s).",
+            bot->GetName(),
+            reason ? reason : "unknown",
+            m_campState.spotId,
+            m_campState.spotName.c_str());
+
+        if (TortoiseBots::ShouldRestoreRestBonus(sPlayerbotAIConfig.campKeepRestedXp, m_campState.hasSavedRestBonus))
+            bot->SetRestBonus(m_campState.savedRestBonus);
+
+        if (m_campState.phase == CampPhase::Camping)
+        {
+            bot->HandleEmoteCommand(EMOTE_ONESHOT_NONE);
+            if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+                bot->SetStandState(UNIT_STAND_STATE_STAND);
+            if (Pet* pet = bot->GetPet())
+            {
+                if (pet->IsAlive() && pet->GetStandState() != UNIT_STAND_STATE_STAND)
+                    pet->SetStandState(UNIT_STAND_STATE_STAND);
+            }
+        }
+
+        if (!m_campState.isJoiner)
+            sCampMgr.ClearActiveCamp(bot->GetGUIDLow());
+    }
+
+    m_campState.phase = CampPhase::Idle;
+    m_campState.spotId = 0;
+    m_campState.mapId = 0;
+    m_campState.zoneId = 0;
+    m_campState.x = 0.0f;
+    m_campState.y = 0.0f;
+    m_campState.z = 0.0f;
+    m_campState.orientation = 0.0f;
+    m_campState.spotName.clear();
+    m_campState.startedMs = 0;
+    m_campState.moveStartedMs = 0;
+    m_campState.stayCapMs = 0;
+    m_campState.nextEmoteMs = 0;
+    m_campState.emoteStep = 0;
+    m_campState.isJoiner = false;
+    m_campState.savedRestBonus = 0.0f;
+    m_campState.hasSavedRestBonus = false;
 }
 
 void PlayerbotAI::RefreshPublicNote()
@@ -1944,8 +2046,8 @@ void PlayerbotAI::NotePvpKill(Player* victim)
         return;
 
     uint32 const nowMs = WorldTimer::getMSTime();
-    worldPvpCampGuidLow_ = victim->GetGUIDLow();
-    worldPvpCampStartMs_ = nowMs;
+    worldPvpIgnoreGuidLow_ = victim->GetGUIDLow();
+    worldPvpIgnoreStartMs_ = nowMs;
     worldPvpPursuitGuidLow_ = 0;
     worldPvpPursuitStartMs_ = 0;
 
@@ -1957,8 +2059,6 @@ void PlayerbotAI::NotePvpDeath(Player* killer)
     if (!bot || !killer || bot->InBattleGround() || !sPlayerbotAIConfig.worldPvpSeek)
         return;
 
-    worldPvpCampGuidLow_ = 0;
-    worldPvpCampStartMs_ = 0;
     worldPvpPursuitGuidLow_ = 0;
     worldPvpPursuitStartMs_ = 0;
 
@@ -3525,7 +3625,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
             if (!sServerFacade.isMoving(bot) && sServerFacade.getDistance2d(bot, master) < 10.0f)
                 bot->SetStandState(UNIT_STAND_STATE_SIT);
         }
-        else if (aiInternalUpdateDelay < 1000)
+        else if (aiInternalUpdateDelay < 1000 && m_campState.phase != CampPhase::Camping)
             bot->SetStandState(UNIT_STAND_STATE_STAND);
 
         // Issue #644: following bots often miss the dungeon entrance, and a
@@ -3554,7 +3654,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     bot->GetName());
         }
 	}
-	else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT) bot->SetStandState(UNIT_STAND_STATE_STAND);
+	else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT && m_campState.phase != CampPhase::Camping) bot->SetStandState(UNIT_STAND_STATE_STAND);
 
 
     if (bot->IsTaxiFlying())

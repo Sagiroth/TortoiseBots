@@ -14,6 +14,7 @@ namespace BotCommands {
 // is the only caller; each handler lives in its domain file (Hire.cpp,
 // Commander.cpp, ...).
 bool HandleAhBot(ChatHandler* handler, char const* args);
+bool HandleCamp(ChatHandler* handler, char const* args);
 bool HandleAction(ChatHandler* handler, char const* args);
 bool HandleCommander(ChatHandler* handler, char const* args);
 bool HandleCommanderOrder(ChatHandler* handler, char const* args);

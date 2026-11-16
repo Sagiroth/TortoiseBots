@@ -28,19 +28,38 @@ static void TestEligibility()
 
 static void TestSelfEquip()
 {
-    // Unclaimed bots can self-equip at any level
-    assert(MayClaimedBotSelfEquip(10, false));
-    assert(MayClaimedBotSelfEquip(59, false));
-    assert(MayClaimedBotSelfEquip(60, false));
+    // Unclaimed bots can self-equip at any level regardless of the claimed setting
+    assert(MayClaimedBotSelfEquip(10, false, true));
+    assert(MayClaimedBotSelfEquip(60, false, true));
+    assert(MayClaimedBotSelfEquip(60, false, false));
 
-    // Claimed bots: leveling can self-equip
-    assert(MayClaimedBotSelfEquip(1, true));
-    assert(MayClaimedBotSelfEquip(25, true));
-    assert(MayClaimedBotSelfEquip(59, true));
+    // Claimed bots: leveling can self-equip regardless of the level-60 setting
+    assert(MayClaimedBotSelfEquip(1, true, true));
+    assert(MayClaimedBotSelfEquip(25, true, true));
+    assert(MayClaimedBotSelfEquip(59, true, true));
+    assert(MayClaimedBotSelfEquip(1, true, false));
+    assert(MayClaimedBotSelfEquip(59, true, false));
 
-    // Claimed bots at max level (60+): HARD LOCK
-    assert(!MayClaimedBotSelfEquip(60, true));
-    assert(!MayClaimedBotSelfEquip(61, true));
+    // Claimed bots at max level (60+): allowed by default, locked when disabled
+    assert(MayClaimedBotSelfEquip(60, true));
+    assert(MayClaimedBotSelfEquip(60, true, true));
+    assert(MayClaimedBotSelfEquip(61, true, true));
+    assert(!MayClaimedBotSelfEquip(60, true, false));
+    assert(!MayClaimedBotSelfEquip(61, true, false));
+}
+
+static void TestPlayerOverridePin()
+{
+    assert(ShouldPinPlayerEquippedItem(true, true));
+    assert(!ShouldPinPlayerEquippedItem(true, false));
+    assert(!ShouldPinPlayerEquippedItem(false, true));
+    assert(!ShouldPinPlayerEquippedItem(false, false));
+}
+
+static void TestKeepDisplacedGear()
+{
+    assert(ShouldKeepDisplacedClaimedGear(true));
+    assert(!ShouldKeepDisplacedClaimedGear(false));
 }
 
 static void TestAutoVendor()
@@ -78,6 +97,8 @@ int main()
 {
     TestEligibility();
     TestSelfEquip();
+    TestPlayerOverridePin();
+    TestKeepDisplacedGear();
     TestAutoVendor();
     TestResetExemption();
 

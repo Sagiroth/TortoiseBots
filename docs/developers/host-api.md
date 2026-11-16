@@ -928,10 +928,13 @@ durable `tortoise_bots_claimed` ledger end to end:
   owner_player_guid, guild_id)` when a random pool bot accepts a real
   player's guild invite. Policy gates live in `runtime/ClaimedBotPolicy.h`
   (unit-tested in `tools/test_claimed_bot_policy.cpp`).
-- **Gear lock.** Claimed bots at level 60 never self-equip upgrades
-  (`EquipAction`), never run synthetic gear updates (`UpdateGearAction`,
-  `RandomBotService`/`BotManager` seeding), and never auto-vendor
-  (`SellAction`). Below 60 they equip upgrades but preserve blue/epic items.
+- **Gear rules.** Claimed bots never run synthetic gear updates
+  (`UpdateGearAction`, `RandomBotService`/`BotManager` seeding) and never
+  auto-vendor at level 60 (`SellAction`, below 60 they preserve blue/epic
+  items). Auto-equip (`EquipUpgradesAction`) runs at all levels by default
+  (`AiPlayerbot.ClaimedBotSelfEquip`, `0` locks level 60), marks displaced
+  items `FORCE_USAGE_KEEP`, and pins owner-equipped items (`equip`, addon, or
+  equipped trade) as `FORCE_USAGE_EQUIP`.
 - **Control.** Guild members control claimed bots (`BotCommandContext`,
   `PlayerbotSecurity`); the roster streams a `TBM:CLAIMED_*` snapshot plus a
   `claimed-roster` capability for the addon's Guild tab.

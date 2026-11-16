@@ -79,7 +79,7 @@ Invite a pool bot into your guild with `/ginvite <Name>`. It joins when it has n
 | :--- | :--- | :--- | :--- |
 | **Class spells** | Train it yourself: take it to its class trainer, **target the trainer**, whisper `trainer` (it pays with its own gold) | Free, learned at every level-up | Free, learned at every level-up |
 | **Levels** | Earned by playing. Optional: [`AiPlayerbot.SyncAltLevelToMaster`](../server/settings/party.md#aiplayerbotsyncaltleveltomaster) levels it up to you while grouped (off by default) | Hired at your level (or at the level you asked for) | Earned by playing |
-| **Gear** | What you give it; it also equips upgrades it loots | Comes with a kit; at level 60 a gear tier set ([contracts](commands/roster-and-hiring.md#mercenary-contracts)) | Starter outfit once, then loot, quests and the auction house |
+| **Gear** | What you give it; it also equips upgrades it loots | Comes with a kit; at level 60 a gear tier set ([contracts](commands/roster-and-hiring.md#mercenary-contracts)) | Starter outfit once, then loot, quests and the auction house (claimed guild bots also auto-equip upgrades, keep displaced gear in bags, and never replace items you put on them until cleared with `keep none`) |
 | **Loot rolls** | Rolls, never Needs against you | Never loots, always passes (off by default) | Rolls, never Needs against you |
 
 ## Building a balanced 5-man party

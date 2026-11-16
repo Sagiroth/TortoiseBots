@@ -5,6 +5,7 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/DungeonPlanMgr.h"
+#include "playerbot/CampMgr.h"
 #include "../../runtime/BotNames.h"
 #include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireFeePolicy.h"
@@ -497,7 +498,9 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotQuestItems", "6948,5175,5176,5177,5178,16309,12382,13704,11000,22754"), randomBotQuestItems);
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotSpellIds", ""), randomBotSpellIds);
 	LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.PvpProhibitedZoneIds", "2255,656,2361,2362,2363,976,35,2268,3425,392,541,1446,3828,3712,3738,3565,3539,3623,4152,3988,4658,4284,4418,4436,4275,4323"), pvpProhibitedZoneIds);
+	LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.ExtraTownGuardEntries", "5996,5997,5998,5999,6000,6001,6002,6003"), extraTownGuardEntries);
     randomBotForcePvp = config.GetBoolDefault("AiPlayerbot.RandomBotForcePvp", true);
+    randomBotForcePvpPercent = std::min<uint32>(config.GetIntDefault("AiPlayerbot.RandomBotForcePvpPercent", 50), 100);
     worldPvpSeek = config.GetIntDefault("AiPlayerbot.WorldPvpSeek", 2);
     worldPvpSeekBotPercent = config.GetIntDefault("AiPlayerbot.WorldPvpSeekBotPercent", 25);
     worldPvpSeekRerollMinutes = config.GetIntDefault("AiPlayerbot.WorldPvpSeekRerollMinutes", 30);
@@ -650,6 +653,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotNamesFile = config.GetStringDefault("AiPlayerbot.RandomBotNamesFile", "");
     allowIsolatedCustomStartingZones = config.GetBoolDefault("AiPlayerbot.AllowIsolatedCustomStartingZones", false);
     relocateHopelessDeaths = config.GetBoolDefault("AiPlayerbot.RelocateHopelessDeaths", true);
+    abandonedInstanceGraceSec = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.AbandonedInstanceGraceSec", 90)));
     repopAtGraveyard = config.GetBoolDefault("AiPlayerbot.RepopAtGraveyard", true);
     turtleMountAtLevel = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.TurtleMountAtLevel", 18));
     levelUpMounts = config.GetBoolDefault("AiPlayerbot.LevelUpMounts", true);
@@ -698,6 +702,17 @@ bool PlayerbotAIConfig::Initialize()
     hireCrossFactionNeutralInns = config.GetBoolDefault("AiPlayerbot.HireCrossFactionNeutralInns", false);
     hireLoot = config.GetBoolDefault("AiPlayerbot.HireLoot", false);
     shamanTankEnabled = config.GetBoolDefault("AiPlayerbot.ShamanTankEnabled", true);
+    campEnabled = config.GetBoolDefault("AiPlayerbot.CampEnabled", true);
+    campChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampChancePct", 15);
+    campNightChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampNightChancePct", 30);
+    campMinLevel = (uint32) config.GetIntDefault("AiPlayerbot.CampMinLevel", 10);
+    campSitDurationSec = (uint32) config.GetIntDefault("AiPlayerbot.CampSitDurationSec", 1200);
+    campKeepRestedXp = config.GetBoolDefault("AiPlayerbot.CampKeepRestedXp", false);
+    campJoinChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampJoinChancePct", 10);
+    campJoinMinSec = (uint32) config.GetIntDefault("AiPlayerbot.CampJoinMinSec", 60);
+    campJoinMaxSec = (uint32) config.GetIntDefault("AiPlayerbot.CampJoinMaxSec", 180);
+    campGreetChancePct = (uint32) config.GetIntDefault("AiPlayerbot.CampGreetChancePct", 15);
+    campGreetCooldownSec = (uint32) config.GetIntDefault("AiPlayerbot.CampGreetCooldownSec", 120);
     hireBaseCostCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireBaseCostCopper", 15000));
     if (hireBaseCostCopper > 100000000)
         hireBaseCostCopper = 100000000;
@@ -1160,6 +1175,7 @@ bool PlayerbotAIConfig::Initialize()
     //SPP automation
     autoPickReward = config.GetStringDefault("AiPlayerbot.AutoPickReward", "yes");
     autoEquipUpgradeLoot = config.GetBoolDefault("AiPlayerbot.AutoEquipUpgradeLoot", true);
+    claimedBotSelfEquip = config.GetBoolDefault("AiPlayerbot.ClaimedBotSelfEquip", true);
     equipUpgradeThreshold = config.GetFloatDefault("AiPlayerbot.EquipUpgradeThreshold", 1.1f);
     syncQuestWithPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestWithPlayer", false);
     syncQuestForPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestForPlayer", false);
@@ -1275,6 +1291,8 @@ bool PlayerbotAIConfig::Initialize()
     ai::LoadBossStands();
     sLog.outString("Loading dungeon plans.");
     ai::LoadDungeonPlans();
+    sLog.outString("Loading bot camp spots.");
+    sCampMgr.Load();
     sRandomBotFacade.LoadBattleMastersCache();
     sRandomBotFacade.LoadAuctionPrices();
 
@@ -1315,6 +1333,11 @@ bool PlayerbotAIConfig::IsInRandomQuestItemList(uint32 id)
 bool PlayerbotAIConfig::IsInPvpProhibitedZone(uint32 id)
 {
 	return find(pvpProhibitedZoneIds.begin(), pvpProhibitedZoneIds.end(), id) != pvpProhibitedZoneIds.end();
+}
+
+bool PlayerbotAIConfig::IsExtraTownGuard(uint32 entry) const
+{
+	return find(extraTownGuardEntries.begin(), extraTownGuardEntries.end(), entry) != extraTownGuardEntries.end();
 }
 
 std::string PlayerbotAIConfig::GetValue(std::string name)

@@ -21,6 +21,7 @@ type Registry struct {
 	playerLagP50   prometheus.Gauge
 	playerLagP95   prometheus.Gauge
 	playersOnline  prometheus.Gauge
+	campsActive    prometheus.Gauge
 	botActiveCount *prometheus.GaugeVec
 	anomaliesTotal *prometheus.CounterVec
 	stateRatio     *prometheus.GaugeVec
@@ -70,6 +71,10 @@ func New() *Registry {
 		playersOnline: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "mangos_players_online",
 			Help: "Connected human player count",
+		}),
+		campsActive: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "tortoisebots_camps_active",
+			Help: "Active camps currently set up by autonomous bots",
 		}),
 		botActiveCount: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "tortoisebots_active_count",
@@ -182,6 +187,7 @@ func (r *Registry) RecordHeartbeat(p *model.HeartbeatPayload) {
 	r.playerLagP50.Set(p.LagP50Ms)
 	r.playerLagP95.Set(p.LagP95Ms)
 	r.playersOnline.Set(float64(p.HumansCount))
+	r.campsActive.Set(float64(p.CampsActive))
 
 	r.stateRatio.WithLabelValues("combat").Set(p.States.Combat)
 	r.stateRatio.WithLabelValues("moving").Set(p.States.Moving)

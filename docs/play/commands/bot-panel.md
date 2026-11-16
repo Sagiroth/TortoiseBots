@@ -197,7 +197,7 @@ Alias: `.bot inventory <CharacterName>`.
 
 Emits structured protocol records:
 - `TBM:INV_BEGIN|<bot>|<copper>`: Starts the inventory stream with the bot's carried coin.
-- `TBM:INV_EQ|<slot>|<itemId>|<durability>|<max>`: One record per equipped gear slot.
+- `TBM:INV_EQ|<slot>|<itemId>|<durability>|<max>[|<bagSize>]`: One record per equipped gear or bag slot (`bagSize` is present for equipped bags).
 - `TBM:INV_ITEM|<bag>|<slot>|<itemId>|<count>|<flags>`: One record per carried bag item. Flags:
   - `e`: The bot can equip the item.
   - `eu`: The item is an equip upgrade (the `u` flag only appears together with `e`, never alone).

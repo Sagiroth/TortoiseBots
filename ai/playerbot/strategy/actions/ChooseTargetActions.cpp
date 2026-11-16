@@ -445,14 +445,6 @@ bool AttackEnemyPlayerAction::Execute(Event& event)
     if (!bot->InBattleGround() && WorldPvpSeekChecks::IsSeeking(ai, bot))
     {
         uint32 const nowMs = WorldTimer::getMSTime();
-        if (ai->worldPvpCampGuidLow_ && ai->worldPvpCampStartMs_ &&
-            TortoiseBots::WorldPvpCampExpired(ai->worldPvpCampStartMs_, nowMs))
-        {
-            ai->worldPvpIgnoreGuidLow_ = ai->worldPvpCampGuidLow_;
-            ai->worldPvpIgnoreStartMs_ = nowMs;
-            ai->worldPvpCampGuidLow_ = 0;
-            ai->worldPvpCampStartMs_ = 0;
-        }
         uint32 const targetLow = target->GetGUIDLow();
         if (ai->worldPvpPursuitGuidLow_ != targetLow)
         {
