@@ -628,3 +628,9 @@ func TestLiveLayoutScrollJS(t *testing.T) {
 func TestControlsDebugJS(t *testing.T) {
 	runCheck(t, "controls_debug_check.js", "../../web/static/css/app.css", "../../web/static/js/app.js")
 }
+
+// TestAhBotUIJS runs ahbot_ui_check.js: the AH bot panel in the Auction House tab (off state, house x category x quality
+// matrix, sold/bought rates, seller account health, house filter and escaping).
+func TestAhBotUIJS(t *testing.T) {
+	runCheck(t, "ahbot_ui_check.js", "../../web/static/js/app.js")
+}

@@ -322,6 +322,24 @@
       <section id="tab-auctions" class="tab-view" style="display: none;">
         <div class="kpi-row" id="ah-summary"></div>
 
+        <div class="card ahbot-card" id="ahbot-panel">
+          <div class="card-head">
+            <h2 class="card-title">AH bot <span id="ahbot-status-badge"></span></h2>
+            <div class="ahbot-head-right">
+              <span class="card-hint" id="ahbot-status-note"></span>
+              <div class="seg" id="ahbot-house" role="group" aria-label="AH bot house filter" style="display: none;">
+                <button class="seg-btn active" data-v="">All houses</button>
+                <button class="seg-btn" data-v="alliance">Alliance</button>
+                <button class="seg-btn" data-v="horde">Horde</button>
+                <button class="seg-btn" data-v="neutral">Neutral</button>
+              </div>
+            </div>
+          </div>
+          <div id="ahbot-body">
+            <div class="empty-hint">Loading AH bot status…</div>
+          </div>
+        </div>
+
         <div class="card toolbar-card">
           <div class="toolbar">
             <input type="text" id="ah-search" placeholder="Item name…" class="input grow" autocomplete="off">
@@ -337,6 +355,7 @@
             <input type="text" id="ah-seller" placeholder="Seller…" class="input" autocomplete="off">
             <div class="seg" id="ah-kind" role="group" aria-label="Seller">
               <button class="seg-btn active" data-v="">All</button>
+              <button class="seg-btn" data-v="ahbot">AH bot</button>
               <button class="seg-btn" data-v="bot">Bots</button>
               <button class="seg-btn" data-v="player">Players</button>
             </div>
