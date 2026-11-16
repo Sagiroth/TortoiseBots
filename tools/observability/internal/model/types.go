@@ -373,6 +373,17 @@ type ClassRoleCount struct {
 	Count uint32 `json:"count"`
 }
 
+// ActiveCamp describes a camp currently set up by an autonomous bot.
+type ActiveCamp struct {
+	Bot  uint32  `json:"bot"`
+	Map  uint32  `json:"map"`
+	Zone uint32  `json:"zone"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	Z    float64 `json:"z"`
+	Name string  `json:"name,omitempty"`
+}
+
 // HeartbeatPayload is received periodically over UDP from the C++ module.
 // It opens a snapshot cycle identified by Seq; BOT_BATCH datagrams carrying
 // the same Seq complete that cycle.
@@ -393,6 +404,8 @@ type HeartbeatPayload struct {
 	BotsCount   uint32           `json:"bots"`
 	States      StateRatios      `json:"states"`
 	Counts      []ClassRoleCount `json:"counts,omitempty"`
+	CampsActive uint32           `json:"camps_active,omitempty"`
+	Camps       []ActiveCamp     `json:"camps,omitempty"`
 }
 
 // BotBatchPayload delivers one chunk of a snapshot cycle. A cycle is only

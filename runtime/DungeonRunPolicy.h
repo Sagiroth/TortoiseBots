@@ -2051,6 +2051,9 @@ struct Facts
     // (UnitFact::auraGated).
     bool totemFocus = false;
     bool auraGatedTargets = false;
+    // AiPlayerbot.DungeonRunPackFocusSparesTacticUnits: the pack's fallback skull spares every unit the boss tactics
+    // own, on every step kind (PickPackFocus, PackFocusSparesEntry).
+    bool packFocusSparesTacticUnits = false;
     // The living damage dealers the totem focus may send (not a tank, not a healer, not a carrier of an aura-gated
     // row), read with Facts::killFirst: the totem re-send wants TotemFocusDpsWanted(dpsAlive) on the totem. 0: none
     // (no order goes out; the glue reads it whenever it reads the fight's kill_first units).
@@ -10842,6 +10845,42 @@ inline const UnitFact* PlayerSkullFocus(const Run& r, const Facts& f)
     return find(f.units);
 }
 
+// Whether a live row of this kind owns the entry: a kill_first or linked_death row names its target, and, keyed on the
+// boss itself (target 0), the boss. `everyKind` adds the kinds whose target is the unit they act on, which the pack
+// focus's spare rule leaves to the row: a seek_aura's source, a seek_pull's source, a tank_post's unit and a hold_kill's
+// blocker.
+inline bool BossTacticKindOwnsTarget(ai::BossTacticKind kind, std::uint32_t targetEntry, std::uint32_t bossEntry,
+    std::uint32_t entry, bool everyKind)
+{
+    if (kind == ai::BossTacticKind::KillFirst || kind == ai::BossTacticKind::LinkedDeath)
+        return entry == targetEntry || entry == bossEntry;
+    if (!everyKind || targetEntry == 0)
+        return false;
+    return (kind == ai::BossTacticKind::SeekAura || kind == ai::BossTacticKind::SeekPull ||
+               kind == ai::BossTacticKind::TankPost || kind == ai::BossTacticKind::HoldKill) &&
+        entry == targetEntry;
+}
+
+// Whether one of `keys`' live rows on the plan's map owns the entry (BossTacticKindOwnsTarget).
+inline bool BossTacticOwnsEntryIn(const Run& r, const std::vector<std::uint32_t>& keys, std::uint32_t entry,
+    bool everyKind)
+{
+    if (!r.liveTactics || !r.plan || !entry)
+        return false;
+    for (std::uint32_t const key : keys)
+    {
+        if (!key)
+            continue;
+        const std::vector<ai::BossTacticRow>* const rows = r.liveTactics->Rows(r.plan->map, key);
+        if (!rows)
+            continue;
+        for (const ai::BossTacticRow& row : *rows)
+            if (BossTacticKindOwnsTarget(row.kind, row.targetEntry, row.bossEntry, entry, everyKind))
+                return true;
+    }
+    return false;
+}
+
 // Whether the boss tactics of this step own the unit's entry: a kill_first or linked_death row keyed on the boss (or on
 // one of the step's own adds) names it. Such a unit keeps its row's rule — the plan's kill_first list, a linked group
 // that dies together — and is never the pack focus's fallback.
@@ -10851,19 +10890,33 @@ inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t e
         return false;
     std::vector<std::uint32_t> keys = s.entries;
     keys.push_back(s.entry);
-    for (std::uint32_t const key : keys)
-    {
-        if (!key)
-            continue;
-        const std::vector<ai::BossTacticRow>* const rows = r.liveTactics->Rows(r.plan->map, key);
-        if (!rows)
-            continue;
-        for (const ai::BossTacticRow& row : *rows)
-            if ((row.kind == ai::BossTacticKind::KillFirst || row.kind == ai::BossTacticKind::LinkedDeath) &&
-                (entry == row.targetEntry || entry == row.bossEntry))
-                return true;
-    }
-    return false;
+    return BossTacticOwnsEntryIn(r, keys, entry, false);
+}
+
+// The boss entries whose live rows the pack focus's spare read looks at: the step's own and every unit of the fight's.
+// A row speaks about the unit it is keyed on or about a unit that fights beside it.
+inline std::vector<std::uint32_t> PackFocusTacticKeys(const PlanStep& s, const std::vector<UnitFact>& engaged)
+{
+    std::vector<std::uint32_t> keys = s.entries;
+    keys.push_back(s.entry);
+    for (const UnitFact& u : engaged)
+        keys.push_back(u.entry);
+    return keys;
+}
+
+// AiPlayerbot.DungeonRunPackFocusSparesTacticUnits, the pack focus's spare rule: whether the boss tactics own the entry,
+// so the fallback never puts the skull on it. A unit whose entry has its own live rows on the plan's map is owned
+// whatever the rows say: a boss engaged before its boss step (Hakkar), an add the rows key on itself (Onyxia's held
+// whelp). A unit a row names as its target is owned through the rows of the step and of every unit of the fight (the
+// seek's Son, a tank_post's unit). `keys` are those rows' boss entries (PackFocusTacticKeys).
+inline bool PackFocusSparesEntry(const Run& r, const std::vector<std::uint32_t>& keys, std::uint32_t entry)
+{
+    if (!r.liveTactics || !r.plan || !entry)
+        return false;
+    const std::vector<ai::BossTacticRow>* const own = r.liveTactics->Rows(r.plan->map, entry);
+    if (own && !own->empty())
+        return true;
+    return BossTacticOwnsEntryIn(r, keys, entry, true);
 }
 
 // The pack's own focus. The run's skull otherwise comes from the plan's kill_first list alone, so a wing whose list
@@ -10876,6 +10929,9 @@ inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t e
 // evading, not under the run's crowd control (an aura, or an order out — Run::ccSent), not one whose focus order was
 // refused a moment ago, and within kKillFirstMaxYd of the lead bot (the focus sends every bot at it). An event and a
 // rest fight keep their own rule.
+// AiPlayerbot.DungeonRunPackFocusSparesTacticUnits leaves every unit the boss tactics own out on every step kind
+// (PackFocusSparesEntry): a boss engaged before his boss step is skulled on a move step otherwise, and that skull's
+// attack order takes every bot's target off the unit its row's seek needs.
 inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
 {
     const PlanStep* const s = Current(r);
@@ -10890,6 +10946,10 @@ inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
     // no combat yet): the pack's own pick waits for its death.
     if (LivingKillFirstUnit(r, f, r.focusGuid))
         return nullptr;
+    bool const sparesTacticUnits = f.packFocusSparesTacticUnits;
+    std::vector<std::uint32_t> tacticKeys;
+    if (sparesTacticUnits)
+        tacticKeys = PackFocusTacticKeys(*s, f.engagedUnits);
     const UnitFact* best = nullptr;
     int bestClass = 2;
     const UnitFact* held = nullptr;
@@ -10901,6 +10961,9 @@ inline const UnitFact* PickPackFocus(const Run& r, const Facts& f)
         // A boss step's fallback is for its adds: the boss itself and the units its own rows name keep their rule.
         if (boss && (IsStepBoss(*s, u) || (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||
                 BossTacticOwnsEntry(r, *s, u.entry)))
+            continue;
+        // The boss tactics own the unit: its row fights it, the fallback does not.
+        if (sparesTacticUnits && PackFocusSparesEntry(r, tacticKeys, u.entry))
             continue;
         // Its focus was refused a moment ago (kFocusRefusedIgnoreMs).
         auto const refused = r.focusRefused.find(u.guid);
@@ -12916,6 +12979,17 @@ inline bool NavPathReaches(bool noPath, bool incomplete, bool shortcut, bool not
 inline bool PathFitsStraight(float pathYd, float straightYd)
 {
     return pathYd <= kPathDetourFactor * std::max(straightYd, kArriveYd);
+}
+
+inline bool HopUnitReachable(bool los, bool noPath, bool incomplete, bool shortcut, bool notUsingPath,
+    float endX, float endY, float endZ, float targetX, float targetY, float targetZ,
+    float pathYd, float straightYd)
+{
+    if (!los)
+        return false;
+    if (!NavPathReaches(noPath, incomplete, shortcut, notUsingPath, endX, endY, endZ, targetX, targetY, targetZ))
+        return false;
+    return pathYd <= std::max(straightYd * kPathDetourFactor, straightYd + kHopPullYd);
 }
 
 // Whether plan step `i` (a pull or boss of the party's team) is a live pack for the walk back: the current step and
@@ -15358,6 +15432,8 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
         return FightEnd::NotYet;
     if ((s.flags & ai::kPlanFlagAmbush) && !r.walkedThrough)
         return FightEnd::NotYet;
+    if (s.kind == PlanStepKind::Boss && BossDownEvidence(r, f))
+        return FightEnd::BossDown;
     if (UnitsOutOfReach(r, f))
         return FightEnd::OutOfReach;
     for (const UnitFact& u : f.units)
@@ -15372,8 +15448,7 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
                 return FightEnd::NotYet;
         return FightEnd::Cleared;
     }
-    // Checked before the away-wait, so a boss whose script changed his entry never starts it.
-    return BossDownEvidence(r, f) ? FightEnd::BossDown : FightEnd::NotYet;
+    return FightEnd::NotYet;
 }
 
 // Where a place lies from the lead bot, for a boss step's pause: "N yd from the lead bot (M yd above it)" (or below),
@@ -15645,6 +15720,13 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         }
         if (r.fruitlessPulls >= kFruitlessPulls)
         {
+            if (s.kind == PlanStepKind::Boss && !(s.flags & ai::kPlanFlagSkipUnreachable))
+            {
+                Pause(r, "boss " + std::to_string(s.entry) + " out of reach after " +
+                    std::to_string(kFruitlessPulls) +
+                    " pulls that killed nothing: bring the party where it can reach him, then .bot run resume, or .bot run skip");
+                return;
+            }
             for (const UnitFact& u : f.units)
                 if (u.hostile && !r.passed.count(u.guid))
                     r.unreachable.insert(u.guid);
@@ -15726,6 +15808,12 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
     std::string const what = s.kind == PlanStepKind::Boss ? "boss" : "pack";
     if (end == FightEnd::OutOfReach)
     {
+        if (s.kind == PlanStepKind::Boss && !(s.flags & ai::kPlanFlagSkipUnreachable))
+        {
+            Pause(r, "boss " + std::to_string(s.entry) +
+                " is out of reach: bring the party where it can reach him, then .bot run resume, or .bot run skip");
+            return;
+        }
         r.notCleared.insert(r.step);
         NextStep(r, what + " skipped, not cleared: " + std::to_string(UnitsOutOfReach(r, f)) + " units out of reach");
     }

@@ -8220,6 +8220,170 @@ static void TestMoveAggroGetsTheSkull()
     CHECK(r.focusGuid == 0);
 }
 
+// Hakkar's plan rows: the walk to his spot (leg `hakkar`, a move step) and his boss row (14834). His seek_aura row is
+// the one that needs the released Son of Hakkar 11357 dosed before each Blood Siphon.
+static DungeonPlan HakkarSeekPlan()
+{
+    DungeonPlan plan;
+    plan.name = "zul_gurub";
+    plan.map = 309;
+    plan.legs = {{7, "hakkar"}};
+    plan.steps = {Step(PlanStepKind::Move, 50, 0, 0), Step(PlanStepKind::Boss, 60, 0, 0)};
+    plan.steps[0].leg = 7;
+    plan.steps[1].leg = 7;
+    plan.steps[1].entry = 14834;
+    ai::NormalizePlanStep(plan.steps[1]);
+    return plan;
+}
+
+// The same fight with the boss step current (the Son in the step's entries).
+static DungeonPlan HakkarBossStepPlan()
+{
+    DungeonPlan plan;
+    plan.name = "zul_gurub";
+    plan.map = 309;
+    plan.legs = {{7, "hakkar"}};
+    plan.steps = {Step(PlanStepKind::Boss, 60, 0, 0)};
+    plan.steps[0].leg = 7;
+    plan.steps[0].entry = 14834;
+    plan.steps[0].entries = {11357};
+    ai::NormalizePlanStep(plan.steps[0]);
+    return plan;
+}
+
+// Hakkar's seek_aura row (ai_boss_tactic, map 309): the raid gathers in a dying Son of Hakkar's cloud (24320 -> 24321)
+// before each 90 s Blood Siphon 24324, the source held 15 yd south of its spawn.
+static ai::BossTacticRow HakkarSeekRow()
+{
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14834;
+    row.kind = ai::BossTacticKind::SeekAura;
+    row.targetEntry = 11357;
+    row.spellId = 24321;
+    row.priority = 30;
+    row.param = 4.0f;
+    row.cycleSpell = 24324;
+    row.cycleSec = 90.0f;
+    row.windowSec = 15.0f;
+    row.spotX = -11787.4f;
+    row.spotY = -1664.3f;
+    row.spotZ = 54.0f;
+    return row;
+}
+
+static void HakkarSeekTable(ai::BossTacticTable& table)
+{
+    ai::BossTacticRow const row = HakkarSeekRow();
+    CHECK(table.Add(row));
+    table.Seal();
+}
+
+// Hakkar is engaged while the run is still on the move step before his boss row (walk 112: "boss 14834 engaged at step
+// 707, before its boss step 708"). The pack's fallback skulled him there, the focus order took every bot's target off
+// the Son his seek_aura row needs dosed, and the raid went into Blood Siphon undosed (7/10 fights fully undosed
+// against 17/22 without the focus code). AiPlayerbot.DungeonRunPackFocusSparesTacticUnits leaves both alone on every
+// step kind, so the seek keeps the Son; off, the fallback skulls Hakkar as today.
+static void TestPackFocusSparesTacticUnitsBeforeTheBossStep()
+{
+    DungeonPlan plan = HakkarSeekPlan();
+    ai::BossTacticTable table;
+    HakkarSeekTable(table);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 14834, 4)), Engaged(Unit(2, 11357, 8))};
+    Run off = Start(&plan);
+    off.liveTactics = &table;
+    CHECK(Tick(off, f) == "focus 1"); // today: the boss gets the fallback skull before his boss step
+    CHECK(off.focusGuid == 1);
+    Run on = Start(&plan);
+    on.liveTactics = &table;
+    f.packFocusSparesTacticUnits = true;
+    CHECK(Tick(on, f).empty());
+    CHECK(on.focusGuid == 0);
+}
+
+// The boss step itself: the Son 11357 is the seek's, not the fallback's add (its skull sent every bot onto the Son and
+// bypassed the seek window). Off, the add takes the skull as before.
+static void TestPackFocusSparesTheSeekTargetOnTheBossStep()
+{
+    DungeonPlan plan = HakkarBossStepPlan();
+    ai::BossTacticTable table;
+    HakkarSeekTable(table);
+    Facts f = Party(60);
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 14834, 2)), Engaged(Unit(2, 11357, 5))};
+    Run off = Start(&plan);
+    off.liveTactics = &table;
+    CHECK(Tick(off, f) == "focus 2");
+    f.packFocusSparesTacticUnits = true;
+    Run on = Start(&plan);
+    on.liveTactics = &table;
+    CHECK(Tick(on, f).empty());
+    CHECK(on.focusGuid == 0);
+}
+
+// Onyxia's held whelps: a row keyed on the whelp itself (the hold_kill row that holds the damage dealers off it) owns
+// it, so the fallback never skulls it, on a move step and on a boss step alike (walk 112 skulled 11262 ~85 times a
+// fight). The plain add still gets the skull, so the rule does not silence the fallback.
+static void TestPackFocusSparesUnitsTheirOwnRowsKey()
+{
+    for (PlanStepKind const kind : {PlanStepKind::Move, PlanStepKind::Boss})
+    {
+        DungeonPlan plan;
+        plan.map = 249;
+        plan.steps = {Step(kind, 50, 0, 0)};
+        plan.steps[0].entry = 10184;
+        plan.steps[0].entries = {11262};
+        ai::NormalizePlanStep(plan.steps[0]);
+        ai::BossTacticTable table;
+        ai::BossTacticRow row;
+        row.map = 249;
+        row.bossEntry = 11262;
+        row.kind = ai::BossTacticKind::HoldKill;
+        row.targetEntry = 10184;
+        row.priority = 1;
+        CHECK(table.Add(row));
+        table.Seal();
+        Facts f = Party(0);
+        f.anyInCombat = true;
+        f.engagedUnits = {Engaged(Unit(1, 11262, 4)), Engaged(Unit(2, 4287, 6))};
+        f.engagedUnits[0].caster = true;
+        Run off = Start(&plan);
+        off.liveTactics = &table;
+        CHECK(Tick(off, f) == "focus 1"); // the whelp is the nearer mana user: today's skull
+        f.packFocusSparesTacticUnits = true;
+        Run on = Start(&plan);
+        on.liveTactics = &table;
+        CHECK(Tick(on, f) == "focus 2");
+        CHECK(on.focusGuid == 2);
+    }
+}
+
+// The spare rule is for the tactics' units only: an ordinary pack of the same map, with a row keyed on another entry,
+// still gets the skull with the key on.
+static void TestPackFocusSparesOnlyTheTacticUnits()
+{
+    DungeonPlan plan;
+    plan.map = 309;
+    plan.steps = {PullStep(10, {4287, 4296})};
+    ai::BossTacticTable table;
+    ai::BossTacticRow row = HakkarSeekRow();
+    CHECK(table.Add(row));
+    table.Seal();
+    Run r = Start(&plan);
+    r.liveTactics = &table;
+    Facts f = Party(0);
+    f.packFocusSparesTacticUnits = true;
+    f.units = {Unit(1, 4287, 6), Unit(2, 4296, 10)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.engagedUnits = {Engaged(Unit(1, 4287, 6)), Engaged(Unit(2, 4296, 10))};
+    f.engagedUnits[1].caster = true;
+    CHECK(Tick(r, f) == "focus 2");
+    CHECK(r.focusGuid == 2);
+}
+
 // A skull a player puts on a living hostile of the group is adopted as the focus: the run drops its own pick and sends
 // the bots to the player's target by guid, leaving the mark where the player put it. While that target lives the
 // player's choice stands; once it dies, the run's own pick resumes.
@@ -37585,6 +37749,94 @@ static void TestTooFarLegNoteIsUnchanged()
     CHECK(r.walkLegs == 1 && r.walkDryLegs == 0 && r.legOn);
 }
 
+static void TestHopUnitReachable()
+{
+    CHECK(!HopUnitReachable(false, false, false, false, false, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(!HopUnitReachable(true, true, false, false, false, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(!HopUnitReachable(true, false, true, false, false, 0, 0, 0, 15, 0, 0, 15, 15));
+    CHECK(!HopUnitReachable(true, false, false, true, false, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(!HopUnitReachable(true, false, false, false, true, 10, 0, 0, 10, 0, 0, 10, 10));
+    CHECK(HopUnitReachable(true, false, false, false, false, 6, 0, 0, 6, 0, 0, 18, 6));
+    CHECK(!HopUnitReachable(true, false, false, false, false, 10, 0, 0, 10, 0, 0, 60, 10));
+    CHECK(HopUnitReachable(true, false, false, false, false, 45, 0, 0, 45, 0, 0, 55, 45));
+}
+
+static void TestBossStepDoesNotSkipOnFruitlessPullsOrOutOfReach()
+{
+    // A boss step without kPlanFlagSkipUnreachable pauses instead of skipping after fruitless pulls.
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(1, 63131, 10), Unit(2, 63138, 12)};
+        for (int i = 0; i < 3000 && r.state == State::Running && r.step == 0; ++i)
+        {
+            f.anyInCombat = false;
+            if (Tick(r, f).compare(0, 9, "pullback ") == 0)
+            {
+                f.anyInCombat = true;
+                for (int k = 0; k < 5; ++k)
+                    Tick(r, f);
+            }
+        }
+        CHECK(r.state == State::Paused && r.step == 0);
+        CHECK(r.note.find("out of reach") != std::string::npos);
+    }
+
+    // A boss step without kPlanFlagSkipUnreachable pauses on OutOfReach (e.g. invalid-target).
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(42, 63131, 10)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "pullback 42");
+        OrderRefused(r, order, "invalid-target: cannot attack");
+        Tick(r, f);
+        CHECK(r.state == State::Paused && r.step == 0);
+        CHECK(r.note.find("out of reach") != std::string::npos);
+    }
+
+    // BossDownEvidence wins over unreachable adds on a boss step.
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        r.unreachable.insert(2);
+        Facts f = Party(0);
+        f.units = {Unit(2, 63138, 12)};
+        f.bossOwnDead = true;
+        CHECK(FightStepEnd(r, f, boss) == FightEnd::BossDown);
+        Tick(r, f);
+        CHECK(r.state == State::Running && r.step == 1);
+    }
+
+    // With kPlanFlagSkipUnreachable, OutOfReach still skips as authored.
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 63131;
+        boss.flags = ai::kPlanFlagSkipUnreachable;
+        DungeonPlan plan;
+        plan.steps = {boss, Step(PlanStepKind::Move, 30)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(42, 63131, 10)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "pullback 42");
+        OrderRefused(r, order, "invalid-target: cannot attack");
+        Tick(r, f);
+        CHECK(r.state == State::Running && r.step == 1);
+    }
+}
+
 int main()
 {
     TestZgC3HopDipsIntoThePool();
@@ -37938,6 +38190,10 @@ int main()
     TestPackFocusLeavesHeldAndUnattackableUnitsOut();
     TestPackFocusIsBoundedOnTheStep();
     TestBossAddsGetTheSkull();
+    TestPackFocusSparesTacticUnitsBeforeTheBossStep();
+    TestPackFocusSparesTheSeekTargetOnTheBossStep();
+    TestPackFocusSparesUnitsTheirOwnRowsKey();
+    TestPackFocusSparesOnlyTheTacticUnits();
     TestMoveAggroGetsTheSkull();
     TestHumanSkullIsAdopted();
     TestSkullRecordDiesWithItsUnit();
@@ -38626,6 +38882,8 @@ int main()
     TestRaidTrashSwarmInCombatOnStayIsNotJoined();
     TestRaidTrashSwarmLatchedOnceTheTankMoves();
     TestRaidTrashSwarmLatchedAfterThreeTries();
+    TestHopUnitReachable();
+    TestBossStepDoesNotSkipOnFruitlessPullsOrOutOfReach();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

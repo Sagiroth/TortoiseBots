@@ -28,12 +28,31 @@ static WorldPvpSeekInputs Eligible()
     WorldPvpSeekInputs in;
     in.seekEnabled = true;
     in.freePoolBot = true;
+    in.pvpFlagged = true;
     return in;
 }
 
 int main()
 {
     CHECK(WorldPvpSeekEligible(Eligible()));
+    {
+        WorldPvpSeekInputs in = Eligible();
+        in.pvpFlagged = false;
+        CHECK(!WorldPvpSeekEligible(in));
+    }
+    {
+        CHECK(PoolBotInPvpFlaggedShare(12345u, 100u));
+        CHECK(!PoolBotInPvpFlaggedShare(12345u, 0u));
+        CHECK(PoolBotInPvpFlaggedShare(777u, 50u) == PoolBotInPvpFlaggedShare(777u, 50u));
+        int flagged = 0;
+        for (std::uint32_t g = 900000u; g < 910000u; ++g)
+            flagged += PoolBotInPvpFlaggedShare(g, 50u) ? 1 : 0;
+        CHECK(flagged > 4500 && flagged < 5500);
+        int flagged25 = 0;
+        for (std::uint32_t g = 900000u; g < 910000u; ++g)
+            flagged25 += PoolBotInPvpFlaggedShare(g, 25u) ? 1 : 0;
+        CHECK(flagged25 > 2000 && flagged25 < 3000);
+    }
 
     // Seeking off, or not a free pool bot: never.
     {

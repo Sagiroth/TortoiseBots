@@ -60,10 +60,6 @@ class PackFocusWiringTest(unittest.TestCase):
         fn = body(POLICY, "inline const UnitFact* PickPackFocus(")
         self.assertIn("if (boss && (IsStepBoss(*s, u) || (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||", fn)
         self.assertIn("BossTacticOwnsEntry(r, *s, u.entry)))", fn)
-        own = body(POLICY, "inline bool BossTacticOwnsEntry(const Run& r, const PlanStep& s, std::uint32_t entry)\n{")
-        self.assertIn("(row.kind == ai::BossTacticKind::KillFirst || row.kind == ai::BossTacticKind::LinkedDeath)",
-                      own)
-        self.assertIn("(entry == row.targetEntry || entry == row.bossEntry)", own)
 
     def test_a_players_skull_is_adopted(self):
         fn = body(POLICY, "inline const UnitFact* PlayerSkullFocus(")

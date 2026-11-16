@@ -95,6 +95,7 @@ public:
     bool IsFreeAltBot(Player* player) {return IsFreeAltBot(player->GetGUIDLow());}
     bool IsInRandomQuestItemList(uint32 id);
 	bool IsInPvpProhibitedZone(uint32 id);
+	bool IsExtraTownGuard(uint32 entry) const;
 
     bool enabled;
     uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay, errorRepeatDelay,
@@ -281,6 +282,10 @@ public:
     // with 2+ deaths and no master/group, teleport once to a validated
     // level-fitting point and reset the death count. Default on; fail-closed.
     bool relocateHopelessDeaths = true;
+    // Grace period in seconds before a masterless random or autonomous bot left
+    // inside a dungeon or raid instance without a real player in its group is
+    // teleported to its homebind. 0 disables. Default 90.
+    uint32 abandonedInstanceGraceSec = 90;
     // Repop brings a random masterless bot back at the nearest graveyard instead of its
     // racial starting area, so evacuations stop draining bots into the starting zones.
     bool repopAtGraveyard = true;
@@ -418,6 +423,19 @@ public:
     // Issue #1125: the experimental 7.3 shaman tank build. 0 withholds it from
     // the recruiter spec menu, `.bot hire`, raid hire and the random pool roll.
     bool shamanTankEnabled = true;
+
+    // Autonomous bots setting up Traveler's Tent + campfire at camp spots.
+    bool campEnabled = true;
+    uint32 campChancePct = 15;
+    uint32 campNightChancePct = 30;
+    uint32 campMinLevel = 10;
+    uint32 campSitDurationSec = 1200;
+    bool campKeepRestedXp = false;
+    uint32 campJoinChancePct = 10;
+    uint32 campJoinMinSec = 60;
+    uint32 campJoinMaxSec = 180;
+    uint32 campGreetChancePct = 15;
+    uint32 campGreetCooldownSec = 120;
     // Hiring fee in copper for the 1st companion at level 60 (default 15000 =
     // 1.5g). Hires 2-4 multiply by the party mults below; the full 4-bot
     // party totals ~15g at 60. Set to 0 for free hiring.
@@ -678,6 +696,12 @@ public:
     // A kill-first focus on a totem is DPS-only and goes out before the guard, and the guard skips totems: off, the
     // focus sends every bot and the guard picks totems, as today (its own key; default off).
     bool dungeonRunTotemFocus = false;
+    // The pack's fallback skull (PickPackFocus) spares every unit the boss tactics own, on every step kind: one whose
+    // entry has its own live rows on the plan's map (a boss engaged before its boss step, an add the rows key on itself),
+    // and one a row of the step or of a unit of the fight names as its target (a seek_aura's Son, a tank_post's unit, a
+    // hold_kill's blocker). Off, the fallback skips the boss and the kill_first/linked_death entries of a boss step only,
+    // as today (its own key; default off).
+    bool dungeonRunPackFocusSparesTacticUnits = false;
     // The use_object boss-tactic kind (one bot clicks the ready game object nearest the boss; mode tank_anchor also
     // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
     // rows are ignored, so the table behaves exactly as before the kind (default off).
@@ -1072,7 +1096,9 @@ public:
     bool globalSoundEffects;
     bool shareTargets;
 	std::list<uint32> pvpProhibitedZoneIds;
+	std::list<uint32> extraTownGuardEntries;
     bool randomBotForcePvp;
+    uint32 randomBotForcePvpPercent;
     uint32 worldPvpSeek;
     uint32 worldPvpSeekBotPercent;
     uint32 worldPvpSeekRerollMinutes;
@@ -1210,6 +1236,7 @@ public:
 
     std::string autoPickReward;
     bool autoEquipUpgradeLoot;
+    bool claimedBotSelfEquip = true;
     // Equip-upgrade score threshold (AG-1): a new item must beat the old
     // stat weight by this factor to count as an upgrade. Stops epsilon
     // swap churn across audits. 1.0 restores any-gain swaps.

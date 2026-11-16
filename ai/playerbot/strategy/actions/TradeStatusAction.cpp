@@ -9,6 +9,8 @@
 #include "playerbot/ServerFacade.h"
 #include "runtime/AltBotService.h"
 #include "../../runtime/HireLifecycle.h"
+#include "../../runtime/ClaimLifecycle.h"
+#include "../../runtime/policy/hire/ClaimedBotPolicy.h"
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
@@ -147,6 +149,19 @@ bool TradeStatusAction::Execute(Event& event)
             {
                 sRandomBotFacade.SetTradeDiscount(bot, trader, discount);
                 return false;
+            }
+
+            {
+                bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
+                bool const isOwner = trader && (trader == ai->GetMaster() ||
+                    TortoiseBots::ClaimLifecycle::Instance().IsClaimedByPlayer(bot->GetGUIDLow(), trader->GetGUIDLow()));
+                if (TortoiseBots::ShouldPinPlayerEquippedItem(isClaimed, isOwner) && !givenItemIds.empty())
+                {
+                    std::set<uint32> tradedIds;
+                    for (auto const& entry : givenItemIds)
+                        tradedIds.insert(entry.first);
+                    ai->SetOwnerTradedItemIds(std::move(tradedIds));
+                }
             }
 
             for (std::map<uint32, uint32>::iterator i = givenItemIds.begin(); i != givenItemIds.end(); ++i)

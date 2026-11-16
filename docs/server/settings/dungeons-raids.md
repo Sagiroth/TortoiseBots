@@ -58,6 +58,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunNearWipeStopParty`](#aiplayerbotdungeonrunnearwipestopparty) | `0` | `1`: party bindings get the near-wipe stop too; `0`: raids only. |
 | [`AiPlayerbot.DungeonRunPackClearMarginYd`](#aiplayerbotdungeonrunpackclearmarginyd) | `10` | A pull step is done only when nothing of its entries is left within its radius plus this band (`0` = off). |
 | [`AiPlayerbot.DungeonRunPackClearRepulls`](#aiplayerbotdungeonrunpackclearrepulls) | `3` | Residue pulls a pull step may send before it pauses for a human. |
+| [`AiPlayerbot.DungeonRunPackFocusSparesTacticUnits`](#aiplayerbotdungeonrunpackfocussparestacticunits) | `0` | The pack's fallback skull never lands on a unit the boss tactics own (a boss engaged before his boss step, a row's seek source or posted unit), on every step kind. |
 | [`AiPlayerbot.DungeonRunStragglerPull`](#aiplayerbotdungeonrunstragglerpull) | `0` | The tank walks to and pulls a pack unit or patrol the step waited for and did not come, instead of pausing; a stand-pull row's patrol is waited for one loop of its path at most. |
 | [`AiPlayerbot.DungeonRunTotemFocus`](#aiplayerbotdungeonruntotemfocus) | `0` | A totem the plan kills first is focused by the damage dealers alone, and before the guard, so its 1-2 s kill never waits. |
 | [`AiPlayerbot.DungeonRunPlayerLed`](#aiplayerbotdungeonrunplayerled) | `1` | Lets a player who leads his own party start a player-led run (`.bot run start ... player`): he walks, the run leader pulls the packs near him. |
@@ -596,6 +597,17 @@ Pulls a pack unit or a patrol that the step waited for and did not come, instead
 <summary>How it works in detail</summary>
 
 **The straggler pull:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Added 2026-11-03 for Zul'Gurub walks 32 and 33: the Arlokk pack paused with `pack not cleared: 11365 0x… of this pack (spawned 12.7 yd from the centre) is 12.7 yd out and did not come within 60 s`, and Jeklik's bat rider 14750 held its stand-pull row with `patrol pull: 14750 0x… did not come within 28.5 yd of the stand`, each until a human pulled it. With `1`, a unit a `pull` step waits for that did not come (a spawn-owned patroller outside the radius) is walked to and pulled by the acting tank after the 60 s wait: the lead bot while it lives and is a tank, else the off-tank that holds the main tank role. The tank walks to the unit and sends `attack <guid> <tank>`, the rest of the party staying with the lead bot at the stand. Each try has 45 s; a failed try — a refused order, a way with no path, a blocked way or the 45 s run out — goes to one untried off-tank, and only then the run pauses as before with the reason in the line. The way is read again right before each movement order and every 2 s while the tank walks or waits at the point: another pack not pulled yet that comes within its aggro reach plus 5 yd of the remaining way aborts that tank's try exactly like a blocked way, and a way that no longer has a path does the same. A stand-pull row's patrol is waited for one full loop of its own waypoint path at its walk speed (90 s when the loop cannot be read) instead of the row's 600 s, then the tank walks to the nearest point of that loop on the party's side and pulls it from there. A boss, a `kill_first` unit and a `linked_death` unit keep the old behaviour. One `TBM:RUN` note per try says which tank walks where.
+
+</details>
+
+### `AiPlayerbot.DungeonRunPackFocusSparesTacticUnits`
+Keeps the run leader's fallback skull off every unit the boss tactics own.
+**Default:** `0` · **Values:** `0` off (a boss step's boss and the `kill_first`/`linked_death` entries only), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The pack's fallback skull:** when a fight has no `kill_first` unit, the run leader gives the pulled pack the skull anyway (a mana user before the rest, then the nearest) and the focus order turns into an attack order on every bot. With this key on, that skull never lands on a unit a boss-tactic row owns, on every step kind (a pull, a move and a boss step alike): a unit whose entry has its own live rows on the plan's map — a boss engaged before his boss step, an add the rows key on itself, such as a held whelp — and a unit a live row of the step or of a unit of the fight names as its target: a `seek_aura`'s or `seek_pull`'s source, a `tank_post`'s unit, a `hold_kill`'s blocker, a `kill_first` target. Rows of a boss that is neither on the step nor in the fight cannot speak about a unit. Zul'Gurub walk 112: Hakkar was engaged on the move step before his boss row, the fallback skulled him there, the focus order committed every bot's attack target and the `seek_aura`'s Son was never burned, so the raid went into Blood Siphon undosed (7/10 fights fully undosed against 17/22 without the focus code); the fallback also skulled Onyxia's held whelps about 85 times a fight. Recommended on. With the key off the fallback behaves exactly as before.
 
 </details>
 

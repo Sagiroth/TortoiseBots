@@ -19,14 +19,19 @@ static bool IsChallengeModeTarget(Player* target)
         target->HasChallenge(CHALLENGE_HEROIC);
 }
 
-// Standing at the spirit healer the player revives at. Both factions often
-// share a graveyard, and a fight started there turned into an endless
-// revive-and-kill loop (Raven Hill Cemetery).
-static bool NearOwnGraveyard(Player* player)
+// Near a spirit healer of either faction. A fight started there turned into
+// an endless revive-and-kill loop (Raven Hill Cemetery), and bots kept
+// fighting just past 40 yd as they walked away from it.
+static bool NearGraveyard(Player* player)
 {
-    WorldSafeLocsEntry const* grave = sObjectMgr.GetClosestGraveYard(
-        player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), player->GetTeam());
-    return grave && grave->map_id == player->GetMapId() && player->GetDistance2d(grave->x, grave->y) < 40.0f;
+    for (Team team : { ALLIANCE, HORDE })
+    {
+        WorldSafeLocsEntry const* grave = sObjectMgr.GetClosestGraveYard(
+            player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), team);
+        if (grave && grave->map_id == player->GetMapId() && player->GetDistance2d(grave->x, grave->y) < 80.0f)
+            return true;
+    }
+    return false;
 }
 
 bool WorldPvpSeekChecks::IsSeeking(PlayerbotAI* ai, Player* bot)
@@ -76,7 +81,7 @@ bool WorldPvpSeekChecks::IsSeekTarget(PlayerbotAI* ai, Player* bot, Player* targ
         return false;
     if (fabs(bot->GetPositionZ() - target->GetPositionZ()) >= 30.0f)
         return false;
-    if (NearOwnGraveyard(bot) || NearOwnGraveyard(target))
+    if (NearGraveyard(bot) || NearGraveyard(target))
         return false;
     if (!bot->IsWithinLOSInMap(target, true))
         return false;

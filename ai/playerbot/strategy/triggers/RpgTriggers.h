@@ -256,4 +256,11 @@ namespace ai
         RandomJumpTrigger(PlayerbotAI* ai, std::string name = "random jump") : Trigger(ai, name, 2) {}
         bool IsActive() override;
     };
+
+    class RpgCampTrigger : public Trigger
+    {
+    public:
+        RpgCampTrigger(PlayerbotAI* ai, std::string name = "rpg camp") : Trigger(ai, name, 2) {}
+        bool IsActive() override;
+    };
 }

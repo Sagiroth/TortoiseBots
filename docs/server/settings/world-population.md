@@ -58,7 +58,9 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotShopMounts`](#aiplayerbotrandombotshopmounts) | `0` | Restricts bots to racial mounts, blocking cross-race and rare shop mounts. |
 | [`AiPlayerbot.RepopAtGraveyard`](#aiplayerbotrepopatgraveyard) | `1` | Dead masterless bots release to nearest graveyard instead of starting zone. |
 | [`AiPlayerbot.AvoidHostileTowns`](#aiplayerbotavoidhostiletowns) | `1` | Prevents masterless bots from traveling near enemy faction town guards. |
+| [`AiPlayerbot.ExtraTownGuardEntries`](#aiplayerbotextratownguardentries) | `5996,5997,5998,5999,6000,6001,6002,6003` | Creatures that count as town guards although the data does not mark them. |
 | [`AiPlayerbot.RelocateHopelessDeaths`](#aiplayerbotrelocatehopelessdeaths) | `1` (commented out in the template; uncomment to change it) | Relocates bots repeatedly killed near enemy guards or in death loops. |
+| [`AiPlayerbot.AbandonedInstanceGraceSec`](#aiplayerbotabandonedinstancegracesec) | `90` | Grace period in seconds before an abandoned random or autonomous bot inside a dungeon or raid returns to its homebind. |
 | [`AiPlayerbot.UnstuckHearthLevelFit`](#aiplayerbotunstuckhearthlevelfit) | `1` | Requires bot hearthstone bind point to be within 10 levels of bot level. |
 | [`AiPlayerbot.StuckTravelTeleport`](#aiplayerbotstucktravelteleport) | `1` | Teleports long-stuck masterless bots directly to their travel destinations. |
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
@@ -90,6 +92,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomGearProgression`](#aiplayerbotrandomgearprogression) | `1` (commented out in the template; uncomment to change it) | Controls quality-band variety when pool bots generate gear. |
 | [`AiPlayerbot.RandomGearBlacklist`](#aiplayerbotrandomgearblacklist) | `10,163,19972,58260,21524,21525,7` | Comma-separated list of item IDs excluded from random equipment pools. |
 | [`AiPlayerbot.AutoEquipUpgradeLoot`](#aiplayerbotautoequipupgradeloot) | `1` | Automatically equips stat upgrades acquired from questing or creature loot. |
+| [`AiPlayerbot.ClaimedBotSelfEquip`](#aiplayerbotclaimedbotselfequip) | `1` | Allows claimed guild bots at level 60 to auto-equip upgrades. |
 | [`AiPlayerbot.EquipUpgradeThreshold`](#aiplayerbotequipupgradethreshold) | `1.1` | Stat weight multiplier required for an item to replace current equipment. |
 | [`AiPlayerbot.AutoPickReward`](#aiplayerbotautopickreward) | `yes` | Controls how bots select equipment rewards when completing quests. |
 | [`AiPlayerbot.AutoPickTalents`](#aiplayerbotautopicktalents) | `full` | Automates talent point allocation based on the bot's chosen specialization. |
@@ -631,6 +634,17 @@ This setting also enables the town death-loop rescue (requiring [`AiPlayerbot.Re
 
 </details>
 
+### `AiPlayerbot.ExtraTownGuardEntries`
+Creature entries that count as town guards for `AiPlayerbot.AvoidHostileTowns`, although the data gives them no guard flag and no guard word in the name.
+**Default:** `5996,5997,5998,5999,6000,6001,6002,6003` (commented out in the template; uncomment to change it) · **Values:** comma-separated creature entries · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Guards are normally found by the guard flag or by a guard title in the name (Guard, Sentinel, Grunt, Elite and similar). The default adds the Nethergarde Keep garrison and miners (Miner, Engineer, Foreman, Soldier, Cleric, Analyst, Riftwatcher, Officer): without it, Horde bots around level 50 took the soldiers for ordinary mobs and died to the keep's elites. Each listed creature still counts only against the faction it is hostile to, so Alliance bots keep using the keep.
+
+</details>
+
 ### `AiPlayerbot.RelocateHopelessDeaths`
 Rescues bots stuck in fatal death loops by relocating them to a safe nearby hub.
 **Default:** `1` (commented out in the template; uncomment to change it) · **Values:** `0` off, `1` on · **Restart:** needed
@@ -639,6 +653,17 @@ Rescues bots stuck in fatal death loops by relocating them to a safe nearby hub.
 <summary>How it works in detail</summary>
 
 When a masterless bot suffers repeated deaths in the same hostile area or becomes trapped in an inescapable graveyard loop, the unstuck engine teleports the bot's spirit or corpse to its starting area (< level 10) or a level-fitting overworld point. The town death-loop rescue additionally needs `AiPlayerbot.AvoidHostileTowns = 1`.
+
+</details>
+
+### `AiPlayerbot.AbandonedInstanceGraceSec`
+Grace period in seconds before a random or autonomous bot left inside a dungeon or raid instance without a real player in its group teleports back to its homebind.
+**Default:** `90` · **Values:** `0` disables, `>= 1` seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When a real player leaves a dungeon or raid party without disbanding it, any random or autonomous bots remaining in the instance without a real player in their group or a master in the same instance are evacuated to their homebind after the grace period elapses (no hearthstone cooldown is consumed). Re-inviting a bot before the grace period expires cancels the timer so it stays. Hired companions, non-autonomous owned alts, pinned bots, and autonomous LFG dungeon crews are excluded.
 
 </details>
 
@@ -1053,7 +1078,18 @@ Directs bots to automatically equip better gear acquired from looting or quest r
 <details>
 <summary>How it works in detail</summary>
 
-When enabled, bots evaluate items from looting, trades, or quest rewards and equip anything beating current gear by the upgrade threshold. Pool bots always auto-equip, even with `0`. Claimed level-60 bots and tier-kit hires skip auto-replacement.
+When enabled, bots evaluate items from looting, trades, or quest rewards and equip anything beating current gear by the upgrade threshold. Pool bots always auto-equip, even with `0`. Tier-kit hires skip auto-replacement, and claimed level-60 bots follow [`AiPlayerbot.ClaimedBotSelfEquip`](#aiplayerbotclaimedbotselfequip).
+
+</details>
+
+### `AiPlayerbot.ClaimedBotSelfEquip`
+Allows claimed guild bots at level 60 to automatically equip stat upgrades they find or receive.
+**Default:** `1` · **Values:** `0` locked at level 60, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When enabled, claimed guild bots at level 60 use the same upgrade rules as leveling claimed bots. Displaced gear stays in their bags marked to keep (never sold, vendored, auctioned, disenchanted, or destroyed by automation), and items equipped by the bot's master or claim owner via `equip`, the addon, or a trade that the bot equips are pinned so auto-equip never replaces them until cleared with `keep none <item>`. Setting `0` restores the level-60 lock so only the player distributes gear at max level.
 
 </details>
 
@@ -1269,5 +1305,126 @@ Combat strategy modifiers for owned non-random bots.
 <summary>How it works in detail</summary>
 
 These apply to owned non-random, non-autonomous bots. Hires and autonomous alts use `RandomBotCombatStrategies`.
+
+</details>
+
+### `AiPlayerbot.CampEnabled`
+Allows autonomous pool and alt bots from `CampMinLevel` to set up a Traveler's Tent and campfire at hand-picked camp spots.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When enabled (`1`), autonomous bots from `AiPlayerbot.CampMinLevel` carry maxed Survival, a Traveler's Tent, and Simple Wood. Passing an unoccupied camp spot rolls `AiPlayerbot.CampChancePct` to pitch a tent and campfire, sit with eating/cooking/dancing emotes, and move on when the tent despawns or `AiPlayerbot.CampSitDurationSec` elapses. Hired companions and bots in a party with a real player never camp.
+
+</details>
+
+### `AiPlayerbot.CampChancePct`
+Percent chance per pass that an autonomous bot sets up camp when passing an unoccupied camp spot.
+**Default:** `15` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Checked when an eligible bot passes within 40 yards of a spot from `ai_playerbot_camp_spot` that has no tent standing within 25 yards.
+
+</details>
+
+### `AiPlayerbot.CampMinLevel`
+Minimum bot level required for the Survival + tent kit and camping at spots.
+**Default:** `10` · **Values:** `1` to `60` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Autonomous bots below this level do not receive the Survival skill or tent item and skip camp spots.
+
+</details>
+
+### `AiPlayerbot.CampSitDurationSec`
+Maximum seconds an autonomous bot remains seated at its camp before resuming normal activity.
+**Default:** `1200` · **Values:** seconds (`1200` = 20 minutes, matching tent lifetime) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Bots also leave early if the tent despawns or if they enter combat.
+
+</details>
+
+### `AiPlayerbot.CampKeepRestedXp`
+Allows bots to keep rested XP gained while sitting at their own camp.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When `0`, a bot's rest bonus is saved before pitching camp and restored on leaving so bot levelling speed is unchanged. Real players sitting near a bot's tent still gain rested XP normally.
+
+</details>
+
+### `AiPlayerbot.CampNightChancePct`
+Percent chance per pass at night (game time 21:00–06:00) that an autonomous bot sets up camp at an unoccupied spot.
+**Default:** `30` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+At night bots are more likely to pitch camp and spend part of their stay sleeping under the tent.
+
+</details>
+
+### `AiPlayerbot.CampJoinChancePct`
+Percent chance per pass that a passing autonomous bot sits down at an already-occupied camp for a short visit.
+**Default:** `10` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Joining bots never place a second tent; they wave, sit by the fire for `CampJoinMinSec`–`CampJoinMaxSec` seconds, wave again, and move on.
+
+</details>
+
+### `AiPlayerbot.CampJoinMinSec`
+Minimum seconds a joining bot stays at an existing camp.
+**Default:** `60` · **Values:** seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Lower bound of the random visit duration when a bot joins an existing camp.
+
+</details>
+
+### `AiPlayerbot.CampJoinMaxSec`
+Maximum seconds a joining bot stays at an existing camp.
+**Default:** `180` · **Values:** seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Upper bound of the random visit duration when a bot joins an existing camp.
+
+</details>
+
+### `AiPlayerbot.CampGreetChancePct`
+Percent chance a camping bot says a short friendly line when waving or nodding at a real player within 10 yards.
+**Default:** `15` · **Values:** `0` to `100` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Controls how often a camping bot adds a spoken line to its wave/nod greeting.
+
+</details>
+
+### `AiPlayerbot.CampGreetCooldownSec`
+Minimum seconds between camp greetings per bot and per real player.
+**Default:** `120` · **Values:** seconds · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Rate-limits both how often a bot greets and how often any given player is greeted by camping bots.
 
 </details>

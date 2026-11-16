@@ -223,6 +223,10 @@ AiPlayerbot.RepopAtGraveyard = 1
 # Teleport a dead bot out of a hopeless corpse run (grim clueless solo graveyard
 # with no reachable spirit) to the graveyard it would repop at
 #AiPlayerbot.RelocateHopelessDeaths = 1
+# Grace period in seconds before a masterless random or autonomous bot left
+# inside a dungeon or raid instance without a real player in its group is
+# teleported back to its homebind. 0 disables. Default 90.
+AiPlayerbot.AbandonedInstanceGraceSec = 90
 # Level at which random bots learn the Swift Riding Turtle (quest 40302
 # "Torta's Egg" -> item 23720 -> spell 30174), as if they did the quest.
 # Applies on seed/refresh at TurtleMountAtLevel..39 and on level-up for the
@@ -271,6 +275,11 @@ AiPlayerbot.MountBreakEvenFactor = 1.5
 # refused (guards kill bots ~13 levels above them); 0 = the old behaviour, which
 # walked bots into enemy settlements. Default 1.
 AiPlayerbot.AvoidHostileTowns = 1
+
+# Creature entries that count as town guards for AvoidHostileTowns although the
+# data has no guard flag and no guard word in the name. Default: the Nethergarde
+# Keep garrison (Soldier, Cleric, Analyst, Riftwatcher, Officer).
+#AiPlayerbot.ExtraTownGuardEntries = 5996,5997,5998,5999,6000,6001,6002,6003
 
 # When a random bot without a player master is stuck for a long time it uses its
 # hearthstone. 1 = only if its homebind area is within 10 levels of the bot
@@ -1085,6 +1094,17 @@ AiPlayerbot.DungeonRunKillFirstGrid = 0
 
 # A kill-first focus on a totem is DPS-only, is issued before the run leader's guard, and the guard skips totems.
 AiPlayerbot.DungeonRunTotemFocus = 0
+
+# The pack's fallback skull (the run leader gives every pulled pack a skull when the plan names no kill_first unit of it)
+# leaves every unit the boss tactics own alone, on every step kind: one whose entry has its own ai_boss_tactic rows on
+# the map, and one a row of the step or of a unit of the fight names as its target (a seek_aura's source, a tank_post's
+# unit, a hold_kill's blocker). Off, the fallback skips the boss and the kill_first/linked_death entries of a boss step
+# only. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group). `.reload config` reads it
+# again with the other AiPlayerbot.DungeonRun* keys.
+# Recommended on.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.DungeonRunPackFocusSparesTacticUnits = 0
 
 # The use_object boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): one designated
 # bot clicks the ready game object nearest the boss while the row's aura is up or its window has run out, and mode
@@ -2501,6 +2521,9 @@ AiPlayerbot.AutoPickReward = yes
 # Default: 0 (disabled)
 AiPlayerbot.AutoEquipUpgradeLoot = 1
 
+# Allow claimed guild bots at level 60 to auto-equip upgrades (1 = on, 0 = lock at level 60).
+AiPlayerbot.ClaimedBotSelfEquip = 1
+
 # An upgrade must beat the old item's stat weight by this factor to count (mod-playerbots parity, default 1.1: a +10% win swaps, an epsilon gain does not). 1.0 restores any-gain swaps.
 AiPlayerbot.EquipUpgradeThreshold = 1.1
 
@@ -3436,11 +3459,15 @@ AiPlayerbot.CombatStrategies = ""
 # 0 = no bot sets /pvp. Owned and hired bots are never affected.
 AiPlayerbot.RandomBotForcePvp = 1
 
+# Share of pool bots that get the PvP flag above (0-100). The same bots every login.
+# Only flagged bots can hold the seek role, and seekers only attack flagged targets.
+#AiPlayerbot.RandomBotForcePvpPercent = 50
+
 # Open-world PvP seeking for free pool bots. 0 = off, 1 = seek real players only, 2 = seek players and enemy bots.
 # An unflagged player is never attacked. Owned/hired bots and bots grouped with a real player never seek.
 AiPlayerbot.WorldPvpSeek = 2
 
-# Share of free pool bots that hold the "world pvp" seek role (0-100).
+# Share of flagged free pool bots that hold the "world pvp" seek role (0-100).
 #AiPlayerbot.WorldPvpSeekBotPercent = 25
 
 # Minutes between re-rolls of the seek role (with jitter), never while the bot is in combat.
@@ -7364,3 +7391,26 @@ AiPlayerbot.HealDistanceBg = 25
 # vmangos) MUST keep this at 0 to avoid a worker-thread SIGSEGV; set 1 only on
 # cores with concurrent terrain support.
 # AiPlayerbot.AsyncTravelPartitions = 0
+
+# Autonomous bots setting up Traveler's Tent + campfire at hand-picked camp spots.
+# CampEnabled: allow autonomous pool/alt bots to set up camps (1 = on, 0 = off).
+# CampChancePct: percent chance per pass by day when passing an unoccupied camp spot (0-100).
+# CampNightChancePct: percent chance per pass at night (game time 21:00-06:00).
+# CampMinLevel: minimum bot level for Survival + tent kit and camping.
+# CampSitDurationSec: max seconds a bot stays at camp (1200 = 20 min tent lifetime).
+# CampKeepRestedXp: allow bots to keep rested XP gained at their own camp (0 = off, 1 = on).
+# CampJoinChancePct: percent chance a passing bot sits at an existing camp (0-100).
+# CampJoinMinSec / CampJoinMaxSec: stay duration range in seconds for joining bots.
+# CampGreetChancePct: percent chance a camping bot says a short line when waving at a nearby player.
+# CampGreetCooldownSec: per-bot and per-player cooldown in seconds between camp greetings.
+AiPlayerbot.CampEnabled = 1
+AiPlayerbot.CampChancePct = 15
+AiPlayerbot.CampNightChancePct = 30
+AiPlayerbot.CampMinLevel = 10
+AiPlayerbot.CampSitDurationSec = 1200
+AiPlayerbot.CampKeepRestedXp = 0
+AiPlayerbot.CampJoinChancePct = 10
+AiPlayerbot.CampJoinMinSec = 60
+AiPlayerbot.CampJoinMaxSec = 180
+AiPlayerbot.CampGreetChancePct = 15
+AiPlayerbot.CampGreetCooldownSec = 120

@@ -22,6 +22,7 @@ struct WorldPvpSeekInputs
     bool hiredBot = false;          // hired companion
     bool groupedWithRealPlayer = false;
     bool inBattleground = false;
+    bool pvpFlagged = false;        // in the PvP-flagged share of the pool
 };
 
 inline bool WorldPvpSeekEligible(WorldPvpSeekInputs const& in)
@@ -36,7 +37,19 @@ inline bool WorldPvpSeekEligible(WorldPvpSeekInputs const& in)
         return false;
     if (in.inBattleground)
         return false;
+    if (!in.pvpFlagged)
+        return false;
     return true;
+}
+
+// Whether a pool bot is in the PvP-flagged share. Stable per character, so the
+// same bots carry the flag after every login.
+inline bool PoolBotInPvpFlaggedShare(std::uint32_t guidLow, std::uint32_t percent)
+{
+    if (percent >= 100)
+        return true;
+    std::uint32_t const bucket = static_cast<std::uint32_t>((guidLow * 2654435761u) >> 16) % 100u;
+    return bucket < percent;
 }
 
 // True when a bot holding the role must lose it right away: eligibility is
