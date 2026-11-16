@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <unordered_set>
 #include "Config/Config.h"
@@ -215,6 +216,27 @@ public:
     uint32 ahBotSellersPerFaction = 4;
     uint32 ahBotSellerRepairIntervalSeconds = 300;
     //
+    // AhBot pool
+    bool ahBotListedItemLevelRestrictEnabled = false;
+    bool ahBotListedItemLevelRestrictUseCrafted = true;
+    uint32 ahBotListedItemLevelMin = 0;
+    uint32 ahBotListedItemLevelMax = 999;
+    std::string ahBotListedItemLevelExceptionItemIds;
+    bool ahBotListedItemIdRestrictEnabled = false;
+    uint32 ahBotListedItemIdMin = 0;
+    uint32 ahBotListedItemIdMax = 200000;
+    std::string ahBotListedItemIdExceptionItemIds;
+    bool ahBotEquipLevelRestrictEnabled = true;
+    uint32 ahBotEquipLevelMin = 0;
+    uint32 ahBotEquipLevelMax = 60;
+    std::string ahBotEquipLevelExceptionItemIds;
+    bool ahBotDisabledItemTextFilter = true;
+    bool ahBotDisabledRecipeProducedItemFilterEnabled = false;
+    std::string ahBotDisabledRecipeProducedItemClassSubClasses;
+    std::string ahBotDisabledInvalidItemIds;
+    std::string ahBotDisabledCustomItemIds;
+    std::array<std::array<uint32, 7>, 16> ahBotListProportions{};
+    std::string ahBotListMultipliedItemIds;
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
     // characters, create only the deficit toward the configured Min/Max target
