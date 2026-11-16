@@ -301,6 +301,67 @@ bool PlayerbotAIConfig::ReloadDungeonRunKeys()
     return true;
 }
 
+void PlayerbotAIConfig::LoadAhBotServiceKeys()
+{
+    // AhBot service
+    ahBotEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.Enabled", false);
+    ahBotMinutesBetweenSellCycle = config.GetStringDefault("AiPlayerbot.AhBot.MinutesBetweenSellCycle", "1");
+    ahBotMinutesBetweenBuyCycle = config.GetStringDefault("AiPlayerbot.AhBot.MinutesBetweenBuyCycle", "1");
+    ahBotItemsPerCycle = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.ItemsPerCycle", 150);
+    ahBotListingExpireTimeInSecondsMin = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.ListingExpireTimeInSecondsMin", 900);
+    if (ahBotListingExpireTimeInSecondsMin < 900)
+        ahBotListingExpireTimeInSecondsMin = 900;
+    ahBotListingExpireTimeInSecondsMax = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.ListingExpireTimeInSecondsMax", 86400);
+    if (ahBotListingExpireTimeInSecondsMax > 172800)
+        ahBotListingExpireTimeInSecondsMax = 172800;
+    if (ahBotListingExpireTimeInSecondsMax < ahBotListingExpireTimeInSecondsMin)
+    {
+        ahBotListingExpireTimeInSecondsMin = 900;
+        ahBotListingExpireTimeInSecondsMax = 172800;
+    }
+    ahBotAllianceMinItems = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.Alliance.MinItems", 3000);
+    ahBotAllianceMaxItems = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.Alliance.MaxItems", 3000);
+    if (ahBotAllianceMaxItems < ahBotAllianceMinItems)
+        ahBotAllianceMaxItems = ahBotAllianceMinItems;
+    ahBotHordeMinItems = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.Horde.MinItems", 3000);
+    ahBotHordeMaxItems = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.Horde.MaxItems", 3000);
+    if (ahBotHordeMaxItems < ahBotHordeMinItems)
+        ahBotHordeMaxItems = ahBotHordeMinItems;
+    ahBotNeutralMinItems = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.Neutral.MinItems", 3000);
+    ahBotNeutralMaxItems = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.Neutral.MaxItems", 3000);
+    if (ahBotNeutralMaxItems < ahBotNeutralMinItems)
+        ahBotNeutralMaxItems = ahBotNeutralMinItems;
+    ahBotBuyerEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.Buyer.Enabled", false);
+    ahBotBuyerBuyCandidatesPerBuyCycle = config.GetStringDefault("AiPlayerbot.AhBot.Buyer.BuyCandidatesPerBuyCycle", "1");
+    ahBotBuyerAlwaysBidMaxCalculatedPrice = config.GetBoolDefault("AiPlayerbot.AhBot.Buyer.AlwaysBidMaxCalculatedPrice", false);
+    ahBotBuyerPreventOverpayingForVendorItems = config.GetBoolDefault("AiPlayerbot.AhBot.Buyer.PreventOverpayingForVendorItems", true);
+    ahBotBuyerBidAgainstPlayers = config.GetBoolDefault("AiPlayerbot.AhBot.Buyer.BidAgainstPlayers", false);
+    ahBotTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.TickBudgetUs", 2000);
+    if (ahBotTickBudgetUs < 100)
+        ahBotTickBudgetUs = 100;
+    if (ahBotTickBudgetUs > 50000)
+        ahBotTickBudgetUs = 50000;
+    ahBotMaxListingsPerTick = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.MaxListingsPerTick", 10);
+    if (ahBotMaxListingsPerTick < 1)
+        ahBotMaxListingsPerTick = 1;
+    if (ahBotMaxListingsPerTick > 150)
+        ahBotMaxListingsPerTick = 150;
+}
+
+bool PlayerbotAIConfig::ReloadAhBotConfig()
+{
+    if (!enabled)
+        return false;
+    if (!config.Reload())
+    {
+        sLog.outError("TortoiseBots: AH bot config reload: %s could not be read again.",
+            config.GetFilename().c_str());
+        return false;
+    }
+    LoadAhBotServiceKeys();
+    return true;
+}
+
 std::vector<std::pair<std::string, std::string>> PlayerbotAIConfig::FindConfigEntries(std::string const& filter)
 {
     auto lower = [](std::string text)
@@ -566,17 +627,14 @@ bool PlayerbotAIConfig::Initialize()
     auctionPriceRefreshInterval = (uint32)config.GetIntDefault("AiPlayerbot.AuctionPriceRefreshInterval", 60);
     if (auctionPriceRefreshInterval < 5) auctionPriceRefreshInterval = 5;
     if (auctionPriceRefreshInterval > 3600) auctionPriceRefreshInterval = 3600;
-    // Default-off bounded AH market population. Interval is seconds, batch is
-    // max auctions per tick (hard capped at 5 in service). No AH scan or DB
-    // query per tick; uses legitimate inventory + native HandleAuctionSellItem.
+    // Bounded AH market population (real-inventory bot seller + organic buyer).
     ahMarketEnabled = config.GetBoolDefault("AiPlayerbot.AhMarketEnabled", true);
     ahMarketInterval = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketInterval", 120);
     if (ahMarketInterval < 5) ahMarketInterval = 5;
     if (ahMarketInterval > 3600) ahMarketInterval = 3600;
     ahMarketBatchSize = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBatchSize", 1);
     if (ahMarketBatchSize > 5) ahMarketBatchSize = 5;
-    // Synthetic AH Supply and Buyer Engine with Work Budgets (Issue #88)
-    ahMarketSyntheticSupply = config.GetBoolDefault("AiPlayerbot.AhMarketSyntheticSupply", false);
+    // Organic AH buyer scan and work budgets (bots at auctioneers using own gold)
     ahMarketBuyer = config.GetBoolDefault("AiPlayerbot.AhMarketBuyer", true);
     ahMarketBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBudgetUs", 2000);
     if (ahMarketBudgetUs < 100) ahMarketBudgetUs = 100;
@@ -584,38 +642,13 @@ bool PlayerbotAIConfig::Initialize()
     ahMarketMaxOperations = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketMaxOperations", 32);
     if (ahMarketMaxOperations < 1) ahMarketMaxOperations = 1;
     if (ahMarketMaxOperations > 256) ahMarketMaxOperations = 256;
-    ahMarketChanceSell = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketChanceSell", 10);
-    if (ahMarketChanceSell > 100) ahMarketChanceSell = 100;
     ahMarketChanceBuy = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketChanceBuy", 10);
     if (ahMarketChanceBuy > 100) ahMarketChanceBuy = 100;
     ahMarketBuyValue = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBuyValue", 80);
     if (ahMarketBuyValue > 200) ahMarketBuyValue = 200;
     ahMarketMaxSpendPerBot = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketMaxSpendPerBot", 0);
-    ahMarketMaxQuality = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketMaxQuality", 4);
-    if (ahMarketMaxQuality > 6) ahMarketMaxQuality = 6;
-    ahMarketMaxLevel = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketMaxLevel", 60);
-    if (ahMarketMaxLevel < 1) ahMarketMaxLevel = 1;
-    if (ahMarketMaxLevel > 60) ahMarketMaxLevel = 60;
-    ahMarketDynamicLevel = config.GetBoolDefault("AiPlayerbot.AhMarketDynamicLevel", false);
-    ahMarketLevelRefresh = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketLevelRefresh", 600);
-    if (ahMarketLevelRefresh < 60) ahMarketLevelRefresh = 60;
-    if (ahMarketLevelRefresh > 86400) ahMarketLevelRefresh = 86400;
     ahMarketVariance = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketVariance", 10);
     if (ahMarketVariance > 100) ahMarketVariance = 100;
-    ahMarketBidMin = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBidMin", 75);
-    if (ahMarketBidMin < 1) ahMarketBidMin = 1;
-    if (ahMarketBidMin > 100) ahMarketBidMin = 100;
-    ahMarketBidMax = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBidMax", 90);
-    if (ahMarketBidMax < 1) ahMarketBidMax = 1;
-    if (ahMarketBidMax > 100) ahMarketBidMax = 100;
-    if (ahMarketBidMin > ahMarketBidMax) ahMarketBidMin = ahMarketBidMax;
-    ahMarketTimeMin = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketTimeMin", 8);
-    if (ahMarketTimeMin < 1) ahMarketTimeMin = 1;
-    if (ahMarketTimeMin > 72) ahMarketTimeMin = 72;
-    ahMarketTimeMax = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketTimeMax", 24);
-    if (ahMarketTimeMax < 1) ahMarketTimeMax = 1;
-    if (ahMarketTimeMax > 72) ahMarketTimeMax = 72;
-    if (ahMarketTimeMin > ahMarketTimeMax) ahMarketTimeMin = ahMarketTimeMax;
     // AhBot price
     static_assert(PlayerbotAIConfig::kAhBotMaxItemClass == MAX_ITEM_CLASS, "AhBot class array size must match MAX_ITEM_CLASS");
     ahBotCompleteItemValueOverrideEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.CompleteItemValueOverride.Enabled", false);
@@ -775,6 +808,8 @@ bool PlayerbotAIConfig::Initialize()
     ahBotSellerRepairIntervalSeconds = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.SellerRepairIntervalSeconds", 300);
     if (ahBotSellerRepairIntervalSeconds < 10) ahBotSellerRepairIntervalSeconds = 10;
     if (ahBotSellerRepairIntervalSeconds > 86400) ahBotSellerRepairIntervalSeconds = 86400;
+    // AhBot service
+    LoadAhBotServiceKeys();
     //
     // AhBot pool
     ahBotListedItemLevelRestrictEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.ListedItemLevelRestrict.Enabled", false);

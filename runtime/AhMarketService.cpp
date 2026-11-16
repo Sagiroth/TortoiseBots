@@ -2,7 +2,6 @@
 #include "runtime/policy/ah/AhBuyerPolicy.h"
 #include "runtime/policy/ah/AhSellerTeleportPolicy.h"
 #include "runtime/policy/ah/AhSellPolicy.h"
-#include "runtime/policy/ah/AhSyntheticMarketPolicy.h"
 #include "BotActivityLease.h"
 #include "runtime/policy/ah/TradingLeasePolicy.h"
 
@@ -39,9 +38,6 @@
 #endif
 
 #include "Database/DBCStores.h"
-#include "Database/DatabaseEnv.h"
-#include "LootMgr.h"
-#include "Spells/SpellMgr.h"
 #include "Item.h"
 #include "../host/ModuleLog.h"
 
@@ -464,377 +460,38 @@ AhMarketService::PostResult AhMarketService::TryPostForBot(Player* bot, bool all
     return PostResult::Failed;
 }
 
-bool AhMarketService::IsSyntheticAuction(uint32_t auctionId) const
-{
-    return m_syntheticAuctions.count(auctionId) > 0;
-}
-
-bool AhMarketService::IsSyntheticAuction(AuctionEntry const* auction) const
-{
-    if (!auction)
-        return false;
-    return ai::AhIsSyntheticAuction(auction->owner, m_syntheticAuctions.count(auction->Id) > 0);
-}
-
-bool AhMarketService::IsSyntheticItem(uint32_t itemGuidLow) const
-{
-    return m_syntheticItemGuids.count(itemGuidLow) > 0;
-}
-
-bool AhMarketService::IsItemBlacklisted(uint32_t itemId) const
-{
-    if (ai::AhItemSellBlacklisted(itemId, sPlayerbotAIConfig.ahSellBlacklist))
-        return true;
-    auto it = m_overrides.find(itemId);
-    if (it != m_overrides.end())
-        return ai::AhItemBlacklisted(it->second.value, it->second.add_chance);
-    return false;
-}
-
-bool AhMarketService::AssertSyntheticIsolation(Player const* player, uint32_t itemGuidLow)
-{
-    if (!player)
-        return true;
-    ObjectGuid guid(HIGHGUID_ITEM, itemGuidLow);
-    Item* item = player->GetItemByGuid(guid);
-    if (item != nullptr)
-    {
-        sLog.outError("TortoiseBots: INVARIANT VIOLATION: synthetic item %u found in player %s inventory!",
-            itemGuidLow, player->GetName());
-        return false;
-    }
-    return true;
-}
-
-void AhMarketService::ReloadOverrides()
-{
-    m_overrides.clear();
-    m_overridesLoaded = true;
-
-    auto result = CharacterDatabase.Query("SELECT item, value, add_chance, min_amount, max_amount FROM ahbot_items");
-    if (result)
-    {
-        do
-        {
-            Field* f = result->Fetch();
-            uint32 itemId = f[0].GetUInt32();
-            if (!itemId)
-                continue;
-            ItemOverride ov;
-            ov.value = f[1].GetUInt32();
-            ov.add_chance = ai::AhClampedOverrideChance(f[2].GetUInt32());
-            ov.min_amount = f[3].GetUInt32();
-            ov.max_amount = ai::AhOverrideMaxAmount(ov.min_amount, f[4].GetUInt32());
-            m_overrides[itemId] = ov;
-        } while (result->NextRow());
-        TB_LOG_BASIC("TortoiseBots: AhMarket loaded %zu item overrides from ahbot_items", m_overrides.size());
-    }
-    else
-    {
-        TB_LOG_BASIC("TortoiseBots: AhMarket no overrides in ahbot_items or table not found");
-    }
-}
-
-bool AhMarketService::SetItemOverride(uint32_t itemId, uint32_t value, uint32_t addChance, uint32_t minAmount, uint32_t maxAmount)
-{
-    if (!itemId)
-        return false;
-    ItemOverride ov;
-    ov.value = value;
-    ov.add_chance = ai::AhClampedOverrideChance(addChance);
-    ov.min_amount = minAmount;
-    ov.max_amount = ai::AhOverrideMaxAmount(minAmount, maxAmount);
-    m_overrides[itemId] = ov;
-
-    CharacterDatabase.PExecute("REPLACE INTO ahbot_items (item, value, add_chance, min_amount, max_amount) VALUES ('%u', '%u', '%u', '%u', '%u')",
-        itemId, value, ov.add_chance, ov.min_amount, ov.max_amount);
-    return true;
-}
-
-bool AhMarketService::ResetItemOverride(uint32_t itemId)
-{
-    if (!itemId)
-        return false;
-    m_overrides.erase(itemId);
-    CharacterDatabase.PExecute("DELETE FROM ahbot_items WHERE item = '%u'", itemId);
-    return true;
-}
-
-void AhMarketService::RebuildMarket(bool all)
-{
-    m_pendingRebuild = all ? 2 : 1;
-    m_phase = Phase::Idle;
-    TB_LOG_DETAIL("TortoiseBots: AhMarket scheduled market rebuild (all=%u)", all ? 1 : 0);
-}
-
 std::string AhMarketService::GetStatus() const
 {
-    char const* phaseNames[] = {"Idle", "Gather", "Overrides", "Post", "Buy", "Expire"};
+    char const* phaseNames[] = {"Idle", "Buy"};
     std::ostringstream ss;
-    ss << "AhMarket Status: Phase=" << phaseNames[static_cast<uint8_t>(m_phase)]
-       << " SyntheticAuctions=" << m_syntheticAuctions.size()
-       << " Stock=" << m_stock.size()
-       << " Overrides=" << m_overrides.size()
+    ss << "AhMarket Status: Seller=" << (sPlayerbotAIConfig.ahMarketEnabled ? "on" : "off")
+       << " OrganicBuyer=" << (sPlayerbotAIConfig.ahMarketBuyer ? "on" : "off")
+       << " Phase=" << phaseNames[static_cast<uint8_t>(m_phase)]
+       << " Auctioneers=" << m_auctioneerPositions.size()
        << " LastSliceUs=" << m_lastSliceUs
        << " MaxSliceUs=" << m_maxSliceUs
-       << " TotalListed=" << m_totalListed
-       << " TotalBought=" << m_totalBought
-       << " TotalExpired=" << m_totalExpired
-       << " ProtectedBids=" << m_totalProtectedBids;
+       << " TotalBought=" << m_totalBought;
     return ss.str();
 }
 
-void AhMarketService::EnsureSourcesLoaded()
-{
-    if (m_sourcesLoaded)
-        return;
-    m_sourcesLoaded = true;
-
-    if (!m_overridesLoaded)
-        ReloadOverrides();
-
-    m_sources.resize(10);
-    // Source 0..4: Creature drops (Normal, Elite, Rare Elite, World Boss, Rare)
-    int32 creatureRange[5][4] = {
-        {30, 35, 8, 12},
-        {30, 34, 1, 2},
-        {-10, 2, 1, 1},
-        {-20, 1, 1, 1},
-        {0, 10, 1, 1}
-    };
-    for (uint32 rank = 0; rank < 5; ++rank)
-    {
-        m_sources[rank].store = &LootTemplates_Creature;
-        for (int i = 0; i < 4; ++i)
-            m_sources[rank].range[i] = creatureRange[rank][i];
-        std::string sql = "SELECT loot_id FROM creature_template WHERE loot_id<>0 AND `rank`=" + std::to_string(rank);
-        auto res = WorldDatabase.Query(sql.c_str());
-        if (res)
-        {
-            do {
-                m_sources[rank].ids.push_back(res->Fetch()[0].GetUInt32());
-            } while (res->NextRow());
-        }
-    }
-
-    // Source 5: Disenchant
-    m_sources[5].store = &LootTemplates_Disenchant;
-    m_sources[5].range[0] = 10; m_sources[5].range[1] = 12; m_sources[5].range[2] = 1; m_sources[5].range[3] = 1;
-    if (auto res = WorldDatabase.Query("SELECT DISTINCT entry FROM disenchant_loot_template"))
-    {
-        do { m_sources[5].ids.push_back(res->Fetch()[0].GetUInt32()); } while (res->NextRow());
-    }
-
-    // Source 6: Fishing
-    m_sources[6].store = &LootTemplates_Fishing;
-    m_sources[6].range[0] = 3; m_sources[6].range[1] = 5; m_sources[6].range[2] = 30; m_sources[6].range[3] = 40;
-    if (auto res = WorldDatabase.Query("SELECT DISTINCT entry FROM fishing_loot_template"))
-    {
-        do { m_sources[6].ids.push_back(res->Fetch()[0].GetUInt32()); } while (res->NextRow());
-    }
-
-    // Source 7: Gameobject (chests / herbs / mining)
-    m_sources[7].store = &LootTemplates_Gameobject;
-    m_sources[7].range[0] = 13; m_sources[7].range[1] = 16; m_sources[7].range[2] = 7; m_sources[7].range[3] = 11;
-    if (auto res = WorldDatabase.Query("SELECT DISTINCT gt.data1 FROM gameobject_template gt JOIN gameobject g ON g.id=gt.entry WHERE gt.type=3 AND g.spawntimesecsmax>0 AND gt.data1<>0"))
-    {
-        do { m_sources[7].ids.push_back(res->Fetch()[0].GetUInt32()); } while (res->NextRow());
-    }
-
-    // Source 8: Skinning
-    m_sources[8].store = &LootTemplates_Skinning;
-    m_sources[8].range[0] = 3; m_sources[8].range[1] = 5; m_sources[8].range[2] = 50; m_sources[8].range[3] = 50;
-    if (auto res = WorldDatabase.Query("SELECT DISTINCT entry FROM skinning_loot_template"))
-    {
-        do { m_sources[8].ids.push_back(res->Fetch()[0].GetUInt32()); } while (res->NextRow());
-    }
-
-    // Source 9: Crafted items from professions
-    m_sources[9].store = nullptr;
-    m_sources[9].range[0] = 80; m_sources[9].range[1] = 90; m_sources[9].range[2] = 0; m_sources[9].range[3] = 50;
-    std::set<uint32> crafts;
-    for (uint32 id = 1; id < sSpellMgr.GetMaxSpellId(); ++id)
-    {
-        SpellEntry const* spell = sSpellMgr.GetSpellEntry(id);
-        if (spell && (spell->Attributes & 32) && (spell->Attributes & 65536))
-        {
-            for (uint32 e = 0; e < 3; ++e)
-            {
-                if (spell->Effect[e] == SPELL_EFFECT_CREATE_ITEM && sObjectMgr.GetItemPrototype(spell->EffectItemType[e]))
-                    crafts.insert(spell->EffectItemType[e]);
-            }
-        }
-    }
-    m_sources[9].ids.assign(crafts.begin(), crafts.end());
-
-    // Vendor items list
-    if (auto res = WorldDatabase.Query("SELECT item FROM npc_vendor UNION SELECT item FROM npc_vendor_template"))
-    {
-        do { m_vendorItems.push_back(res->Fetch()[0].GetUInt32()); } while (res->NextRow());
-    }
-
-    TB_LOG_BASIC("TortoiseBots: AhMarket loaded generation sources: %zu crafts, %zu vendor items",
-        crafts.size(), m_vendorItems.size());
-}
-
-void AhMarketService::RefreshDynamicLevel()
-{
-    if (!sPlayerbotAIConfig.ahMarketDynamicLevel || time(nullptr) < m_nextLevelCheck)
-        return;
-
-    uint32 highest = 0;
-    uint32 fallback = 0;
-    for (auto const& pair : sWorld.GetAllSessions())
-    {
-        if (pair.second)
-        {
-            if (Player* p = pair.second->GetPlayer())
-            {
-                fallback = std::max(fallback, (uint32)p->GetLevel());
-                if (pair.second->GetSecurity() == SEC_PLAYER)
-                    highest = std::max(highest, (uint32)p->GetLevel());
-            }
-        }
-    }
-
-    m_maxRequiredLevel = highest ? highest : (fallback ? fallback : sPlayerbotAIConfig.ahMarketMaxLevel);
-    m_maxItemLevel = m_maxRequiredLevel >= 60 ? 255 : m_maxRequiredLevel + 5;
-    m_nextLevelCheck = time(nullptr) + sPlayerbotAIConfig.ahMarketLevelRefresh;
-}
-
-bool AhMarketService::IsItemEligible(ItemPrototype const* proto, bool forced) const
-{
-    if (!proto)
-        return false;
-
-    if (sRandomItemMgr.IsTransmogClone(proto))
-        return false;
-
-    // Caps, blacklist, bonding and loot-window rules are the shared
-    // AhSyntheticMarketPolicy; this reads game state into plain inputs.
-    return ai::AhItemEligible(IsItemBlacklisted(proto->ItemId), forced, proto->Stackable != 0,
-        uint32_t(proto->Quality), sPlayerbotAIConfig.ahMarketMaxQuality,
-        proto->RequiredLevel, m_maxRequiredLevel,
-        proto->ItemLevel, m_maxItemLevel,
-        uint32_t(proto->Bonding), proto->Flags,
-        ai::ItemUsageValue::IsItemSoldByAnyVendorWithoutLimit(proto));
-}
-
-uint32_t AhMarketService::CalculatePrice(ItemPrototype const* proto) const
+uint32_t AhMarketService::CalculateBuyerBaselinePrice(ItemPrototype const* proto) const
 {
     if (!proto)
         return 0;
-    auto it = m_overrides.find(proto->ItemId);
-    if (it != m_overrides.end() && it->second.value > 0)
-        return it->second.value;
-
-    // Quality scaling, the buy/sell sanity rule and the overflow cap are
-    // the shared AhSyntheticMarketPolicy. A zero-value poor item prices at
-    // 0: return before drawing variance, exactly like the pre-policy code
-    // (no posting, no RNG consumed). Variance stays game-side (urand).
-    uint32_t basePrice = ai::AhSyntheticBasePrice(proto->BuyPrice, proto->SellPrice, uint32_t(proto->Quality));
+    uint32_t basePrice = ai::AhBuyerBasePrice(proto->BuyPrice, proto->SellPrice, uint32_t(proto->Quality));
     if (!basePrice)
         return 0;
-    return ApplyVariance(basePrice);
+    return ApplyBuyerVariance(basePrice);
 }
 
-uint32_t AhMarketService::ApplyVariance(uint32_t price) const
+uint32_t AhMarketService::ApplyBuyerVariance(uint32_t price) const
 {
     if (!price || !sPlayerbotAIConfig.ahMarketVariance)
         return price ? price : 1;
 
     int32 variance = (int32)sPlayerbotAIConfig.ahMarketVariance;
     int32 delta = (int32)urand(0, variance * 2) - variance;
-    return ai::AhVariedPrice(price, delta);
-}
-
-uint32_t AhMarketService::CalculateStack(ItemPrototype const* proto, uint32_t stockCount, uint32_t unitPrice) const
-{
-    if (!proto)
-        return 0;
-
-    auto it = m_overrides.find(proto->ItemId);
-    uint32_t overrideMinAmount = it != m_overrides.end() ? it->second.min_amount : 0;
-    uint32_t overrideMaxAmount = it != m_overrides.end() ? it->second.max_amount : 0;
-
-    return ai::AhStackCount(proto->Stackable != 0, proto->Stackable, stockCount, unitPrice,
-        overrideMinAmount, overrideMaxAmount);
-}
-
-bool AhMarketService::PublishSyntheticAuction(uint32_t itemId, uint32_t count, uint32_t unitPrice)
-{
-    if (!itemId || !count || !unitPrice)
-        return false;
-
-    uint32 houseIds[] = {1, 6, 7};
-    uint32 houseId = houseIds[m_currentHouse % 3];
-    AuctionHouseEntry const* ahEntry = sAuctionHouseStore.LookupEntry(houseId);
-    if (!ahEntry)
-        return false;
-
-    AuctionHouseObject* ahObject = sAuctionMgr.GetAuctionsMap(ahEntry);
-    if (!ahObject)
-        return false;
-
-    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
-    if (!proto)
-        return false;
-
-    std::unique_ptr<Item> item(Item::CreateItem(itemId, count));
-    if (!item)
-        return false;
-
-    // Isolation guarantee: Tag with SYNTHETIC_OWNER_GUID (0). Never enters player inventory.
-    item->SetOwnerGuid(ObjectGuid(HIGHGUID_PLAYER, SYNTHETIC_OWNER_GUID));
-    // Write random-property fields directly instead of SetItemRandomProperties():
-    // that calls SetState(ITEM_CHANGED) -> AddToUpdateQueueOf -> GetOwner() is null
-    // for ownerless synthetic items, logging one error per item (fixes #283).
-    // The item is ITEM_NEW, so SaveToDB() persists these fields regardless.
-    if (int32 property = Item::GenerateItemRandomPropertyId(itemId))
-    {
-        if (ItemRandomPropertiesEntry const* itemRand = sItemRandomPropertiesStore.LookupEntry(property))
-        {
-            item->SetInt32Value(ITEM_FIELD_RANDOM_PROPERTIES_ID, itemRand->ID);
-            for (uint32 i = PROP_ENCHANTMENT_SLOT_0; i < PROP_ENCHANTMENT_SLOT_0 + 3; ++i)
-            {
-                item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT + i * MAX_ENCHANTMENT_OFFSET + ENCHANTMENT_ID_OFFSET,
-                                     itemRand->enchant_id[i - PROP_ENCHANTMENT_SLOT_0]);
-                item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT + i * MAX_ENCHANTMENT_OFFSET + ENCHANTMENT_DURATION_OFFSET, 0);
-                item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT + i * MAX_ENCHANTMENT_OFFSET + ENCHANTMENT_CHARGES_OFFSET, 0);
-            }
-        }
-    }
-    item->ClearUpdateMask(false);
-
-    std::unique_ptr<AuctionEntry> auction(new AuctionEntry{});
-    auction->Id = sObjectMgr.GenerateAuctionID();
-    auction->itemGuidLow = item->GetGUIDLow();
-    auction->itemTemplate = itemId;
-    auction->owner = SYNTHETIC_OWNER_GUID;
-    auction->ownerAccount = SYNTHETIC_OWNER_ACCOUNT;
-    auction->buyout = uint32(std::min<uint64>(uint64(unitPrice) * count, 0x7fffffffULL));
-    uint32 bidPct = urand(sPlayerbotAIConfig.ahMarketBidMin, sPlayerbotAIConfig.ahMarketBidMax);
-    auction->startbid = std::max<uint32>(1, uint64(auction->buyout) * bidPct / 100);
-    auction->bid = 0;
-    auction->bidder = 0;
-    auction->deposit = 0;
-    auction->depositTime = time(nullptr);
-    auction->expireTime = auction->depositTime + urand(sPlayerbotAIConfig.ahMarketTimeMin, sPlayerbotAIConfig.ahMarketTimeMax) * HOUR;
-    auction->auctionHouseEntry = ahEntry;
-
-    CharacterDatabase.BeginTransaction();
-    item->SaveToDB();
-    auction->SaveToDB();
-    CharacterDatabase.CommitTransaction();
-
-    uint32 itemGuidLow = item->GetGUIDLow();
-    uint32 auctionId = auction->Id;
-    sAuctionMgr.AddAItem(item.release());
-    ahObject->AddAuction(auction.release());
-
-    m_syntheticAuctions.insert(auctionId);
-    m_syntheticItemGuids.insert(itemGuidLow);
-    return true;
+    return ai::AhBuyerVariedPrice(price, delta);
 }
 
 bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObject* ahObject)
@@ -846,7 +503,7 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
     if (!auction->lockedIpAddress.empty() && auction->depositTime + 300 >= time(nullptr))
         return false;
 
-    if (IsItemBlacklisted(auction->itemTemplate))
+    if (ai::AhItemSellBlacklisted(auction->itemTemplate, sPlayerbotAIConfig.ahSellBlacklist))
         return false;
 
     // Players can auction items they created with transmogrification.
@@ -928,7 +585,7 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
         return false;
 
     uint32 medianMarket = ai::ItemUsageValue::GetAHMedianBuyoutPricePerItem(proto, buyer);
-    uint64 willingness = ai::AhBuyerWillingness(CalculatePrice(proto), medianMarket, count,
+    uint64 willingness = ai::AhBuyerWillingness(CalculateBuyerBaselinePrice(proto), medianMarket, count,
         sPlayerbotAIConfig.ahMarketBuyValue);
     if (!willingness)
         return false;
@@ -978,7 +635,7 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
 
 void AhMarketService::StepWorkSlice()
 {
-    if (m_phase == Phase::Idle && !m_pendingRebuild && m_rebuildRemaining == 0 && time(nullptr) < m_nextCycleCheck)
+    if (m_phase == Phase::Idle && time(nullptr) < m_nextCycleCheck)
         return;
 
     auto start = std::chrono::steady_clock::now();
@@ -993,7 +650,7 @@ void AhMarketService::StepWorkSlice()
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
         if (elapsed >= (int64)budgetUs)
             break;
-        if (m_phase == Phase::Idle && !m_pendingRebuild && m_rebuildRemaining == 0)
+        if (m_phase == Phase::Idle)
             break;
     }
 
@@ -1008,40 +665,10 @@ void AhMarketService::StepPhase()
     {
         case Phase::Idle:
         {
-            if (m_pendingRebuild == 2)
+            m_actionCycle = (m_actionCycle + 1) % 3;
+            if (sPlayerbotAIConfig.ahMarketBuyer && urand(0, 99) < sPlayerbotAIConfig.ahMarketChanceBuy)
             {
-                m_scanHouse = 0;
-                m_scanCursor = 0;
-                m_phase = Phase::Expire;
-                return;
-            }
-            if (m_pendingRebuild == 1)
-            {
-                m_pendingRebuild = 0;
-                RefreshDynamicLevel();
-                m_stock.clear();
-                m_sourceIndex = 0;
-                m_picksRemaining = -1;
-                m_rollsRemaining = 0;
-                m_phase = Phase::Gather;
-                return;
-            }
-
-            m_actionCycle = (m_actionCycle + 1) % 6;
-            m_currentHouse = m_actionCycle % 3;
-
-            if (m_actionCycle < 3 && sPlayerbotAIConfig.ahMarketSyntheticSupply && urand(0, 99) < sPlayerbotAIConfig.ahMarketChanceSell)
-            {
-                RefreshDynamicLevel();
-                m_stock.clear();
-                m_sourceIndex = 0;
-                m_picksRemaining = -1;
-                m_rollsRemaining = 0;
-                m_phase = Phase::Gather;
-            }
-            else if (m_actionCycle >= 3 && sPlayerbotAIConfig.ahMarketBuyer && urand(0, 99) < sPlayerbotAIConfig.ahMarketChanceBuy)
-            {
-                m_scanHouse = m_currentHouse;
+                m_scanHouse = m_actionCycle;
                 m_scanCursor = 0;
                 m_phase = Phase::Buy;
             }
@@ -1051,147 +678,10 @@ void AhMarketService::StepPhase()
             }
             return;
         }
-        case Phase::Gather:
-            StepGather();
-            return;
-        case Phase::Overrides:
-            StepOverrides();
-            return;
-        case Phase::Post:
-            StepPost();
-            return;
         case Phase::Buy:
             StepBuy();
             return;
-        case Phase::Expire:
-            StepExpire();
-            return;
     }
-}
-
-void AhMarketService::StepGather()
-{
-    if (m_sourceIndex >= m_sources.size())
-    {
-        m_overrideCursor = 0;
-        m_phase = Phase::Overrides;
-        return;
-    }
-
-    GenerationSource const& s = m_sources[m_sourceIndex];
-    if (s.ids.empty() || !s.range[1] || !s.range[3])
-    {
-        ++m_sourceIndex;
-        m_picksRemaining = -1;
-        return;
-    }
-
-    if (m_picksRemaining < 0)
-        m_picksRemaining = int32(std::max<int64>(0, int64(urand(0, s.range[1] - s.range[0])) + s.range[0]));
-
-    if (!m_rollsRemaining)
-    {
-        if (!m_picksRemaining)
-        {
-            ++m_sourceIndex;
-            m_picksRemaining = -1;
-            return;
-        }
-        --m_picksRemaining;
-        m_selectedTemplate = s.ids[urand(0, s.ids.size() - 1)];
-        if (!s.store)
-        {
-            auto p = sObjectMgr.GetItemPrototype(m_selectedTemplate);
-            if (IsItemEligible(p, false) && p->Quality)
-            {
-                uint32 stack = p->Stackable ? p->Stackable : 1;
-                m_stock[m_selectedTemplate] += std::max<uint32>(1, stack * urand(s.range[2], s.range[3]) / 100);
-            }
-            return;
-        }
-        m_rollsRemaining = urand(s.range[2], s.range[3]);
-        if (!m_rollsRemaining)
-            return;
-    }
-
-    --m_rollsRemaining;
-    if (LootTemplate const* table = s.store->GetLootFor(m_selectedTemplate))
-    {
-        Loot loot(nullptr, 0);
-        table->Process(loot, *s.store, s.store->IsRatesAllowed());
-        for (auto const& item : loot.items)
-        {
-            if (IsItemEligible(sObjectMgr.GetItemPrototype(item.itemid), false))
-                m_stock[item.itemid] += item.count;
-        }
-    }
-}
-
-void AhMarketService::StepOverrides()
-{
-    if (m_overrides.empty())
-    {
-        m_phase = Phase::Post;
-        return;
-    }
-
-    auto it = m_overrides.upper_bound(m_overrideCursor);
-    if (it == m_overrides.end())
-    {
-        m_phase = Phase::Post;
-        return;
-    }
-    m_overrideCursor = it->first;
-    if (it->second.add_chance && it->second.value)
-    {
-        if (urand(0, 99) < it->second.add_chance)
-        {
-            uint32 qty = urand(it->second.min_amount, it->second.max_amount);
-            if (!qty) qty = 1;
-            m_stock[it->first] += qty;
-        }
-    }
-}
-
-void AhMarketService::StepPost()
-{
-    if (m_stock.empty())
-    {
-        FinishPass();
-        return;
-    }
-
-    auto it = m_stock.begin();
-    uint32 itemId = it->first;
-    uint32 stockCount = it->second;
-
-    auto p = sObjectMgr.GetItemPrototype(itemId);
-    auto ov = m_overrides.find(itemId);
-    bool forced = (ov != m_overrides.end() && ov->second.add_chance > 0 && ov->second.value > 0);
-
-    if (!stockCount || !IsItemEligible(p, forced))
-    {
-        m_stock.erase(it);
-        return;
-    }
-
-    uint32 price = CalculatePrice(p);
-    uint32 count = CalculateStack(p, stockCount, price);
-    if (!count)
-    {
-        m_stock.erase(it);
-        return;
-    }
-
-    if (PublishSyntheticAuction(itemId, count, price))
-        ++m_totalListed;
-    else
-        ++m_totalFailed;
-
-    if (count >= it->second)
-        m_stock.erase(it);
-    else
-        it->second -= count;
 }
 
 void AhMarketService::StepBuy()
@@ -1247,73 +737,6 @@ uint32_t AhMarketService::SellerIntervalMs()
     return intervalMs;
 }
 
-void AhMarketService::StepExpire()
-{
-    uint32 houseIds[] = {1, 6, 7};
-    uint32 houseId = houseIds[m_scanHouse % 3];
-    AuctionHouseEntry const* ahEntry = sAuctionHouseStore.LookupEntry(houseId);
-    if (!ahEntry)
-    {
-        if (m_pendingRebuild)
-        {
-            m_pendingRebuild = 0;
-            FinishPass();
-        }
-        else
-            FinishPass();
-        return;
-    }
-
-    AuctionHouseObject* ahObject = sAuctionMgr.GetAuctionsMap(ahEntry);
-    if (!ahObject || !ahObject->GetAuctions())
-    {
-        FinishPass();
-        return;
-    }
-
-    auto const* auctions = ahObject->GetAuctions();
-    auto it = auctions->upper_bound(m_scanCursor);
-    if (it == auctions->end())
-    {
-        ++m_scanHouse;
-        m_scanCursor = 0;
-        if (m_scanHouse >= 3)
-        {
-            m_pendingRebuild = 0;
-            FinishPass();
-        }
-        return;
-    }
-
-    AuctionEntry* auction = it->second;
-    m_scanCursor = auction->Id;
-
-    if (!IsSyntheticAuction(auction))
-        return;
-
-    // Active bids represent committed player or bot currency.
-    // Never expire or delete an auction that has an active bid, even during
-    // admin rebuild-all. The listing must run its natural course to either
-    // victory (SendAuctionWonMail) or outbid refund so money is preserved.
-    if (ai::AhListingProtectedFromExpire(auction->bid))
-    {
-        ++m_totalProtectedBids;
-        return;
-    }
-
-    uint32 itemGuidLow = auction->itemGuidLow;
-    uint32 aucId = auction->Id;
-
-    CharacterDatabase.PExecute("DELETE FROM item_instance WHERE guid='%u'", itemGuidLow);
-    auction->DeleteFromDB();
-    sAuctionMgr.RemoveAItem(itemGuidLow);
-    ahObject->RemoveAuction(auction);
-    m_syntheticAuctions.erase(aucId);
-    m_syntheticItemGuids.erase(itemGuidLow);
-    delete auction;
-    ++m_totalExpired;
-}
-
 void AhMarketService::FinishPass()
 {
     m_phase = Phase::Idle;
@@ -1338,12 +761,9 @@ void AhMarketService::Update(uint32_t diff)
 
     EnsurePositionsLoaded();
 
-    // 1. Phased synthetic supply & buyer engine with work budgets (Issue #88)
-    if (sPlayerbotAIConfig.ahMarketSyntheticSupply || sPlayerbotAIConfig.ahMarketBuyer)
-    {
-        EnsureSourcesLoaded();
+    // 1. Organic buyer scan with work budgets
+    if (sPlayerbotAIConfig.ahMarketBuyer)
         StepWorkSlice();
-    }
 
     // 2. Real-inventory seller loop
     uint32 intervalMs = SellerIntervalMs();
