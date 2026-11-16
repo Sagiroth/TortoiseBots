@@ -987,7 +987,10 @@ void BotManager::SweepAbandonedInstanceBots(uint32_t diff)
         if (facts.hasMaster && p)
         {
             ::Player* master = sObjectAccessor.FindPlayer(rec.masterGuid);
+            // A bot that took over as group leader is no master here: only a
+            // real player in the instance keeps the bot there.
             facts.masterInSameInstance = master && master->IsInWorld() &&
+                !(master->GetSession() && master->GetSession()->IsHeadless()) &&
                 master->GetMapId() == p->GetMapId() &&
                 master->GetInstanceId() == p->GetInstanceId();
         }
