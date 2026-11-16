@@ -10,9 +10,10 @@ static int checks = 0;
 
 int main()
 {
-    CHECK(DecideSafeRevive(0) == SafeReviveDecision::Revive);
-    CHECK(DecideSafeRevive(1) == SafeReviveDecision::Wait);
-    CHECK(DecideSafeRevive(5) == SafeReviveDecision::Wait);
+    CHECK(DecideSafeRevive(0, false) == SafeReviveDecision::Revive);
+    CHECK(DecideSafeRevive(0, true) == SafeReviveDecision::Revive);
+    CHECK(DecideSafeRevive(1, true) == SafeReviveDecision::MoveToSafePoint);
+    CHECK(DecideSafeRevive(5, false) == SafeReviveDecision::SpiritHealer);
 
     CHECK(!SafeReviveWaitExpired(0, 999999999u));
     CHECK(!SafeReviveWaitExpired(1000, 1000));

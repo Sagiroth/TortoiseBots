@@ -1,9 +1,10 @@
 #pragma once
 
 // Whether an autonomous ghost revives at its body now. A body among hostile
-// mobs is not revived on: the ghost waits (the corpse run keeps looking for a
-// quieter point in reclaim range) and, if it stays unsafe for
-// SAFE_REVIVE_MAX_WAIT_MS, takes the spirit healer instead.
+// mobs is not revived on: when a quieter point exists in reclaim range the
+// ghost walks there (the corpse run picks it) and revives there; when none
+// exists it takes the spirit healer right away. SAFE_REVIVE_MAX_WAIT_MS caps a
+// ghost that keeps moving without ever reaching a safe point.
 //
 // Pure and core-free, so tools/test_safe_revive_policy.cpp includes it directly.
 
@@ -17,12 +18,15 @@ inline constexpr std::uint32_t SAFE_REVIVE_MAX_WAIT_MS = 2 * 60 * 1000;
 enum class SafeReviveDecision
 {
     Revive,
-    Wait,
+    MoveToSafePoint,
+    SpiritHealer,
 };
 
-inline SafeReviveDecision DecideSafeRevive(std::uint32_t aggroUnits)
+inline SafeReviveDecision DecideSafeRevive(std::uint32_t aggroUnits, bool safePointInReach)
 {
-    return aggroUnits == 0 ? SafeReviveDecision::Revive : SafeReviveDecision::Wait;
+    if (aggroUnits == 0)
+        return SafeReviveDecision::Revive;
+    return safePointInReach ? SafeReviveDecision::MoveToSafePoint : SafeReviveDecision::SpiritHealer;
 }
 
 // unsafeSinceMs: when the ghost first found its revive point unsafe (0 = not yet).

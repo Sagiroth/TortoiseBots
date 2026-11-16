@@ -68,7 +68,7 @@ For deep technical details on these behaviors, see [Bot Mechanics & Quirks](../d
 | **Loot timing** | Bots check combat before opening corpses, and inside dungeons skip corpses near unpulled packs (kept queued up to 3 minutes). | Clear the pack; bots loot once combat ends. |
 | **Evading enemies** | When an enemy evades and runs home, bots drop it at once. | Wait for it to reach its spawn and stop before re-engaging. |
 | **Ghost stalls** | If a masterless ghost makes no progress toward its corpse for about a minute, it takes the spirit healer. A companion ghost never auto-releases: revive it yourself or wait for it to take the healer. A dead bot cannot be summoned until it is alive again. | Revive a stuck companion ghost, or wait for the spirit healer. |
-| **Safe revive** | A masterless ghost does not revive at its body while a hostile mob there would attack it: it waits as a ghost and looks for a quieter point in revive range, and after 2 minutes still unsafe it takes the spirit healer (never for a body inside a dungeon). | Normal safety behavior; companions revive as before. |
+| **Safe revive** | A masterless ghost does not revive at its body while a hostile mob there would attack it: it walks to a quiet point within revive range and revives there; with no such point it takes the spirit healer right away (never for a body inside a dungeon). A ghost that is still not safe after 2 minutes also takes the healer. | Normal safety behavior; companions revive as before. |
 | **Gathering** | Gathering needs standing still; follow-up and loot chains pause while the cast runs. | Stand by the node until the bot finishes. |
 
 <details>

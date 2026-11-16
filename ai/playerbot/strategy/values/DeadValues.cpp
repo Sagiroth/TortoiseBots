@@ -214,7 +214,8 @@ bool ShouldSpiritHealerValue::Calculate()
     // The body has stayed among hostile mobs too long: revive at the healer
     // instead of dying again on the corpse.
     if (ai->safeReviveCorpseGhostTime_ == corpse->GetGhostTime() &&
-        TortoiseBots::SafeReviveWaitExpired(ai->safeReviveUnsafeSinceMs_, WorldTimer::getMSTime()))
+        (ai->safeReviveNoSafePoint_ ||
+         TortoiseBots::SafeReviveWaitExpired(ai->safeReviveUnsafeSinceMs_, WorldTimer::getMSTime())))
         return true;
 
     uint32 deadTime = time(nullptr) - corpse->GetGhostTime();

@@ -1041,6 +1041,7 @@ public:
     // and the ghost time of that corpse, so a later death starts clean.
     uint32 safeReviveUnsafeSinceMs_ = 0;
     time_t safeReviveCorpseGhostTime_ = 0;
+    bool safeReviveNoSafePoint_ = false;
     // Last seek-role roll (world-thread ms, 0 = never) and its next deadline
     // with jitter applied by RandomBotService.
     uint32 worldPvpSeekRollMs_ = 0;

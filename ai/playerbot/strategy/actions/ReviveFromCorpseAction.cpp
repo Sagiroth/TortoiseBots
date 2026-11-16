@@ -229,14 +229,24 @@ bool ReviveFromCorpseAction::Execute(Event& event)
     {
         std::list<ObjectGuid> nearUnits = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
         uint32 const aggro = WorldPosition(bot).GetUnitsAggro(nearUnits, bot);
-        if (TortoiseBots::DecideSafeRevive(aggro) == TortoiseBots::SafeReviveDecision::Wait)
+        bool safePointInReach = false;
+        if (aggro)
+        {
+            FleeManager manager(bot, reclaimDist, 0.0, urand(0, 1), WorldPosition(corpse));
+            float rx, ry, rz;
+            safePointInReach = manager.CalculateDestination(&rx, &ry, &rz);
+        }
+        TortoiseBots::SafeReviveDecision const decision = TortoiseBots::DecideSafeRevive(aggro, safePointInReach);
+        if (decision != TortoiseBots::SafeReviveDecision::Revive)
         {
             if (!ai->safeReviveUnsafeSinceMs_ || ai->safeReviveCorpseGhostTime_ != corpse->GetGhostTime())
             {
                 ai->safeReviveUnsafeSinceMs_ = WorldTimer::getMSTime();
                 ai->safeReviveCorpseGhostTime_ = corpse->GetGhostTime();
             }
-            sLog.outDetail("[BOT CORPSE] %s: revive from corpse - BLOCKED: %u hostile(s) would aggro here", bot->GetName(), aggro);
+            ai->safeReviveNoSafePoint_ = decision == TortoiseBots::SafeReviveDecision::SpiritHealer;
+            sLog.outDetail("[BOT CORPSE] %s: revive from corpse - BLOCKED: %u hostile(s) would aggro here, %s",
+                bot->GetName(), aggro, safePointInReach ? "moving to a safe point" : "no safe point, spirit healer");
             return false;
         }
     }
