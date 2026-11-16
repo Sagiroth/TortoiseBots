@@ -196,6 +196,16 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.27.0 (2026-11-16)
+
+### World & Economy
+- The auction house can now be stocked by a new auction bot, with real seller names on every listing. [#1642](https://github.com/Sagiroth/TortoiseBots/pull/1642)
+- This is off by default; server owners turn it on with the auction house bot option in the settings. [#1642](https://github.com/Sagiroth/TortoiseBots/pull/1642)
+- The bot's seller characters never log in and are left alone by every other bot system. [#1642](https://github.com/Sagiroth/TortoiseBots/pull/1642)
+- Bots selling their own loot and bots buying from the auction house work the same as before. [#1642](https://github.com/Sagiroth/TortoiseBots/pull/1642)
+
+---
+
 ## v1.26.0 (2026-11-16)
 
 ### Bots & Combat
