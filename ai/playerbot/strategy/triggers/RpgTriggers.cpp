@@ -946,7 +946,11 @@ bool RpgCampTrigger::IsActive()
 
     time_t const gameTime = sWorld.GetGameTime();
     std::tm tmBuf{};
+#ifdef _WIN32
+    localtime_s(&tmBuf, &gameTime);
+#else
     localtime_r(&gameTime, &tmBuf);
+#endif
     bool const isNight = TortoiseBots::IsCampNightHour(static_cast<uint32_t>(tmBuf.tm_hour));
     uint32_t const chancePct = TortoiseBots::EffectiveCampChancePct(
         sPlayerbotAIConfig.campChancePct,

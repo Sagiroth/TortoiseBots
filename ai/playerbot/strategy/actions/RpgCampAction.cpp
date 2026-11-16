@@ -35,7 +35,11 @@ namespace
     {
         time_t const gameTime = sWorld.GetGameTime();
         std::tm tmBuf{};
+#ifdef _WIN32
+        localtime_s(&tmBuf, &gameTime);
+#else
         localtime_r(&gameTime, &tmBuf);
+#endif
         return TortoiseBots::IsCampNightHour(static_cast<uint32_t>(tmBuf.tm_hour));
     }
 
