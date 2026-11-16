@@ -196,6 +196,34 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.26.0 (2026-11-16)
+
+### Bots & Combat
+- Bots no longer spam chat with the same error, such as "Nowhere to flee", more than once every 30 seconds. [#1624](https://github.com/Sagiroth/TortoiseBots/pull/1624)
+- Server owners can change that wait with the `AiPlayerbot.ErrorRepeatDelay` setting, which defaults to 30 seconds. [#1624](https://github.com/Sagiroth/TortoiseBots/pull/1624)
+- Bots can now open locked doors and chests when they are carrying the right key. [#1624](https://github.com/Sagiroth/TortoiseBots/pull/1624)
+
+### Dungeons & Raids
+- Raid leaders no longer mark Hakkar's Sons as the kill target, so bots are free to burn them before Blood Siphon. [#1636](https://github.com/Sagiroth/TortoiseBots/pull/1636)
+- Onyxia's whelps and other important boss adds are likewise left to the boss plan instead of the pack marker. [#1636](https://github.com/Sagiroth/TortoiseBots/pull/1636)
+
+### World & Economy
+- Wandering bots can now pitch a Traveler's Tent with a campfire, sit for 20 minutes and greet players who pass by. [#1627](https://github.com/Sagiroth/TortoiseBots/pull/1627)
+- Server owners can use `.bot camp show`, `.bot camp add [name]` and `.bot camp remove` to preview, save and delete camp spots. [#1627](https://github.com/Sagiroth/TortoiseBots/pull/1627)
+- Bots in the open world are calmer about picking fights with players. [#1628](https://github.com/Sagiroth/TortoiseBots/pull/1628)
+
+### Groups & Guilds
+- Guild bots now get their own gear instead of going without. [#1629](https://github.com/Sagiroth/TortoiseBots/pull/1629)
+
+### Dying & Loot
+- Bringing a dead bot back is now safer and less likely to leave it stuck in a bad spot. [#1630](https://github.com/Sagiroth/TortoiseBots/pull/1630)
+- Bots now roll on dropped loot the way players expect. [#1631](https://github.com/Sagiroth/TortoiseBots/pull/1631)
+
+### Behind the scenes
+- Tidied up dungeon setup behind the scenes, with no intended change for players. [#1633](https://github.com/Sagiroth/TortoiseBots/pull/1633) [#1634](https://github.com/Sagiroth/TortoiseBots/pull/1634) [#1635](https://github.com/Sagiroth/TortoiseBots/pull/1635) [#1637](https://github.com/Sagiroth/TortoiseBots/pull/1637)
+
+---
+
 ## v1.25.1 (2026-11-15)
 
 ### Classes & Combat
