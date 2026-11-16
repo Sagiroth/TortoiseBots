@@ -475,6 +475,24 @@ void AhBotSellerAccount::RunRepairCheck()
 
         std::string pw = GenerateRandomPassword();
         AccountOpResult res = sAccountMgr.CreateAccount(normalizedName, pw);
+        if (res == AOR_NAME_ALREDY_EXIST)
+        {
+            // The login DB has no row (checked above), but the core keeps deleted
+            // account names cached until restart (.account delete does not evict
+            // them), so insert the row the same way CreateAccount does.
+            std::string name = normalizedName;
+            std::string pass = pw;
+            AccountMgr::normalizeString(name);
+            AccountMgr::normalizeString(pass);
+            std::string hash = sAccountMgr.CalculateShaPassHash(name, pass);
+            LoginDatabase.escape_string(name);
+            if (LoginDatabase.PExecute("INSERT INTO account(username,sha_pass_hash,joindate) VALUES('%s','%s',NOW())",
+                    name.c_str(), hash.c_str()))
+            {
+                LoginDatabase.Execute("REPLACE INTO realmcharacters (realmid, acctid, numchars) SELECT realmlist.id, account.id, 0 FROM realmlist,account LEFT JOIN realmcharacters ON acctid=account.id WHERE acctid IS NULL");
+                res = AOR_OK;
+            }
+        }
         if (res != AOR_OK)
         {
             sLog.outError("TortoiseBots: AhBot could not create seller account '%s' (result %u)",
