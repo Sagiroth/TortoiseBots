@@ -1073,6 +1073,7 @@ public:
     bool shareTargets;
 	std::list<uint32> pvpProhibitedZoneIds;
     bool randomBotForcePvp;
+    uint32 randomBotForcePvpPercent;
     uint32 worldPvpSeek;
     uint32 worldPvpSeekBotPercent;
     uint32 worldPvpSeekRerollMinutes;

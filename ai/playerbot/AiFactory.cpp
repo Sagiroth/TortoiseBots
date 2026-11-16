@@ -1203,6 +1203,8 @@ bool AiFactory::IsWorldPvpSeekEligible(Player* player, PlayerbotAI* const facade
     inputs.ownedBot = facade->IsOwnedBot();
     inputs.hiredBot = TortoiseBots::HireLifecycle::Instance().IsHired(player->GetObjectGuid());
     inputs.inBattleground = player->InBattleGround();
+    inputs.pvpFlagged = !sPlayerbotAIConfig.randomBotForcePvp ||
+        TortoiseBots::PoolBotInPvpFlaggedShare(player->GetGUIDLow(), sPlayerbotAIConfig.randomBotForcePvpPercent);
 
     if (Group* group = player->GetGroup())
     {

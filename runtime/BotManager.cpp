@@ -17,6 +17,7 @@
 #include "StartZoneBalance.h"
 #include "GearSeedingGuard.h"
 #include "policy/provision/GearBlacklistPolicy.h"
+#include "policy/pvp/WorldPvpSeekPolicy.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/BotActionLog.h"
 #include "../ai/playerbot/strategy/actions/MovementActions.h"
@@ -1354,6 +1355,7 @@ void BotManager::OnPlayerLogin(::Player* player)
     // login because relog clears the preference. Owned and hired bots stay
     // untouched. War Mode is not used, so no XP bonus rides along.
     if (record.random && ::sPlayerbotAIConfig.randomBotForcePvp &&
+        PoolBotInPvpFlaggedShare(player->GetGUIDLow(), ::sPlayerbotAIConfig.randomBotForcePvpPercent) &&
         !HireLifecycle::Instance().IsHired(player->GetObjectGuid()) &&
         !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_PVP_DESIRED))
     {

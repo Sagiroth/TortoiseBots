@@ -3436,11 +3436,15 @@ AiPlayerbot.CombatStrategies = ""
 # 0 = no bot sets /pvp. Owned and hired bots are never affected.
 AiPlayerbot.RandomBotForcePvp = 1
 
+# Share of pool bots that get the PvP flag above (0-100). The same bots every login.
+# Only flagged bots can hold the seek role, and seekers only attack flagged targets.
+#AiPlayerbot.RandomBotForcePvpPercent = 50
+
 # Open-world PvP seeking for free pool bots. 0 = off, 1 = seek real players only, 2 = seek players and enemy bots.
 # An unflagged player is never attacked. Owned/hired bots and bots grouped with a real player never seek.
 AiPlayerbot.WorldPvpSeek = 2
 
-# Share of free pool bots that hold the "world pvp" seek role (0-100).
+# Share of flagged free pool bots that hold the "world pvp" seek role (0-100).
 #AiPlayerbot.WorldPvpSeekBotPercent = 25
 
 # Minutes between re-rolls of the seek role (with jitter), never while the bot is in combat.

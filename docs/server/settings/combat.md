@@ -43,8 +43,9 @@ These settings configure health and mana trigger percentages, engagement ranges,
 | [`AiPlayerbot.MinRandomBotChangeStrategyTime`](#aiplayerbotminrandombotchangestrategytime) | `1800` (built in) | Minimum seconds a pool bot retains its strategy set before periodic refresh. |
 | [`AiPlayerbot.MaxRandomBotChangeStrategyTime`](#aiplayerbotmaxrandombotchangestrategytime) | `7200` (built in) | Maximum seconds a pool bot retains its strategy set before periodic refresh. |
 | [`AiPlayerbot.RandomBotForcePvp`](#aiplayerbotrandombotforcepvp) | `1` | Pool bots turn on the `/pvp` preference at every login so players can attack them anywhere. |
+| [`AiPlayerbot.RandomBotForcePvpPercent`](#aiplayerbotrandombotforcepvppercent) | `50` | Share of pool bots that get that PvP flag; the same bots every login. |
 | [`AiPlayerbot.WorldPvpSeek`](#aiplayerbotworldpvpseek) | `2` | Free pool bots seek flagged enemy players (`1`) or players and bots (`2`); `0` off. |
-| [`AiPlayerbot.WorldPvpSeekBotPercent`](#aiplayerbotworldpvpseekbotpercent) | `25` | Share of free pool bots holding the `world pvp` seek role. |
+| [`AiPlayerbot.WorldPvpSeekBotPercent`](#aiplayerbotworldpvpseekbotpercent) | `25` | Share of flagged free pool bots holding the `world pvp` seek role. |
 | [`AiPlayerbot.WorldPvpSeekRerollMinutes`](#aiplayerbotworldpvpseekrerollminutes) | `30` | Minutes between seek-role re-rolls, never while the bot is in combat. |
 ## Settings
 
@@ -383,6 +384,17 @@ Turtle's War Mode is not used, so bots get no XP bonus from this.
 
 </details>
 
+### `AiPlayerbot.RandomBotForcePvpPercent`
+Share of pool bots that get the PvP flag from `AiPlayerbot.RandomBotForcePvp`.
+**Default:** `50` · **Values:** `0` to `100` percent · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The pick is fixed per character, so the same bots carry the flag after every login. Only flagged bots can hold the `world pvp` seek role, and seekers only attack flagged targets, so unflagged bots stay out of bot fights; a real player can still attack a flagged bot. `100` flags every pool bot. Ignored while `AiPlayerbot.RandomBotForcePvp` is `0`.
+
+</details>
+
 ### `AiPlayerbot.WorldPvpSeek`
 A share of free pool bots actively look for PvP-flagged enemy players nearby and attack them.
 **Default:** `2` · **Values:** `0` off, `1` real players only, `2` players and enemy bots · **Restart:** needed
@@ -408,7 +420,7 @@ One bot can be switched on with `nc +world pvp` (combat copy needs `co +world pv
 </details>
 
 ### `AiPlayerbot.WorldPvpSeekBotPercent`
-Share of free pool bots that get the `world pvp` seek strategy.
+Share of flagged free pool bots (see `AiPlayerbot.RandomBotForcePvpPercent`) that get the `world pvp` seek strategy.
 **Default:** `25` · **Values:** `0` to `100` percent · **Restart:** needed
 
 <details>
