@@ -1086,6 +1086,17 @@ AiPlayerbot.DungeonRunKillFirstGrid = 0
 # A kill-first focus on a totem is DPS-only, is issued before the run leader's guard, and the guard skips totems.
 AiPlayerbot.DungeonRunTotemFocus = 0
 
+# The pack's fallback skull (the run leader gives every pulled pack a skull when the plan names no kill_first unit of it)
+# leaves every unit the boss tactics own alone, on every step kind: one whose entry has its own ai_boss_tactic rows on
+# the map, and one a row of the step or of a unit of the fight names as its target (a seek_aura's source, a tank_post's
+# unit, a hold_kill's blocker). Off, the fallback skips the boss and the kill_first/linked_death entries of a boss step
+# only. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group). `.reload config` reads it
+# again with the other AiPlayerbot.DungeonRun* keys.
+# Recommended on.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.DungeonRunPackFocusSparesTacticUnits = 0
+
 # The use_object boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): one designated
 # bot clicks the ready game object nearest the boss while the row's aura is up or its window has run out, and mode
 # tank_anchor also walks the boss to the object first. With this key off the rows are ignored, so the table
