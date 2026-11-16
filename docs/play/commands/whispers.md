@@ -58,6 +58,8 @@ Multiple whisper commands can be chained in a single line using `\\` as a delimi
 | `outfit` | `<name> [item links]` | Owner or GM | Adds the linked items to the named set, or equips the set when no links are given. |
 | `outfit <name> equip` | `<name>` | Owner or GM | Equips the items stored in the named outfit set. |
 | `keep` | `<item link\|name>` | Owner or GM | Designates an item to keep and not sell. |
+| `keep equip` | `<item link\|name>` | Owner or GM | Pins an item as forced-equip so auto-equip will not replace it (set automatically when you equip or trade an equipped item to a claimed guild bot). |
+| `keep none` | `<item link\|name>` | Owner or GM | Clears any `keep` pin on the item (including `keep equip` on a claimed guild bot) so normal upgrade/keep rules resume. |
 | `keep need` | `<item>` | Owner or GM | Forces Need rolls / retention for that item (bot tries to get more). |
 | `roll <need\|greed\|pass\|auto\|emote>` | `[item]` | Owner or GM | Votes on current loot rolls (or all open rolls if omitted). |
 | `roll feedback` | None | Owner or GM | Toggles chat feedback on roll decisions. |

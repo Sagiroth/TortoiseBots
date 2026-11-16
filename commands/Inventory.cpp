@@ -386,7 +386,10 @@ bool HandleItem(ChatHandler* handler, char const* args)
         if (!done)
             SendActionError(handler, intent, "failed", "The equip was refused (combat, level, or skill).");
         else
+        {
+            ai::EquipAction::PinPlayerEquippedItemIfClaimed(ai, requester, item);
             SendActionAck(handler, intent, scope, 1, std::to_string(itemId));
+        }
         SendInventorySnapshot(handler, bot, requester);
         return true;
     }

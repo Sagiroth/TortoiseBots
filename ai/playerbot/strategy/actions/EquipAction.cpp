@@ -21,6 +21,58 @@
 
 using namespace ai;
 
+namespace
+{
+bool IsItemCurrentlyEquipped(Player* bot, Item* item)
+{
+    if (!bot || !item || !item->GetProto())
+        return false;
+    if (item->GetProto()->InventoryType == INVTYPE_AMMO)
+        return bot->GetUInt32Value(PLAYER_AMMO_ID) == item->GetProto()->ItemId;
+    if (item->GetProto()->Class == ITEM_CLASS_CONTAINER || item->GetProto()->Class == ITEM_CLASS_QUIVER)
+        return item->GetBagSlot() == INVENTORY_SLOT_BAG_0 &&
+            item->GetSlot() >= INVENTORY_SLOT_BAG_START && item->GetSlot() < INVENTORY_SLOT_BAG_END;
+    return item->GetBagSlot() == INVENTORY_SLOT_BAG_0 && item->GetSlot() < INVENTORY_SLOT_ITEM_START;
+}
+
+bool SetForceItemUsageIfChanged(PlayerbotAI* ai, Item* item, ForceItemUsage usage, bool onlyIfNone)
+{
+    if (!ai || !item || !item->GetProto())
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!context)
+        return false;
+    uint32 const itemId = item->GetProto()->ItemId;
+    ForceItemUsage const current = AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", itemId, ForceItemUsage::FORCE_USAGE_NONE);
+    if (onlyIfNone && current != ForceItemUsage::FORCE_USAGE_NONE)
+        return false;
+    if (current == usage)
+        return false;
+    SET_AI_VALUE2(ForceItemUsage, "force item usage", itemId, usage);
+    RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
+    return true;
+}
+}
+
+bool EquipAction::PinPlayerEquippedItemIfClaimed(PlayerbotAI* ai, Player* requester, Item* item)
+{
+    if (!ai || !requester || !item || !item->GetProto())
+        return false;
+    Player* bot = ai->GetBot();
+    if (!bot || !IsItemCurrentlyEquipped(bot, item))
+        return false;
+    bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
+    bool const isOwner = (requester == ai->GetMaster()) ||
+        TortoiseBots::ClaimLifecycle::Instance().IsClaimedByPlayer(bot->GetGUIDLow(), requester->GetGUIDLow());
+    if (!TortoiseBots::ShouldPinPlayerEquippedItem(isClaimed, isOwner))
+        return false;
+    if (!SetForceItemUsageIfChanged(ai, item, ForceItemUsage::FORCE_USAGE_EQUIP, false))
+        return false;
+    if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
+        sPlayerbotDbStore.Save(ai);
+    return true;
+}
+
 bool EquipAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
@@ -128,7 +180,10 @@ void EquipAction::EquipItemsToSlot(Player* requester, ItemIds ids, uint8 targetS
         std::list<Item*> items = visitor.GetResult();
         if (!items.empty())
         {
-            EquipItemToSlot(requester, *items.begin(), targetSlot);
+            Item* item = *items.begin();
+            EquipItemToSlot(requester, item, targetSlot);
+            if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, targetSlot) == item)
+                PinPlayerEquippedItemIfClaimed(ai, requester, item);
         }
     }
 }
@@ -139,7 +194,9 @@ void EquipAction::EquipItem(Player* requester, FindItemVisitor* visitor)
     std::list<Item*> items = visitor->GetResult();
 	if (!items.empty())
     {
-        EquipItem(ai, requester, *items.begin());
+        Item* item = *items.begin();
+        EquipItem(ai, requester, item);
+        PinPlayerEquippedItemIfClaimed(ai, requester, item);
     }
 }
 
@@ -451,9 +508,8 @@ bool EquipUpgradesAction::Execute(Event& event)
     if (!sPlayerbotAIConfig.autoEquipUpgradeLoot && !sRandomBotFacade.IsRandomBot(bot))
         return false;
 
-    // Issue #489: Claimed bots at max level (60) NEVER auto-replace gear on their own
     bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
-    if (!TortoiseBots::MayClaimedBotSelfEquip(bot->GetLevel(), isClaimed))
+    if (!TortoiseBots::MayClaimedBotSelfEquip(bot->GetLevel(), isClaimed, sPlayerbotAIConfig.claimedBotSelfEquip))
         return false;
     // Issue #490: level-60 hires at tier >= 1 wear a static set; loot
     // auto-equip must not replace it (player-equipped and traded items via
@@ -585,7 +641,9 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     bool didEquip = false;
     bool equippedBags = false;
+    bool forceUsageChanged = false;
     std::set<uint8> filledSlots;
+    std::set<uint32> ownerTradedIds = (event.GetSource() == "trade status") ? ai->TakeOwnerTradedItemIds() : std::set<uint32>{};
 
     for (auto& item : items)
     {
@@ -693,6 +751,11 @@ bool EquipUpgradesAction::Execute(Event& event)
         sLog.outDetail("Bot #%d <%s> auto equips item %d (%s)", bot->GetGUIDLow(), bot->GetName(), item->GetProto()->ItemId, usage == ItemUsage::ITEM_USAGE_EQUIP ? "better than current" : "wrong item but empty slot");
         ai->TellDebug(ai->GetMaster(), "Equipping: " + chat->formatItem(item) + " - " + ItemUsageValue::ReasonForNeed(usage, item, 1, bot), "debug equip");
 
+        Item* displacedPrimary = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        Item* displacedSecondary = (slot == EQUIPMENT_SLOT_MAINHAND && proto->Class == ITEM_CLASS_WEAPON && proto->InventoryType == INVTYPE_2HWEAPON)
+            ? bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND)
+            : nullptr;
+
         // Use the auto-equip packet when core would pick the same slot, the
         // explicit-slot packet when the chosen slot is the weaker secondary
         // one that FindEquipSlot(NULL_SLOT) never returns.
@@ -704,6 +767,30 @@ bool EquipUpgradesAction::Execute(Event& event)
         else
         {
             EquipItemToSlot(GetMaster(), item, slot);
+        }
+
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot) == item)
+        {
+            if (isClaimed && ownerTradedIds.count(proto->ItemId) &&
+                SetForceItemUsageIfChanged(ai, item, ForceItemUsage::FORCE_USAGE_EQUIP, false))
+            {
+                forceUsageChanged = true;
+            }
+            if (TortoiseBots::ShouldKeepDisplacedClaimedGear(isClaimed))
+            {
+                if (displacedPrimary && displacedPrimary != displacedMH &&
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot) != displacedPrimary &&
+                    SetForceItemUsageIfChanged(ai, displacedPrimary, ForceItemUsage::FORCE_USAGE_KEEP, true))
+                {
+                    forceUsageChanged = true;
+                }
+                if (displacedSecondary &&
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND) != displacedSecondary &&
+                    SetForceItemUsageIfChanged(ai, displacedSecondary, ForceItemUsage::FORCE_USAGE_KEEP, true))
+                {
+                    forceUsageChanged = true;
+                }
+            }
         }
 
         // MH->OH cascade (AG-2): the upgrade above pushed the old main hand
@@ -729,7 +816,14 @@ bool EquipUpgradesAction::Execute(Event& event)
                 bool displacedBroken = displacedMH->GetUInt32Value(ITEM_FIELD_DURABILITY) == 0 && displacedMH->GetUInt32Value(ITEM_FIELD_MAXDURABILITY) > 0;
                 bool curOHBroken = curOH && curOH->GetUInt32Value(ITEM_FIELD_DURABILITY) == 0 && curOH->GetUInt32Value(ITEM_FIELD_MAXDURABILITY) > 0;
                 if (displacedKeepInBag || curOHForced || (curOH && displacedBroken && !curOHBroken))
+                {
+                    if (TortoiseBots::ShouldKeepDisplacedClaimedGear(isClaimed) &&
+                        SetForceItemUsageIfChanged(ai, displacedMH, ForceItemUsage::FORCE_USAGE_KEEP, true))
+                    {
+                        forceUsageChanged = true;
+                    }
                     continue;
+                }
 
                 uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
                 uint16 ohDest;
@@ -743,7 +837,19 @@ bool EquipUpgradesAction::Execute(Event& event)
                     EquipItemToSlot(GetMaster(), displacedMH, EQUIPMENT_SLOT_OFFHAND);
                     filledSlots.insert(EQUIPMENT_SLOT_OFFHAND);
                     sLog.outDetail("Bot #%d <%s> cascades old main hand %d to offhand", bot->GetGUIDLow(), bot->GetName(), displacedProto->ItemId);
+                    if (TortoiseBots::ShouldKeepDisplacedClaimedGear(isClaimed) && curOH &&
+                        bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND) == displacedMH &&
+                        SetForceItemUsageIfChanged(ai, curOH, ForceItemUsage::FORCE_USAGE_KEEP, true))
+                    {
+                        forceUsageChanged = true;
+                    }
                 }
+            }
+            if (TortoiseBots::ShouldKeepDisplacedClaimedGear(isClaimed) &&
+                bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND) != displacedMH &&
+                SetForceItemUsageIfChanged(ai, displacedMH, ForceItemUsage::FORCE_USAGE_KEEP, true))
+            {
+                forceUsageChanged = true;
             }
         }
     }
@@ -798,6 +904,9 @@ bool EquipUpgradesAction::Execute(Event& event)
             }
         }
     }
+
+    if (forceUsageChanged && !sPlayerbotAIConfig.bExplicitDbStoreSave)
+        sPlayerbotDbStore.Save(ai);
 
     return didEquip || equippedBags;
 }

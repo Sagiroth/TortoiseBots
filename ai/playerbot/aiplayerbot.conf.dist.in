@@ -2505,6 +2505,9 @@ AiPlayerbot.AutoPickReward = yes
 # Default: 0 (disabled)
 AiPlayerbot.AutoEquipUpgradeLoot = 1
 
+# Allow claimed guild bots at level 60 to auto-equip upgrades (1 = on, 0 = lock at level 60).
+AiPlayerbot.ClaimedBotSelfEquip = 1
+
 # An upgrade must beat the old item's stat weight by this factor to count (mod-playerbots parity, default 1.1: a +10% win swaps, an epsilon gain does not). 1.0 restores any-gain swaps.
 AiPlayerbot.EquipUpgradeThreshold = 1.1
 
