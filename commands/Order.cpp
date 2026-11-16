@@ -20,6 +20,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "../runtime/RandomBotAccountRegistry.h"
+#include "../runtime/AhBotSellerAccount.h"
 #include "../ai/playerbot/GuildOrderSources.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -113,6 +114,8 @@ bool ResolveOrderBot(std::string const& name, Player*& bot, ObjectGuid& guid)
 // when it is claimed into a guild or lives on a random-pool account.
 bool IsOrderBot(Player* bot, ObjectGuid guid)
 {
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guid.GetCounter()))
+        return false;
     if (bot)
         return BotManager::Instance().IsBot(guid);
     if (ClaimLifecycle::Instance().IsClaimed(guid.GetCounter()))
