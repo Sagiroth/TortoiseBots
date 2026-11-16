@@ -550,7 +550,7 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
         if (!bot->GetSession() || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
             continue;
         // Own auction, same-account auction, already-highest-bidder: the
-        // shared AhSyntheticMarketPolicy exclusion rule.
+        // shared buyer exclusion rule.
         if (ai::AhBuyerExcluded(auction->owner, auction->ownerAccount, auction->bidder,
                 bot->GetGUIDLow(), bot->GetSession()->GetAccountId()))
             continue;

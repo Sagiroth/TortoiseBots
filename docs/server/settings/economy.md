@@ -179,6 +179,12 @@ Master switch for the offline AHBot stock and buyer service.
 
 When enabled, the service maintains dedicated offline seller characters, removes any leftover legacy owner-0 listings, removes its own unbid listings just before core expiry so no expired mail accumulates, and stocks each enabled auction house toward its configured minimum/maximum item counts.
 
+- **Seller account:** created on first enable as `AiPlayerbot.AhBot.AccountName` (default `TBAHBOT`) with `AiPlayerbot.AhBot.SellersPerFaction` characters per faction. Its password is random on every start, its characters never log in, and every bot system (pool reset, cleanup, hire, alts, guilds, LFT, battlegrounds) ignores it. If the account or a seller is deleted, it is recreated within `AiPlayerbot.AhBot.SellerRepairIntervalSeconds`. Sale money that reaches the sellers by mail is deleted (a gold sink).
+- **What gets listed:** every obtainable, tradeable item (never grey, Bind on Pickup, quest-bound, conjured, unreleased or sold by a vendor without a stock limit), picked by the `AiPlayerbot.AhBot.ListProportion.*` weights. The default weights give roughly 40% trade goods, 20% consumables, 13% armour, 8% weapons and 5% recipes, with few epics.
+- **Prices:** vendor value times category and quality multipliers, calibrated to what bots on a live realm ask, with random variation and never below the vendor sell price.
+- **Shared auction house:** with `AllowTwoSide.Interaction.Auction = 1` every auctioneer opens the neutral house, so only the neutral target applies.
+- **PvP realms:** the seller account holds characters of both factions. On a PvP realm with `AllowTwoSide.Accounts = 0` the core refuses the second faction and the service stays off (logged once).
+
 </details>
 
 ### `AiPlayerbot.AhBot.MinutesBetweenSellCycle`
