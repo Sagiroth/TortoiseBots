@@ -19,14 +19,8 @@ inline std::uint32_t WorldPvpPursuitSeconds()
     return 60;
 }
 
-// Seconds a seeker may stay around a player it killed before moving on.
-inline std::uint32_t WorldPvpCampSeconds()
-{
-    return 5 * 60;
-}
-
-// Seconds a seeker ignores a player it camped out after moving on.
-inline std::uint32_t WorldPvpCampIgnoreSeconds()
+// Seconds a seeker ignores a player it killed, so it does not camp the corpse.
+inline std::uint32_t WorldPvpKillIgnoreSeconds()
 {
     return 10 * 60;
 }
@@ -55,21 +49,12 @@ inline bool WorldPvpPursuitHolds(std::uint64_t pursuitStartMs, std::uint64_t now
     return !WorldPvpPursuitExpired(pursuitStartMs, nowMs);
 }
 
-// True when a camp that started at `campStartMs` has run past its limit at
-// `nowMs`.
-inline bool WorldPvpCampExpired(std::uint64_t campStartMs, std::uint64_t nowMs)
-{
-    if (nowMs < campStartMs)
-        return false;
-    return nowMs - campStartMs >= std::uint64_t(WorldPvpCampSeconds()) * 1000;
-}
-
 // True when an ignore set at `ignoreStartMs` still holds at `nowMs`.
 inline bool WorldPvpIgnoreFresh(std::uint64_t ignoreStartMs, std::uint64_t nowMs)
 {
     if (nowMs < ignoreStartMs)
         return true;
-    return nowMs - ignoreStartMs < std::uint64_t(WorldPvpCampIgnoreSeconds()) * 1000;
+    return nowMs - ignoreStartMs < std::uint64_t(WorldPvpKillIgnoreSeconds()) * 1000;
 }
 
 }
