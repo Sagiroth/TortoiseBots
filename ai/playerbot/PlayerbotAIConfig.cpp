@@ -834,6 +834,13 @@ bool PlayerbotAIConfig::Initialize()
     levelLadderMaxLevelSharePct = config.GetIntDefault("AiPlayerbot.LevelLadderMaxLevelShare", 10);
     if (levelLadderMaxLevelSharePct > 100) levelLadderMaxLevelSharePct = 100;
     levelLadderLogMinutes = config.GetIntDefault("AiPlayerbot.LevelLadderLogMinutes", 5);
+    randomBotLineage = config.GetBoolDefault("AiPlayerbot.RandomBotLineage", true);
+    lineageLowBandReserve = config.GetIntDefault("AiPlayerbot.LineageLowBandReserve", 2);
+    lineagePerHour = config.GetIntDefault("AiPlayerbot.LineagePerHour", 10);
+    if (lineagePerHour > 3600) lineagePerHour = 3600;
+    lineagePoolCeiling = config.GetIntDefault("AiPlayerbot.LineagePoolCeiling", 10);
+    if (lineagePoolCeiling < 1) lineagePoolCeiling = 1;
+    lineageJoinParentGuild = config.GetBoolDefault("AiPlayerbot.LineageJoinParentGuild", true);
     maxRandomBotInWorldTime = config.GetIntDefault("AiPlayerbot.MaxRandomBotInWorldTime", 6 * 3600);
     randomBotStallRelogMinutes = config.GetIntDefault("AiPlayerbot.RandomBotStallRelogMinutes", 45);
     minRandomBotRandomizeTime = config.GetIntDefault("AiPlayerbot.MinRandomBotRandomizeTime", 6 * 3600);

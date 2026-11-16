@@ -9,6 +9,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
 #include "RandomBotAccountRegistry.h"
+#include "LineageStore.h"
 
 namespace TortoiseBots
 {
@@ -40,6 +41,29 @@ public:
     // false, so nothing races the deletion.
     bool IsPoolAvailable() const;
 
+    // Pool health for the dashboard, refreshed once a minute: every pool
+    // character per level band (not only the online ones), the lineages and
+    // the distance to the safety ceiling.
+    struct PoolHealth
+    {
+        bool valid = false;
+        uint32_t total = 0;
+        uint32_t sixty = 0;
+        uint32_t lowPool = 0;
+        uint64_t lowWanted = 0;
+        uint64_t ceiling = 0;
+        bool ceilingReached = false;
+        int64_t oldestSixtyUnseenSec = 0;
+        int64_t sixtyCycleSec = 0;
+        uint64_t characterDbBytes = 0;
+        LineageStore::Totals alts;
+        std::vector<std::string> bandNames;
+        std::vector<uint32_t> bandPool;
+        std::vector<uint32_t> bandOnline;
+        std::vector<uint32_t> bandTarget;
+    };
+    PoolHealth const& GetPoolHealth() const { return m_poolHealth; }
+
 private:
     struct Candidate
     {
@@ -48,6 +72,13 @@ private:
         uint8_t level = 1;      // from the characters table at load, refreshed while online
         uint32_t team = 0;      // Team enum from the race (ALLIANCE / HORDE)
         uint8_t race = 0;       // SharedDefines Races value, for the even-start-zone count
+        int64_t lastSeen = 0;   // logout_time at load, then the last pass it was online
+    };
+    // A lineage alt to create instead of a deficit character: this faction and class only.
+    struct LineageRequest
+    {
+        uint32_t team = 0;
+        uint8_t cls = 0;
     };
 
     RandomBotService() = default;
@@ -84,7 +115,11 @@ private:
     void RemoveExpiredBots(uint32_t diff);
     uint32_t TargetCount() const;
     uint32_t DesiredTargetCount() const;
-    bool TryAutoCreate();
+    bool TryAutoCreate(LineageRequest const* lineage = nullptr);
+    // Lineages: pool health once a minute, and an alt when the low bands run short.
+    void UpdateLineage(uint32_t diff);
+    void RollLineageAlt(int64_t now);
+    void JoinParentGuild(uint32_t parentGuidLow, ObjectGuid altGuid);
     enum class AutoCreateCharResult { Success, TransientName, TransientError, Permanent };
     AutoCreateCharResult TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount);
     // Returns TEAM_NONE if empty/unknown, otherwise HORDE/ALLIANCE (67/469). Sets isMixed
@@ -94,6 +129,11 @@ private:
     bool IsPinnedGuid(uint32 guidLow) const { return m_pinnedGuids.find(guidLow) != m_pinnedGuids.end(); }
 
     std::vector<Candidate> m_candidates;
+    PoolHealth m_poolHealth;
+    uint32_t m_lineageElapsedMs = 0;
+    uint32_t m_lineagePasses = 0;
+    bool m_lineageCeilingLogged = false;
+    std::string m_lastCreatedName; // name of the character TryCreateCharacterOnAccount just made
     // Even-start-zone cache: per-zone level-1 pool counts for the
     // least-populated-zone race pick. Refreshed once per creation batch (see
     // StartZoneCountsForBatch), so up to 5 creations per cadence share one

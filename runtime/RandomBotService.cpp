@@ -25,6 +25,11 @@
 #include "RandomBotAccountRegistry.h"
 #include "AhBotSellerAccount.h"
 #include "RandomBotPoolReset.h"
+#include "LineagePolicy.h"
+#include "LineageStore.h"
+#include "GuildOrderAccess.h"
+#include "Guild/Guild.h"
+#include "Guild/GuildMgr.h"
 #include "StartZoneBalance.h"
 #include "BotNameService.h"
 #include "runtime/policy/provision/BotAppearancePolicy.h"
@@ -182,6 +187,7 @@ void RandomBotService::DrivePoolReset(uint32_t diff)
         // The pool is empty now: reload the (unchanged) account list and let
         // the normal bounded auto-create refill it toward the configured
         // target.
+        LineageStore::Instance().Clear();
         LoadCandidates();
         if (sPlayerbotAIConfig.randomBotAutoCreate)
             m_targetCount = DesiredTargetCount();
@@ -259,6 +265,7 @@ void RandomBotService::Initialize()
 
     WarnAboutUnregisteredPrefixAccounts();
 
+    LineageStore::Instance().Load();
     LoadCandidates();
     // m_targetCount historically capped to candidates size. With auto-create
     // the desired target may exceed current candidates, so keep desired when
@@ -327,7 +334,7 @@ void RandomBotService::LoadCandidates()
     for (uint32 accountId : accountIds)
     {
         std::unique_ptr<QueryResult> characters(CharacterDatabase.PQuery(
-            "SELECT guid, level, race FROM characters WHERE account = '%u' ORDER BY guid", accountId));
+            "SELECT guid, level, race, logout_time FROM characters WHERE account = '%u' ORDER BY guid", accountId));
         if (!characters)
             continue;
 
@@ -348,6 +355,7 @@ void RandomBotService::LoadCandidates()
             candidate.level = std::max<uint8_t>(1, fields[1].GetUInt8());
             candidate.race = fields[2].GetUInt8();
             candidate.team = Player::TeamForRace(candidate.race);
+            candidate.lastSeen = int64_t(fields[3].GetUInt64());
             m_candidates.push_back(candidate);
         } while (characters->NextRow());
     }
@@ -687,7 +695,9 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
             created.characterGuid = outcome.guid;
             created.race = race;
             created.team = Player::TeamForRace(race);
+            created.lastSeen = int64_t(time(nullptr));
             m_candidates.push_back(created);
+            m_lastCreatedName = norm;
             m_ageMs.push_back(0);
             m_strategyAgeMs.push_back(0);
             m_randomizeAgeMs.push_back(0);
@@ -753,9 +763,9 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
     return AutoCreateCharResult::TransientName;
 }
 
-bool RandomBotService::TryAutoCreate()
+bool RandomBotService::TryAutoCreate(LineageRequest const* lineage)
 {
-    if (!sPlayerbotAIConfig.randomBotAutoCreate)
+    if (!sPlayerbotAIConfig.randomBotAutoCreate && !lineage)
         return false;
     if (!m_initialized || !sPlayerbotAIConfig.enabled)
         return false;
@@ -774,7 +784,7 @@ bool RandomBotService::TryAutoCreate()
     uint32 desired = m_targetCount;
     if (!desired)
         return false;
-    if (m_candidates.size() >= desired)
+    if (!lineage && m_candidates.size() >= desired)
         return false;
 
     // One bounded attempt per cadence (caller is throttled to
@@ -809,6 +819,16 @@ bool RandomBotService::TryAutoCreate()
                 continue;
             validAll.emplace_back(uint8_t(race), uint8_t(cls));
         }
+    }
+    if (lineage && !validAll.empty())
+    {
+        std::vector<std::pair<uint8_t,uint8_t>> wanted;
+        for (auto const& pr : validAll)
+            if (pr.second == lineage->cls && uint32_t(Player::TeamForRace(pr.first)) == lineage->team)
+                wanted.push_back(pr);
+        if (wanted.empty())
+            return false;
+        validAll.swap(wanted);
     }
     if (validAll.empty())
     {
@@ -911,6 +931,10 @@ bool RandomBotService::TryAutoCreate()
             m_failedAutoCreateAccounts.insert(accId);
             continue;
         }
+        // A lineage alt goes on an account of its own faction only, even where
+        // two-sided accounts are allowed: bot accounts stay single-faction.
+        if (lineage && (isMixed || (allowed != uint32_t(TEAM_NONE) && allowed != lineage->team)))
+            continue;
 
         std::vector<std::pair<uint8_t,uint8_t>> validForAccount = validAll;
         if (allowed != uint32_t(TEAM_NONE) && !allowTwoSide)
@@ -1707,6 +1731,183 @@ void RandomBotService::MaintainOnlinePool()
     }
 }
 
+// ---- Lineages --------------------------------------------------------------
+// Once a minute: count the whole pool per level band, publish it for the
+// dashboard, and roll one level 1 alt from a level 60 when the bands below 60
+// hold fewer pool characters than LineageLowBandReserve times their online
+// target. The online target does not change, so an alt costs no CPU: the level
+// ladder simply finds someone to log in at low level again.
+void RandomBotService::UpdateLineage(uint32_t diff)
+{
+    m_lineageElapsedMs += diff;
+    if (m_lineageElapsedMs < 60000)
+        return;
+    m_lineageElapsedMs = 0;
+    int64_t const now = int64_t(time(nullptr));
+
+    uint32_t const bands = LadderBandCount();
+    PoolHealth h;
+    h.valid = true;
+    h.total = static_cast<uint32_t>(m_candidates.size());
+    h.bandPool.assign(bands, 0);
+    h.bandOnline.assign(bands, 0);
+    for (uint32_t b = 0; b < bands; ++b)
+    {
+        h.bandNames.push_back(LadderBandName(b));
+        h.bandTarget.push_back(LadderBandTarget(b));
+    }
+    for (Candidate const& c : m_candidates)
+    {
+        uint32_t band = LadderBandOf(c.level);
+        ++h.bandPool[band];
+        bool const online = BotManager::Instance().IsRandomBot(c.characterGuid);
+        if (online)
+            ++h.bandOnline[band];
+        if (c.level >= 60)
+        {
+            ++h.sixty;
+            if (!online && c.lastSeen && now > c.lastSeen)
+                h.oldestSixtyUnseenSec = std::max<int64_t>(h.oldestSixtyUnseenSec, now - c.lastSeen);
+        }
+    }
+    uint64_t lowTarget = 0;
+    for (uint32_t b = 0; b + 1 < bands; ++b)
+    {
+        h.lowPool += h.bandPool[b];
+        lowTarget += h.bandTarget[b];
+    }
+    // Expected rotation: every 60 gets one turn of MaxRandomBotInWorldTime per
+    // (60s in the pool / online slots for 60s) turns.
+    uint32_t const sixtySlots = h.bandTarget.empty() ? 0 : h.bandTarget.back();
+    if (sixtySlots)
+        h.sixtyCycleSec = int64_t(h.sixty) * sPlayerbotAIConfig.maxRandomBotInWorldTime / sixtySlots;
+    h.lowWanted = LineageLowBandWanted(static_cast<uint32_t>(lowTarget), sPlayerbotAIConfig.lineageLowBandReserve);
+    h.ceiling = LineagePoolCeiling(m_targetCount, sPlayerbotAIConfig.lineagePoolCeiling);
+    h.ceilingReached = sPlayerbotAIConfig.randomBotLineage && h.total >= h.ceiling;
+    h.alts = LineageStore::Instance().Count(now);
+    // The size of the character database, every 10 minutes: one cheap
+    // information_schema read, not a scan of the character tables.
+    h.characterDbBytes = m_poolHealth.characterDbBytes;
+    if (m_lineagePasses++ % 10 == 0)
+    {
+        std::unique_ptr<QueryResult> size(CharacterDatabase.Query(
+            "SELECT COALESCE(SUM(`data_length` + `index_length`), 0) FROM `information_schema`.`TABLES` WHERE `table_schema` = DATABASE()"));
+        if (size)
+            h.characterDbBytes = size->Fetch()[0].GetUInt64();
+    }
+    m_poolHealth = h;
+
+    if (!sPlayerbotAIConfig.randomBotLineage || !m_targetCount || sWorld.IsShutdowning())
+        return;
+    LineageRollGate gate = CheckLineageRoll(h.lowPool, h.lowWanted, h.total, h.ceiling, now,
+        LineageStore::Instance().LastCreatedAt(), sPlayerbotAIConfig.lineagePerHour);
+    if (gate == LineageRollGate::Ceiling)
+    {
+        if (!m_lineageCeilingLogged)
+            sLog.outError("TortoiseBots: lineages stopped: the pool holds %u characters, the safety ceiling is %llu "
+                "(AiPlayerbot.LineagePoolCeiling). No character is deleted.", h.total, static_cast<unsigned long long>(h.ceiling));
+        m_lineageCeilingLogged = true;
+        return;
+    }
+    m_lineageCeilingLogged = false;
+    if (gate == LineageRollGate::Roll)
+        RollLineageAlt(now);
+}
+
+void RandomBotService::RollLineageAlt(int64_t now)
+{
+    LineageStore& store = LineageStore::Instance();
+    std::vector<LineageParentOption> options;
+    for (Candidate const& c : m_candidates)
+    {
+        if (c.level < 60)
+            continue;
+        uint32_t guidLow = c.characterGuid.GetCounter();
+        if (IsPinnedGuid(guidLow) || ClaimLifecycle::Instance().IsClaimed(guidLow))
+            continue;
+        options.push_back({ guidLow, store.LineageSize(store.FounderOf(guidLow)) });
+    }
+    uint32_t const parentGuid = PickLineageParent(options, urand(0, 0x7FFFFFFF));
+    if (!parentGuid)
+        return;
+    Candidate const* parent = nullptr;
+    for (Candidate const& c : m_candidates)
+        if (c.characterGuid.GetCounter() == parentGuid)
+        {
+            parent = &c;
+            break;
+        }
+    if (!parent)
+        return;
+    uint32_t const parentTeam = parent->team;
+    uint32_t const founderGuid = store.FounderOf(parentGuid);
+
+    uint32_t taken = store.AltClassMask(founderGuid);
+    if (PlayerCacheData const* founder = sObjectMgr.GetPlayerDataByGUID(founderGuid))
+        if (founder->uiClass)
+            taken |= 1u << (founder->uiClass - 1);
+    std::vector<uint8_t> classes;
+    for (uint32_t race = 1; race < MAX_RACES; ++race)
+    {
+        ChrRacesEntry const* raceEntry = sChrRacesStore.LookupEntry(race);
+        if (!raceEntry || raceEntry->HasFlag(CHRRACES_FLAGS_NOT_PLAYABLE) || uint32_t(Player::TeamForRace(race)) != parentTeam)
+            continue;
+        for (uint32_t cls = 1; cls < MAX_CLASSES; ++cls)
+            if (sChrClassesStore.LookupEntry(cls) && sObjectMgr.GetPlayerInfo(race, cls) &&
+                std::find(classes.begin(), classes.end(), uint8_t(cls)) == classes.end())
+                classes.push_back(uint8_t(cls));
+    }
+    uint8_t const cls = PickLineageClass(taken, classes, urand(0, 0x7FFFFFFF));
+    if (!cls)
+        return;
+
+    LineageRequest request;
+    request.team = parentTeam;
+    request.cls = cls;
+    size_t const before = m_candidates.size();
+    StartZoneCountsForBatch(0);
+    if (!TryAutoCreate(&request) || m_candidates.size() <= before)
+        return;
+
+    Candidate const& alt = m_candidates.back();
+    LineageRecord record;
+    record.guid = alt.characterGuid.GetCounter();
+    record.parentGuid = parentGuid;
+    record.founderGuid = founderGuid;
+    record.name = m_lastCreatedName;
+    record.race = alt.race;
+    record.cls = cls;
+    record.createdAt = now;
+    store.Record(record);
+    if (sPlayerbotAIConfig.lineageJoinParentGuild)
+        JoinParentGuild(parentGuid, alt.characterGuid);
+
+    PlayerCacheData const* parentData = sObjectMgr.GetPlayerDataByGUID(parentGuid);
+    TB_LOG_BASIC("TortoiseBots: lineage: %s rolled a level 1 alt %s (race %u class %u), line of %u now %u characters",
+        parentData ? parentData->sName.c_str() : "?", m_lastCreatedName.c_str(), uint32(alt.race), uint32(cls),
+        founderGuid, store.LineageSize(founderGuid));
+}
+
+void RandomBotService::JoinParentGuild(uint32_t parentGuidLow, ObjectGuid altGuid)
+{
+    ObjectGuid const parentGuid(HIGHGUID_PLAYER, parentGuidLow);
+    uint32_t guildId = 0;
+    if (Player* parent = sObjectAccessor.FindPlayer(parentGuid))
+        guildId = parent->GetGuildId();
+    else
+        guildId = Player::GetGuildIdFromDB(parentGuid);
+    if (!guildId)
+        return;
+    Guild* guild = sGuildMgr.GetGuildById(guildId);
+    if (!guild || guild->GetMemberSize() >= sPlayerbotAIConfig.guildMaxBotLimit)
+        return;
+    // Only bot guilds: an alt never lands in a real player's guild unasked.
+    if (GuildOrders::GuildHasRealPlayer(guildId))
+        return;
+    if (guild->AddMember(altGuid, guild->GetLowestRank()) != GuildAddStatus::OK)
+        TB_LOG_DETAIL("TortoiseBots: lineage alt %s could not join guild %u", altGuid.GetString().c_str(), guildId);
+}
+
 void RandomBotService::Update(uint32_t diff)
 {
     if (!m_initialized || !sPlayerbotAIConfig.enabled)
@@ -1740,6 +1941,8 @@ void RandomBotService::Update(uint32_t diff)
         }
     }
 
+    UpdateLineage(elapsed);
+
     if (!sPlayerbotAIConfig.randomBotAutologin)
         return;
 
@@ -1750,6 +1953,7 @@ void RandomBotService::Update(uint32_t diff)
         LadderLog(elapsed);
 
     ++m_servicePass;
+    int64_t const passTime = int64_t(time(nullptr));
     uint32 const processEvery = std::max<uint32>(1, kProcessBotIntervalMs / std::max<uint32>(1, cadence));
     for (size_t i = 0; i < m_candidates.size(); ++i)
     {
@@ -1760,7 +1964,11 @@ void RandomBotService::Update(uint32_t diff)
             continue;
 
         // Keep the cached level current for the level ladder (a level-up while online).
+        uint8_t const cachedLevel = m_candidates[i].level;
         m_candidates[i].level = static_cast<uint8_t>(std::max<uint32>(1, player->GetLevel()));
+        m_candidates[i].lastSeen = passTime;
+        if (cachedLevel < 60 && m_candidates[i].level >= 60)
+            LineageStore::Instance().NoteLevel(candidate.characterGuid.GetCounter(), m_candidates[i].level, passTime);
 
         // A dungeon crew (another module holds the Dungeon lease) keeps its strategies and its
         // corpse runs: no recovery revive, no strategy roulette, no timed gear seeding.

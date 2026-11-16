@@ -17,6 +17,7 @@
 #endif
 
 #include "ObservabilityEmitter.h"
+#include "RandomBotService.h"
 #include "../ai/playerbot/CampMgr.h"
 
 #include "BotManager.h"
@@ -2088,7 +2089,35 @@ void ObservabilityEmitter::EmitServerInfo()
        << ",\"bot_events\":\"" << flag(sPlayerbotAIConfig.hasLog("bot_events.csv")) << "\""
        << ",\"unreachable\":\"" << flag(sPlayerbotAIConfig.hasLog("unreachable_targets.csv")) << "\""
        << ",\"deaths\":\"" << flag(sPlayerbotAIConfig.hasLog("deaths.csv")) << "\""
-       << "}}";
+       << "}";
+    RandomBotService::PoolHealth const& pool = RandomBotService::Instance().GetPoolHealth();
+    if (pool.valid)
+    {
+        ss << ",\"pool\":{"
+           << "\"lineage\":\"" << flag(sPlayerbotAIConfig.randomBotLineage) << "\""
+           << ",\"total\":" << pool.total
+           << ",\"sixty\":" << pool.sixty
+           << ",\"low_pool\":" << pool.lowPool
+           << ",\"low_wanted\":" << pool.lowWanted
+           << ",\"ceiling\":" << pool.ceiling
+           << ",\"ceiling_reached\":\"" << flag(pool.ceilingReached) << "\""
+           << ",\"per_hour\":" << sPlayerbotAIConfig.lineagePerHour
+           << ",\"oldest_sixty_unseen_sec\":" << pool.oldestSixtyUnseenSec
+           << ",\"sixty_cycle_sec\":" << pool.sixtyCycleSec
+           << ",\"character_db_bytes\":" << pool.characterDbBytes
+           << ",\"alts\":" << pool.alts.alts
+           << ",\"alts_24h\":" << pool.alts.last24h
+           << ",\"alts_alliance\":" << pool.alts.alliance
+           << ",\"alts_horde\":" << pool.alts.horde
+           << ",\"bands\":[";
+        for (size_t b = 0; b < pool.bandNames.size(); ++b)
+            ss << (b ? "," : "") << "{\"name\":\"" << EscapeJson(pool.bandNames[b]) << "\""
+               << ",\"pool\":" << pool.bandPool[b]
+               << ",\"online\":" << pool.bandOnline[b]
+               << ",\"target\":" << pool.bandTarget[b] << "}";
+        ss << "]}";
+    }
+    ss << "}";
     SendDatagram(ss.str());
 }
 

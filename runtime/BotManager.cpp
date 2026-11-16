@@ -8,6 +8,7 @@
 #include "PetSpawnPolicy.h"
 #include "ProfessionGrantPolicy.h"
 #include "HireLifecycle.h"
+#include "LineageStore.h"
 #include "ClaimLifecycle.h"
 #include "AltBotService.h"
 #include "DowntimeService.h"
@@ -1406,10 +1407,13 @@ void BotManager::OnPlayerLogin(::Player* player)
     // level; the hire then lowered the level and the gear stayed on, so a
     // level 9 companion arrived in level 47 gear.
     bool const hired = HireLifecycle::Instance().IsHired(player->GetObjectGuid());
+    // A lineage alt starts at level 1 like a new player; the start-level range
+    // only populates a fresh world.
+    bool const lineageAlt = LineageStore::Instance().IsAlt(player->GetGUIDLow());
 
     // Level seeding runs before the login scatter so PickLevelFittingPoint sees
     // the seeded level (the scatter itself is gated on level >= 10).
-    if (record.random && !hired &&
+    if (record.random && !hired && !lineageAlt &&
         TortoiseBots::NeedsInitialGearSeeding(player->GetTotalPlayedTime(), sRandomBotFacade.GetValue(player->GetGUIDLow(), "levelSeeded")))
     {
         uint32 seedLevel = urand(sPlayerbotAIConfig.randomBotStartLevelMin,

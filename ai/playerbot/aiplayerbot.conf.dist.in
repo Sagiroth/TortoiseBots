@@ -54,6 +54,22 @@ AiPlayerbot.ExplicitDbStoreSave = 0
 # AiPlayerbot.LevelLadderMaxLevelShare = 10
 # AiPlayerbot.LevelLadderLogMinutes = 5
 
+# Lineages: when the level bands below 60 hold fewer pool characters than
+# LineageLowBandReserve times the level ladder's online target for them, a level 60
+# pool bot "rolls an alt": a new level 1 character of the same faction, a class its
+# lineage does not have yet, a new name, no gold or items from the parent. The level 60
+# stays in the pool. The 60 with the smallest lineage goes first; hired, pinned and the
+# player's own characters never roll alts. Alts are spaced out to at most LineagePerHour
+# per hour and stop once the pool holds LineagePoolCeiling times the online bot count.
+# Nothing is ever deleted. With LineageJoinParentGuild the alt joins the parent's guild
+# when that guild has only bots and is below GuildMaxBotLimit. A pool reset also clears
+# the lineage records. 0 turns lineages off.
+# AiPlayerbot.RandomBotLineage = 1
+# AiPlayerbot.LineageLowBandReserve = 2
+# AiPlayerbot.LineagePerHour = 10
+# AiPlayerbot.LineagePoolCeiling = 10
+# AiPlayerbot.LineageJoinParentGuild = 1
+
 # Login Bots when real players login
 # AiPlayerbot.RandomBotLoginWithPlayer = 0
 
