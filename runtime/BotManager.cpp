@@ -975,7 +975,6 @@ void BotManager::SweepAbandonedInstanceBots(uint32_t diff)
         facts.isHeadless = p && p->GetSession() && p->GetSession()->IsHeadless();
         facts.inWorld = p && p->IsInWorld();
         facts.beingTeleported = p && p->IsBeingTeleported();
-        facts.alive = p && p->IsAlive();
         facts.inBattleground = p && p->InBattleGround();
         facts.onInstanceMap = p && p->GetMap() && (p->GetMap()->IsDungeon() || p->GetMap()->IsRaid());
         facts.randomOrAutonomous = rec.random || AltBotService::Instance().IsAutonomous(key);
@@ -1016,6 +1015,11 @@ void BotManager::SweepAbandonedInstanceBots(uint32_t diff)
             p->GetSession()->HandleGroupDisbandOpcode(leave);
         }
         uint32 const fromMapId = p->GetMapId();
+        if (!p->IsAlive())
+        {
+            p->ResurrectPlayer(0.5f, false);
+            p->SpawnCorpseBones();
+        }
         p->GetMotionMaster()->Clear();
         if (!p->TeleportToHomebind(0, false))
         {

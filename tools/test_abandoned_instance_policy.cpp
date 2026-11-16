@@ -26,7 +26,6 @@ static AbandonedInstanceFacts MakeAbandonedBase()
     f.isHeadless = true;
     f.inWorld = true;
     f.beingTeleported = false;
-    f.alive = true;
     f.inBattleground = false;
     f.onInstanceMap = true;
     f.randomOrAutonomous = true;
@@ -99,11 +98,6 @@ int main()
     {
         AbandonedInstanceFacts f = MakeAbandonedBase();
         f.inBattleground = true;
-        CHECK(!IsAbandonedInInstance(f));
-    }
-    {
-        AbandonedInstanceFacts f = MakeAbandonedBase();
-        f.alive = false;
         CHECK(!IsAbandonedInInstance(f));
     }
     {

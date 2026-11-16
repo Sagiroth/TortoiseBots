@@ -16,7 +16,6 @@ struct AbandonedInstanceFacts
     bool isHeadless = false;
     bool inWorld = false;
     bool beingTeleported = false;
-    bool alive = false;
     bool inBattleground = false;
     bool onInstanceMap = false;
     bool randomOrAutonomous = false;
@@ -31,7 +30,9 @@ struct AbandonedInstanceFacts
 
 inline bool IsAbandonedInInstance(AbandonedInstanceFacts const& f)
 {
-    if (!f.isHeadless || !f.inWorld || f.beingTeleported || !f.alive ||
+    // Dead bots count too: one that keeps dying to the instance's mobs never
+    // stays alive for the whole grace period.
+    if (!f.isHeadless || !f.inWorld || f.beingTeleported ||
         f.inBattleground || !f.onInstanceMap)
         return false;
     if (!f.randomOrAutonomous || !f.inWorldLifecycle)
