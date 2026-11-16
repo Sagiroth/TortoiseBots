@@ -15,6 +15,7 @@
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
+#include "AhBotSellerAccount.h"
 #include "StartZoneBalance.h"
 #include "GearSeedingGuard.h"
 #include "policy/provision/GearBlacklistPolicy.h"
@@ -1783,6 +1784,13 @@ bool BotManager::AddBotWithMaster(uint32_t accountId, ::ObjectGuid guid, ::Objec
         TB_LOG_DETAIL("TortoiseBots: AddBot guid %s is not a player guid", guid.GetString().c_str());
         return false;
     }
+    if (AhBotSellerAccount::Instance().IsSellerGuid(key) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(accountId))
+    {
+        sLog.outError("TortoiseBots: AddBot %s on acct %u rejected (AH bot seller characters never log in)",
+            guid.GetString().c_str(), accountId);
+        return false;
+    }
     auto it = m_bots.find(key);
     if (it != m_bots.end())
     {
@@ -1821,6 +1829,9 @@ bool BotManager::RegisterOwnedCharacter(uint32_t ownerAccountId, uint32_t charac
     ::ObjectGuid characterGuid, ::ObjectGuid masterGuid)
 {
     if (!ownerAccountId || characterGuid.IsEmpty())
+        return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(characterGuid.GetCounter()) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(characterAccountId))
         return false;
 
     bool stored = CharacterDatabase.PExecute(
@@ -1896,6 +1907,9 @@ std::vector<OwnedCharacter> BotManager::GetOwnedCharacters(uint32_t ownerAccount
         row.positionX = fields[9].GetFloat();
         row.positionY = fields[10].GetFloat();
         row.positionZ = fields[11].GetFloat();
+        if (AhBotSellerAccount::Instance().IsSellerGuid(row.characterGuid.GetCounter()) ||
+            AhBotSellerAccount::Instance().IsSellerAccount(row.characterAccountId))
+            continue;
         result.push_back(std::move(row));
     } while (query->NextRow());
     return result;

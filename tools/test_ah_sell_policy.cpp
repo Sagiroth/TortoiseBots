@@ -7,7 +7,6 @@
 //   g++ -std=c++17 -Wall -Wextra tools/test_ah_sell_policy.cpp -o /tmp/test_ah_sell_policy && /tmp/test_ah_sell_policy
 
 #include "../runtime/policy/ah/AhSellPolicy.h"
-#include "../runtime/policy/ah/AhSyntheticMarketPolicy.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -80,11 +79,6 @@ int main()
     // rows alongside 14 limited ones still counts as unlimited).
     CHECK(ai::AhUnlimitedVendorStock(true));
     CHECK(!ai::AhUnlimitedVendorStock(false));
-
-    // Synthetic supply rejects unlimited vendor stock even when eligible.
-    CHECK(!ai::AhItemEligible(false, false, true, 1, 4, 0, 60, 55, 60, 0, 0, true));
-    CHECK(ai::AhItemEligible(false, false, true, 1, 4, 0, 60, 55, 60, 0, 0, false));
-    CHECK(!ai::AhItemEligible(false, true, true, 1, 4, 0, 60, 55, 60, 0, 0, true));
 
     // The owner-editable default ships the vial everywhere it is read.
     CHECK(TemplateDefault("AiPlayerbot.AhSellBlacklist") == "18256");

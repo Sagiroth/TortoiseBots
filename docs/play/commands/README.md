@@ -185,10 +185,10 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot pool accounts`](../../server/admin-commands.md#bot-pool-accounts) | Admin & GM | Lists managed bot accounts (console only). |
 | [`.bot pool adopt preview`](../../server/admin-commands.md#bot-pool-adopt-preview) | Admin & GM | Previews unmanaged bot accounts for adoption (console). |
 | [`.bot pool adopt confirm`](../../server/admin-commands.md#bot-pool-adopt-confirm) | Admin & GM | Enrolls unmanaged bot accounts into pool (console). |
-| [`.bot ah status`](../../server/admin-commands.md#bot-ah-status) | Admin & GM | Reports synthetic auction house telemetry and counts. |
-| [`.bot ah reload`](../../server/admin-commands.md#bot-ah-reload) | Admin & GM | Reloads auction house item pricing rules from DB. |
-| [`.bot ah rebuild`](../../server/admin-commands.md#bot-ah-rebuild) | Admin & GM | Forces evaluation and refreshing of market listings. |
-| [`.bot ah item`](../../server/admin-commands.md#bot-ah-item) | Admin & GM | Inspects, resets, or overrides item auction prices. |
+| [`.bot ah status`](../../server/admin-commands.md#bot-ah-status) | Admin & GM | Reports AH bot and organic market status and counts. |
+| [`.bot ah reload`](../../server/admin-commands.md#bot-ah-reload) | Admin & GM | Reloads AH bot config, item pool, and pricing from `aiplayerbot.conf`. |
+| [`.bot ah empty`](../../server/admin-commands.md#bot-ah-empty) | Admin & GM | Removes all AH bot listings (active bids are refunded). |
+| [`.bot ah update`](../../server/admin-commands.md#bot-ah-update) | Admin & GM | Triggers an immediate AH bot sell and buy cycle. |
 | [`.ahbot`](../../server/admin-commands.md#ahbot) | Admin & GM | Shorthand alias for `.bot ah` commands. |
 | [`.reload config`](../../server/admin-commands.md#reload-config) | Admin & GM | Reloads core configuration files. |
 

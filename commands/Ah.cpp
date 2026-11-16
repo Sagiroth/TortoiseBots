@@ -17,6 +17,7 @@
 #include "BotCommandContext.h"
 #include "../behavior/PlayerConvenience.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "../runtime/AhBotService.h"
 #include "../runtime/AhMarketService.h"
 #include "../host/ModuleVersion.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -133,12 +134,10 @@ bool HandleAhBot(ChatHandler* handler, char const* args)
     if (argStr.empty() || argStr == "help")
     {
         handler->PSendSysMessage("AHBot commands:");
-        handler->PSendSysMessage("  .bot ah status - Display synthetic AH engine status and telemetry");
-        handler->PSendSysMessage("  .bot ah reload - Reload price overrides and bans from ahbot_items");
-        handler->PSendSysMessage("  .bot ah rebuild [all] - Restart market pass (all = expire active unbid synthetic items)");
-        handler->PSendSysMessage("  .bot ah item <id> - View override for item");
-        handler->PSendSysMessage("  .bot ah item <id> reset - Remove override for item");
-        handler->PSendSysMessage("  .bot ah item <id> <value> [chance] [min] [max] - Set override (0 0 = blacklist)");
+        handler->PSendSysMessage("  .bot ah status - Display AH bot and organic market status");
+        handler->PSendSysMessage("  .bot ah reload - Reload AH bot configuration, item pool, and pricing");
+        handler->PSendSysMessage("  .bot ah empty  - Remove all AH bot listings (bids refunded)");
+        handler->PSendSysMessage("  .bot ah update - Trigger an immediate AH bot sell and buy cycle");
         return true;
     }
 
@@ -149,94 +148,34 @@ bool HandleAhBot(ChatHandler* handler, char const* args)
 
     if (subCmd == "status")
     {
-        std::string status = AhMarketService::Instance().GetStatus();
-        handler->PSendSysMessage("%s", status.c_str());
+        handler->PSendSysMessage("%s", AhBotService::Instance().GetStatus().c_str());
+        handler->PSendSysMessage("%s", AhMarketService::Instance().GetStatus().c_str());
         return true;
     }
 
     if (subCmd == "reload")
     {
-        AhMarketService::Instance().ReloadOverrides();
-        handler->PSendSysMessage("AHBot overrides reloaded from database.");
+        AhBotService::Instance().Reload();
+        handler->PSendSysMessage("AHBot configuration, item pool, and pricing reloaded.");
         return true;
     }
 
-    if (subCmd == "rebuild")
+    if (subCmd == "empty")
     {
-        std::string mode;
-        ss >> mode;
-        for (char& c : mode) c = tolower(c);
-        bool all = (mode == "all");
-        AhMarketService::Instance().RebuildMarket(all);
-        if (all)
-            handler->PSendSysMessage("AHBot market rebuild scheduled (expiring active unbid synthetic listings).");
-        else
-            handler->PSendSysMessage("AHBot market rebuild scheduled.");
+        uint32_t removed = AhBotService::Instance().Empty();
+        handler->PSendSysMessage("AHBot emptied %u listing(s) across all auction houses.", removed);
         return true;
     }
 
-    if (subCmd == "item")
+    if (subCmd == "update")
     {
-        uint32_t itemId = 0;
-        if (!(ss >> itemId) || itemId == 0)
+        if (!sPlayerbotAIConfig.ahBotEnabled)
         {
-            handler->PSendSysMessage("Usage: .bot ah item <id> [value [chance [min [max]]]] / reset");
+            handler->PSendSysMessage("AHBot is disabled (AiPlayerbot.AhBot.Enabled = 0).");
             return true;
         }
-
-        std::string nextToken;
-        if (!(ss >> nextToken))
-        {
-            if (AhMarketService::Instance().IsItemBlacklisted(itemId))
-            {
-                handler->PSendSysMessage("AHBot item %u is blacklisted/banned.", itemId);
-            }
-            else
-            {
-                handler->PSendSysMessage("AHBot item %u has no blacklist or has an active price override.", itemId);
-            }
-            return true;
-        }
-
-        for (char& c : nextToken) c = tolower(c);
-        if (nextToken == "reset")
-        {
-            AhMarketService::Instance().ResetItemOverride(itemId);
-            handler->PSendSysMessage("AHBot item %u override reset.", itemId);
-            return true;
-        }
-
-        uint32_t value = 0;
-        try {
-            value = std::stoul(nextToken);
-        } catch (...) {
-            handler->PSendSysMessage("Invalid value '%s' for item override.", nextToken.c_str());
-            return true;
-        }
-
-        uint32_t chance = 100;
-        uint32_t minAmount = 1;
-        uint32_t maxAmount = 1;
-
-        if (ss >> chance)
-        {
-            if (ss >> minAmount)
-            {
-                if (!(ss >> maxAmount))
-                    maxAmount = minAmount;
-            }
-        }
-
-        AhMarketService::Instance().SetItemOverride(itemId, value, chance, minAmount, maxAmount);
-        if (value == 0 && chance == 0)
-        {
-            handler->PSendSysMessage("AHBot item %u blacklisted (value=0, chance=0).", itemId);
-        }
-        else
-        {
-            handler->PSendSysMessage("AHBot item %u override set: value=%u copper, chance=%u%%, amount=%u..%u.",
-                itemId, value, chance, minAmount, maxAmount);
-        }
+        AhBotService::Instance().ForceUpdate();
+        handler->PSendSysMessage("AHBot sell and buy cycle triggered.");
         return true;
     }
 

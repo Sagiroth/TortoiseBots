@@ -16,6 +16,7 @@ type Config struct {
 	DBPassword string
 	CharDB     string
 	WorldDB    string
+	LogonDB    string
 	// DBCDir optionally points at the operator's own extracted DBC files
 	// (the same dir mangosd reads via DataDir). When Talent.dbc +
 	// TalentTab.dbc are present, talents resolve from them; otherwise the

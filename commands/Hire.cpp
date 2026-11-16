@@ -22,6 +22,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/RandomBotAccountRegistry.h"
+#include "../runtime/AhBotSellerAccount.h"
 #include "../runtime/RandomBotPoolReset.h"
 #include "../runtime/RandomBotService.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -506,6 +507,13 @@ bool HandleAdd(ChatHandler* handler, char const* args)
     ::ObjectGuid guid(HIGHGUID_PLAYER, data->uiGuid);
     uint32_t accountId = data->uiAccount;
     ::ObjectGuid masterGuid = requester->GetObjectGuid();
+
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guid.GetCounter()) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(accountId))
+    {
+        handler->PSendSysMessage("Character '%s' is an auction house bot seller and cannot be added as a bot.", name.c_str());
+        return true;
+    }
 
     if (::Player* online = sObjectAccessor.FindPlayer(guid))
     {

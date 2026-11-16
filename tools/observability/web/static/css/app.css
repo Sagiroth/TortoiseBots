@@ -4118,3 +4118,16 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fm-focus[hidden] { display: none; }
 .fm-focus > span { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg-card-hover, rgba(255, 255, 255, 0.08)); border: 1px solid var(--accent-yellow); font-size: 12px; }
 .fm-focus .fm-unfocus { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; }
+
+/* ---------- AH bot section (Auction House tab) ---------- */
+.ahbot-card { margin-bottom: 16px; }
+.ahbot-head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ahbot-kpis { margin-bottom: 14px; }
+.ahbot-kpis .kpi { background: var(--bg-card-subtle); }
+.ahbot-house-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; font-size: 0.85rem; }
+.ahbot-house-chip { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 2px 8px; font-variant-numeric: tabular-nums; }
+.ahbot-matrix-wrap { max-height: 360px; overflow-y: auto; }
+.ahbot-total-row td { border-top: 1px solid var(--border-strong); background: rgba(255, 255, 255, 0.02); }
+.ahbot-sellers-details { margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 10px; }
+.ahbot-sellers-details summary { cursor: pointer; color: var(--text-muted); font-size: 0.84rem; margin-bottom: 8px; user-select: none; }
+.ahbot-sellers-details summary:hover { color: var(--text-main); }

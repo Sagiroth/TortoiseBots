@@ -1,5 +1,6 @@
 #include "BotGearService.h"
 #include "CharacterCleanup.h"
+#include "AhBotSellerAccount.h"
 
 #include "../host/ModuleLog.h"
 
@@ -109,6 +110,12 @@ bool CharacterOwnsAuctions(uint32 guidLow, uint32& count)
 
 bool SettleCharacterAuctions(uint32 guidLow, uint32& settled, std::string& error)
 {
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guidLow))
+    {
+        error = "refusing to settle auctions for AH bot seller character " + std::to_string(guidLow);
+        return false;
+    }
+
     std::vector<OwnedAuction> owned;
     CollectOwnedAuctions(guidLow, owned);
 
@@ -209,6 +216,14 @@ void DeleteCharacterPets(uint32 guidLow)
 
 void DeleteCharacterEverywhere(uint32 guidLow, uint32 accountId)
 {
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guidLow) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(accountId))
+    {
+        sLog.outError("TortoiseBots: refusing to delete AH bot seller character %u on account %u",
+            guidLow, accountId);
+        return;
+    }
+
     // A `.bot gear` pin keys on the character guid; the guid is recycled, so
     // a new character must never inherit the old pin. Dismiss clears it on
     // the live path; this is the backstop for pool resets, GM deletes and
