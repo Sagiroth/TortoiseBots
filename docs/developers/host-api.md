@@ -194,7 +194,7 @@ seam.
 
 Bot AI runs on the normal world/game thread. The core exposes a generic world
 update listener mechanism, and `BotHostAdapter` drives `BotManager` / AI,
-module-owned `PlayerConvenience`, `AhMarketService`, and
+module-owned `PlayerConvenience`, `AhMarketService`, `AhBotService`, and
 `BattlegroundQueueService` updates from that tick. The remote commander's
 binding sweep [#884](https://github.com/Sagiroth/TortoiseBots/issues/884), `BotCommands::UpdateRemoteCommanders` runs there
 too: nothing while no commander is bound, otherwise a once-a-second check of
@@ -722,15 +722,17 @@ group either released (a real player in it or a commander's binding on it)
 or disbanded. A formed group holds the `Dungeon` activity lease on each
 member before inviting, so random-bot services leave the crew alone.
 
-## 17. AH market population (optional, default-off)
+## 17. AH market population and AHBot service
+
+### 17a. Organic AH market (`AhMarketService`, default-on)
 
 `AhMarketService` uses only the native auction transaction path: real bot
 inventory items, `AhAction` pricing/usage values, `GetAuctionDeposit`,
 `GetCheckedAuctionHouseForAuctioneer`, and
-`WorldSession::HandleAuctionSellItem`. Core owns auction/item persistence,
-deposits, limits, and ownership transfer. The service never writes auction
-rows, fabricates items, or runs the donor `ahbot` thread/tables. No DB scan
-per tick, no tick auction scan, no thread, no direct auction writes.
+`WorldSession::HandleAuctionSellItem` (plus `HandleAuctionPlaceBid` for the
+organic `AhMarketBuyer` when a pool bot is already standing at a matching
+auctioneer). Core owns auction/item persistence, deposits, limits, and
+ownership transfer. No per-tick DB scan, no second owner, no buyer teleport.
 
 Auctioneer creature positions are captured once from the core object store,
 validated for overworld/map/terrain/VMap ground and faction (no MMAP/pathfinding),
@@ -750,6 +752,27 @@ per-bot AH action stays independent and never pulls owned/party bots from player
 No per-tick AH/DB scan or new AH-specific core seam is required.
 `AiPlayerbot.AhMarketEnabled=1` is the default; the feature also requires
 `RandomBotAutologin=1`.
+
+### 17b. Offline AHBot stock and buyer (`AhBotService`, default-off)
+
+`AhBotService` (`runtime/AhBotService.{h,cpp}`, ticked right after
+`AhMarketService::Update` when `AiPlayerbot.AhBot.Enabled = 1`) stocks the
+Alliance (`1`), Horde (`6`), and Neutral (`7`) auction houses (or Neutral alone
+when `CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_AUCTION` is enabled) toward
+configured `MinItems`/`MaxItems` targets using dedicated offline seller
+characters managed by `AhBotSellerAccount`, candidate selection from
+`AhBotItemPool`, and pricing/stack sizing from `AhBotPricing`.
+
+All persistence goes through core `Item::CreateItem`, `sAuctionMgr` (`AddAItem`,
+`GetAuctionsMap`, `SendAuctionSuccessfulMail`, `SendAuctionWonMail`),
+`AuctionHouseObject` (`AddAuction`, `RemoveAuction`), `WorldSession` outbid/cancel
+refund paths (or offline `MailDraft` + hardcore/account checks matching core),
+and `AuctionEntry` DB persistence without modifying core code. Listing, buyer,
+early unbid expiry (60 s before core `expireTime` so no expired mail is emitted),
+and first-enable legacy owner-0 cleanup all share the per-tick `TickBudgetUs` and
+`MaxListingsPerTick` budget. Seller mailbox rows are pruned in small batches via
+`AhBotSellerAccount::PurgeSellerMail`. Admin controls live in `.bot ah
+status|reload|empty|update` (`.ahbot` alias).
 
 ## 18. Random-bot auto-create (optional, default-off)
 

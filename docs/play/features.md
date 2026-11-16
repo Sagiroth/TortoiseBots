@@ -187,8 +187,8 @@ New here? Read [Getting Started](getting-started.md) first.
 | Bots earn their gold from kills, quests and sales | Always | — | [Economy](../world/economy.md#economic-philosophy) |
 | Bots sell their loot on the auction house | Yes | [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) | [Auction house](../world/economy.md#living-auction-house) |
 | Bots buy upgrades on the auction house with their own gold | Yes | [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer) | [Auction house](../world/economy.md#living-auction-house) |
-| Made-up listings for an empty auction house | No | [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply) | [Admin tuning](../world/economy.md#market-administration--drop-tuning) |
-| Made-up listings follow the players' levels | No | [`AiPlayerbot.AhMarketDynamicLevel`](../server/settings/economy.md#aiplayerbotahmarketdynamiclevel) | [Admin tuning](../world/economy.md#market-administration--drop-tuning) |
+| Offline AHBot stocks empty or low-population auction houses | No | [`AiPlayerbot.AhBot.Enabled`](../server/settings/economy.md#aiplayerbotahbotenabled) | [Economy settings](../server/settings/economy.md#aiplayerbotahbotenabled) |
+| Offline AHBot buyer bids on and buys player auctions | No | [`AiPlayerbot.AhBot.Buyer.Enabled`](../server/settings/economy.md#aiplayerbotahbotbuyerenabled) | [Economy settings](../server/settings/economy.md#aiplayerbotahbotbuyerenabled) |
 
 ## Dungeon Finder & Battlegrounds
 

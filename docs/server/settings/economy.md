@@ -23,21 +23,27 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 | [`AiPlayerbot.AhMarketEnabled`](#aiplayerbotahmarketenabled) | `1` | Enables bots posting surplus items and bidding from their own bags on the Auction House. |
 | [`AiPlayerbot.AhMarketInterval`](#aiplayerbotahmarketinterval) | `120` | Interval in seconds between seller ticks that attempt bot auction postings. |
 | [`AiPlayerbot.AhMarketBatchSize`](#aiplayerbotahmarketbatchsize) | `1` | Maximum bots (one listing each) attempted per seller tick (effective 1..5). |
-| [`AiPlayerbot.AhMarketSyntheticSupply`](#aiplayerbotahmarketsyntheticsupply) | `0` | Injects synthetic profession materials and gear to stock empty auction houses. |
 | [`AiPlayerbot.AhMarketBuyer`](#aiplayerbotahmarketbuyer) | `1` | Pool bots standing at an auctioneer bid on and buy auctions with their own gold. |
-| [`AiPlayerbot.AhMarketBudgetUs`](#aiplayerbotahmarketbudgetus) | `2000` | Microsecond time budget ceiling per world tick for the synthetic-market engine. |
-| [`AiPlayerbot.AhMarketMaxOperations`](#aiplayerbotahmarketmaxoperations) | `32` | Maximum synthetic-market engine work steps processed per tick. |
-| [`AiPlayerbot.AhMarketChanceSell`](#aiplayerbotahmarketchancesell) | `10` | Percentage chance per engine cycle to generate a synthetic supply batch. |
-| [`AiPlayerbot.AhMarketChanceBuy`](#aiplayerbotahmarketchancebuy) | `10` | Percentage chance per engine cycle to scan listings for synthetic buyer bids. |
+| [`AiPlayerbot.AhMarketBudgetUs`](#aiplayerbotahmarketbudgetus) | `2000` | Microsecond time budget ceiling per world tick for the organic buyer scan. |
+| [`AiPlayerbot.AhMarketMaxOperations`](#aiplayerbotahmarketmaxoperations) | `32` | Maximum organic buyer scan work steps processed per tick. |
+| [`AiPlayerbot.AhMarketChanceBuy`](#aiplayerbotahmarketchancebuy) | `10` | Percentage chance per cycle to scan listings for organic buyer bids. |
 | [`AiPlayerbot.AhMarketBuyValue`](#aiplayerbotahmarketbuyvalue) | `80` | Required perceived value percentage before a bot purchases an auction. |
-| [`AiPlayerbot.AhMarketMaxSpendPerBot`](#aiplayerbotahmarketmaxspendperbot) | `0` | Maximum copper for a single synthetic-market purchase (0 = no cap). |
-| [`AiPlayerbot.AhMarketMaxQuality`](#aiplayerbotahmarketmaxquality) | `4` | Maximum item quality (0 poor to 6 artifact) for synthetic auctions. |
-| [`AiPlayerbot.AhMarketMaxLevel`](#aiplayerbotahmarketmaxlevel) | `60` | Maximum required level cap for synthetic auction stock. |
-| [`AiPlayerbot.AhMarketDynamicLevel`](#aiplayerbotahmarketdynamiclevel) | `0` | Dynamically adjusts synthetic auction stock level caps toward online players. |
-| [`AiPlayerbot.AhMarketLevelRefresh`](#aiplayerbotahmarketlevelrefresh) | `600` | Seconds between recalculations of synthetic stock level caps. |
-| [`AiPlayerbot.AhMarketVariance`](#aiplayerbotahmarketvariance) | `10` | Percentage price variance applied to baseline market valuations. |
-| [`AiPlayerbot.AhMarketBidMin` / `AhMarketBidMax`](#aiplayerbotahmarketbidmin--ahmarketbidmax) | `75` / `90` (BidMax built in) | Percentage range of buyout price used for opening auction bids. |
-| [`AiPlayerbot.AhMarketTimeMin` / `AhMarketTimeMax`](#aiplayerbotahmarkettimemin--ahmarkettimemax) | `8` / `24` (TimeMin built in) | Duration range in hours for posted synthetic auction listings. |
+| [`AiPlayerbot.AhMarketMaxSpendPerBot`](#aiplayerbotahmarketmaxspendperbot) | `0` | Maximum copper for a single organic buyer purchase (0 = no cap). |
+| [`AiPlayerbot.AhMarketVariance`](#aiplayerbotahmarketvariance) | `10` | Percentage price variance applied to organic buyer baseline valuations. |
+| [`AiPlayerbot.AhBot.Enabled`](#aiplayerbotahbotenabled) | `0` | Master toggle for the offline AHBot service (stocks houses toward Min/Max targets). |
+| [`AiPlayerbot.AhBot.MinutesBetweenSellCycle`](#aiplayerbotahbotminutesbetweensellcycle) | `1` | Minutes between AHBot sell cycles (`N` or `min:max`). |
+| [`AiPlayerbot.AhBot.MinutesBetweenBuyCycle`](#aiplayerbotahbotminutesbetweenbuycycle) | `1` | Minutes between AHBot buy cycles (`N` or `min:max`). |
+| [`AiPlayerbot.AhBot.ItemsPerCycle`](#aiplayerbotahbotitemspercycle) | `150` | Maximum new listings added per enabled auction house in one sell cycle. |
+| [`AiPlayerbot.AhBot.ListingExpireTimeInSecondsMin` / `Max`](#aiplayerbotahbotlistingexpiretimeinsecondsmin--max) | `900` / `86400` | Duration range in seconds for AHBot listings (bounds `900..172800`). |
+| [`AiPlayerbot.AhBot.Alliance.MinItems` / `MaxItems`](#aiplayerbotahbotallianceminitems--maxitems) | `3000` / `3000` | Minimum and maximum listing targets for the Alliance auction house (`0` disables). |
+| [`AiPlayerbot.AhBot.Horde.MinItems` / `MaxItems`](#aiplayerbotahhordeminitems--maxitems) | `3000` / `3000` | Minimum and maximum listing targets for the Horde auction house (`0` disables). |
+| [`AiPlayerbot.AhBot.Neutral.MinItems` / `MaxItems`](#aiplayerbotahbotneutralminitems--maxitems) | `3000` / `3000` | Minimum and maximum listing targets for the Neutral auction house (`0` disables). |
+| [`AiPlayerbot.AhBot.Buyer.Enabled`](#aiplayerbotahbotbuyerenabled) | `0` | Enables the AHBot buyer to bid on and buy out non-AHBot auctions. |
+| [`AiPlayerbot.AhBot.Buyer.BuyCandidatesPerBuyCycle`](#aiplayerbotahbotbuyerbuycandidatesperbuycycle) | `1` | Candidate auctions evaluated per enabled house each buy cycle (`N` or `min:max`). |
+| [`AiPlayerbot.AhBot.Buyer.AlwaysBidMaxCalculatedPrice`](#aiplayerbotahbotbuyeralwaysbidmaxcalculatedprice) | `0` | Bids the full calculated fair value instead of the minimum next bid. |
+| [`AiPlayerbot.AhBot.Buyer.PreventOverpayingForVendorItems`](#aiplayerbotahbotbuyerpreventoverpayingforvendoritems) | `1` | Prevents the AHBot buyer from paying above vendor sell price on vendor items. |
+| [`AiPlayerbot.AhBot.Buyer.BidAgainstPlayers`](#aiplayerbotahbotbuyerbidagainstplayers) | `0` | Allows the AHBot buyer to outbid auctions that already have a bid. |
+| [`AiPlayerbot.AhBot.TickBudgetUs` / `MaxListingsPerTick`](#aiplayerbotahbottickbudgetus--maxlistingspertick) | `2000` / `10` | Per-tick microsecond budget and operation cap for AHBot sell/buy/cleanup work. |
 | [`AiPlayerbot.AuctionPriceRefreshInterval`](#aiplayerbotauctionpricerefreshinterval) | `60` (built in; the key is not in the template — add it to `aiplayerbot.conf` to change it) | Seconds between market price evaluation sweeps. |
 | [`AiPlayerbot.AhSellBlacklist`](#aiplayerbotahsellblacklist) | `18256` | Item ids bots never post to the auction house. |
 | [`AiPlayerbot.VendorBatchMinCount` / `VendorBatchMinBagSpace`](#aiplayerbotvendorbatchmincount--vendorbatchminbagspace) | `8` / `60` | Inventory thresholds that trigger vendor selling trips for level 5+ bots. |
@@ -85,21 +91,8 @@ Caps the number of eligible seller bots attempted per seller tick (0 is treated 
 
 </details>
 
-### `AiPlayerbot.AhMarketSyntheticSupply`
-Injects simulated auctions to populate the market on low-population servers.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-On servers with small populations, natural bot drops alone may leave the Auction House sparsely stocked.
-
-When enabled, the service periodically generates synthetic listings of crafting supplies, consumables, and gear appropriate to server progression. Synthetic items are tagged as ownerless internally and isolated from real player inventories.
-
-</details>
-
 ### `AiPlayerbot.AhMarketBuyer`
-Pool bots standing at an auctioneer bid on and buy auctions with their own gold (not synthetic).
+Pool bots standing at an auctioneer bid on and buy auctions with their own gold.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
@@ -112,46 +105,35 @@ Purchases are organic: only bots already standing at an auctioneer bid, and only
 </details>
 
 ### `AiPlayerbot.AhMarketBudgetUs`
-Microsecond execution budget allocated per world tick for the synthetic-market engine.
+Microsecond execution budget allocated per world tick for the organic buyer scan.
 **Default:** `2000` · **Values:** microseconds (100..20000) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Caps the CPU time spent on the synthetic-market engine within any single server tick. The service yields work when this budget is reached, preventing auction processing from causing world tick latency.
+Caps the CPU time spent on the organic buyer scan within any single server tick. The service yields work when this budget is reached, preventing auction processing from causing world tick latency.
 
 </details>
 
 ### `AiPlayerbot.AhMarketMaxOperations`
-Maximum number of synthetic-market engine work steps processed during a single server tick.
+Maximum number of organic buyer scan work steps processed during a single server tick.
 **Default:** `32` · **Values:** operations (1..256) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Places a hard ceiling on synthetic-market engine work steps handled per tick, even if time remains within `AhMarketBudgetUs`.
-
-</details>
-
-### `AiPlayerbot.AhMarketChanceSell`
-Percentage chance per engine cycle to generate a synthetic supply batch.
-**Default:** `10` · **Values:** percentage (0..100) · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-Determines how likely the market engine is to build and post a synthetic supply batch when `AiPlayerbot.AhMarketSyntheticSupply` is on.
+Places a hard ceiling on organic buyer scan work steps handled per tick, even if time remains within `AhMarketBudgetUs`.
 
 </details>
 
 ### `AiPlayerbot.AhMarketChanceBuy`
-Percentage chance per engine cycle that the market engine looks for auctions for bot buyers.
+Percentage chance per engine cycle that the organic buyer enters a house scan.
 **Default:** `10` · **Values:** percentage (0..100) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Controls how likely the market engine is to enter the buyer scan when `AiPlayerbot.AhMarketBuyer` is on.
+Controls how likely the organic market service is to enter the buyer scan when `AiPlayerbot.AhMarketBuyer` is on.
 
 </details>
 
@@ -167,7 +149,7 @@ A higher threshold makes the buyer more discerning, requiring listings to be pri
 </details>
 
 ### `AiPlayerbot.AhMarketMaxSpendPerBot`
-Maximum copper amount for a single buyer bid or buyout.
+Maximum copper amount for a single organic buyer bid or buyout.
 **Default:** `0` · **Values:** copper amount (0 = no cap) · **Restart:** needed
 
 <details>
@@ -177,82 +159,86 @@ Refuses any single bid or buyout above this price; it does not track cumulative 
 
 </details>
 
-### `AiPlayerbot.AhMarketMaxQuality`
-Maximum item quality generated for synthetic auction supply listings.
-**Default:** `4` · **Values:** `0` poor, `1` common, `2` uncommon, `3` rare, `4` epic, `5` legendary, `6` artifact (values above 6 are clamped to 6) · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-Restricts the quality tier of items generated by `AiPlayerbot.AhMarketSyntheticSupply`. A value of `3` restricts synthetic auctions to rare (blue) items and below, while `4` allows epic (purple) items. Only stackable items can be generated.
-
-</details>
-
-### `AiPlayerbot.AhMarketMaxLevel`
-Maximum required level cap for synthetic auction supply listings. Only takes effect when `AiPlayerbot.AhMarketDynamicLevel = 1`.
-**Default:** `60` · **Values:** required level (1..60) · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-Sets an upper bound on required level and item level for synthetically generated auction goods. In static mode (`AiPlayerbot.AhMarketDynamicLevel = 0`) the caps stay fixed at required level 60 and item level 255, so changing this key alone does nothing.
-
-</details>
-
-### `AiPlayerbot.AhMarketDynamicLevel`
-Dynamically adjusts synthetic auction stock level caps toward currently online players.
-**Default:** `0` · **Values:** `0` static, `1` dynamic · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-When enabled, the service sets the synthetic stock level caps from the highest-level online player, falling back to the highest-level online session (usually a bot). `AiPlayerbot.AhMarketMaxLevel` applies only when nothing is online at all. Until the first recalculation, the caps start at required level 60 and item level 255.
-
-</details>
-
-### `AiPlayerbot.AhMarketLevelRefresh`
-Interval in seconds between recalculations of synthetic stock level caps.
-**Default:** `600` · **Values:** seconds (60..86400) · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-Defines how often the level sampler runs when `AhMarketDynamicLevel = 1`.
-
-</details>
-
 ### `AiPlayerbot.AhMarketVariance`
-Percentage price variance applied to baseline market valuations.
+Percentage price variance applied to organic buyer baseline market valuations.
 **Default:** `10` · **Values:** percentage (0..100) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Introduces randomized price fluctuations above and below standard item values, creating realistic market variation across different sellers.
+Introduces randomized price fluctuations above and below baseline item valuations when the organic buyer estimates fair value.
 
 </details>
 
-### `AiPlayerbot.AhMarketBidMin` / `AhMarketBidMax`
-Percentage range of the buyout price used when calculating an auction's opening bid.
-**Default:** `75` / `90` (AhMarketBidMax is built in; the key is not in the template — add it to `aiplayerbot.conf` to change it) · **Values:** percentage (1..100) · **Restart:** needed
+### `AiPlayerbot.AhBot.Enabled`
+Master switch for the offline AHBot stock and buyer service.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed (or `.bot ah reload` for pool/pricing/targets)
 
 <details>
 <summary>How it works in detail</summary>
 
-When a synthetic auction is posted with a buyout price, its opening starting bid is rolled between these two percentages of the buyout price. If min is set above max, min is lowered to max.
+When enabled, the service maintains dedicated offline seller characters, removes any leftover legacy owner-0 listings, removes its own unbid listings just before core expiry so no expired mail accumulates, and stocks each enabled auction house toward its configured minimum/maximum item counts.
 
 </details>
 
-### `AiPlayerbot.AhMarketTimeMin` / `AhMarketTimeMax`
-Duration range in hours for posted synthetic auction listings.
-**Default:** `8` / `24` (AhMarketTimeMin is built in; the key is not in the template — add it to `aiplayerbot.conf` to change it) · **Values:** hours (1..72; if min is above max it is lowered to max) · **Restart:** needed
+### `AiPlayerbot.AhBot.MinutesBetweenSellCycle`
+Minutes to wait between AHBot sell cycles.
+**Default:** `1` · **Values:** minutes (`N` or `min:max`, clamped to `1..1440`) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.MinutesBetweenBuyCycle`
+Minutes to wait between AHBot buy cycles.
+**Default:** `1` · **Values:** minutes (`N` or `min:max`, clamped to `1..1440`) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.ItemsPerCycle`
+Maximum number of new listings posted per enabled auction house in one sell cycle.
+**Default:** `150` · **Values:** non-negative integer · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.ListingExpireTimeInSecondsMin` / `Max`
+Random duration range in seconds for newly posted AHBot listings.
+**Default:** `900` / `86400` · **Values:** seconds (`900..172800`) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Alliance.MinItems` / `MaxItems`
+Listing count thresholds for the Alliance auction house (house `1`).
+**Default:** `3000` / `3000` · **Values:** integers (`MaxItems = 0` disables stocking that house) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Horde.MinItems` / `MaxItems`
+Listing count thresholds for the Horde auction house (house `6`).
+**Default:** `3000` / `3000` · **Values:** integers (`MaxItems = 0` disables stocking that house) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Neutral.MinItems` / `MaxItems`
+Listing count thresholds for the Neutral auction house (house `7`, also used alone when cross-faction AH is enabled).
+**Default:** `3000` / `3000` · **Values:** integers (`MaxItems = 0` disables stocking that house) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Buyer.Enabled`
+Enables the AHBot buyer to evaluate and bid on or buy out non-AHBot listings.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** `.bot ah reload`
 
 <details>
 <summary>How it works in detail</summary>
 
-Sets the minimum and maximum duration in hours for posted synthetic auctions before they expire if unpurchased. Expired synthetic auctions with no bids are deleted; auctions with active bids are never expired early.
+Requires `AiPlayerbot.AhBot.Enabled = 1`. Evaluates auctions not owned by AHBot sellers using the configured fair-value pricing and places bids or buyouts through the core auction and mail paths.
 
 </details>
+
+### `AiPlayerbot.AhBot.Buyer.BuyCandidatesPerBuyCycle`
+Number of candidate auctions evaluated per enabled house each buy cycle.
+**Default:** `1` · **Values:** count (`N` or `min:max`, clamped to `1..1000`) · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Buyer.AlwaysBidMaxCalculatedPrice`
+Bids the buyer's full calculated fair value instead of the minimum next bid increment.
+**Default:** `0` · **Values:** `0` minimum bid, `1` full fair value · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Buyer.PreventOverpayingForVendorItems`
+Prevents the AHBot buyer from bidding or buying out non-trade-good vendor items above their vendor sell price.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.Buyer.BidAgainstPlayers`
+Allows the AHBot buyer to outbid auctions that already have an active bid.
+**Default:** `0` · **Values:** `0` unbid only, `1` may outbid existing bids · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.TickBudgetUs` / `MaxListingsPerTick`
+Per-tick microsecond time budget and maximum listing/buyer/cleanup operations processed on one world tick.
+**Default:** `2000` / `10` · **Values:** microseconds (`100..50000`) / operations (`1..150`) · **Restart:** `.bot ah reload`
 
 ### `AiPlayerbot.AuctionPriceRefreshInterval`
 Interval in seconds between background auction price and market valuation updates.
@@ -372,3 +358,21 @@ Tops a broke masterless pool bot's purse up to what its next class-trainer visit
 With the key on, a pool bot that reaches a new level holding less than its next trainer visit costs (every trainable class rank plus the repair, ammo, auction-house and guild reserves the trainer trip keeps aside) is topped up to that amount, capped at 1 gold per bot level. A bot that already has the money gets nothing, and the top-up runs once per level. Hired, guild-claimed and player-grouped bots are never paid. Each top-up writes a `PoolMoneyTopUp` row to `bot_events.csv`.
 
 </details>
+
+## Removed settings
+
+The legacy synthetic AH supply settings and the `ahbot_items` override table have been removed. Existing `aiplayerbot.conf` files containing these keys still load cleanly (unknown keys are ignored).
+
+| Removed setting | Replacement |
+| :--- | :--- |
+| `AiPlayerbot.AhMarketSyntheticSupply` | `AiPlayerbot.AhBot.Enabled` (offline AHBot stock service, default `0`) |
+| `AiPlayerbot.AhMarketChanceSell` | `AiPlayerbot.AhBot.MinutesBetweenSellCycle` + `AiPlayerbot.AhBot.ItemsPerCycle` + `AiPlayerbot.AhBot.<House>.MinItems`/`MaxItems` |
+| `AiPlayerbot.AhMarketMaxQuality` | `AiPlayerbot.AhBot.ListProportion.Category*.Quality*` (set quality weights to `0` to exclude) |
+| `AiPlayerbot.AhMarketMaxLevel` | `AiPlayerbot.AhBot.EquipItemUseOrEquipLevelRestrict.*` |
+| `AiPlayerbot.AhMarketDynamicLevel` | None (replaced by fixed level/item-level filter config) |
+| `AiPlayerbot.AhMarketLevelRefresh` | None (dynamic level sampler removed) |
+| `AiPlayerbot.AhMarketBidMin` | `AiPlayerbot.AhBot.BidVariationLowReducePercent` |
+| `AiPlayerbot.AhMarketBidMax` | `AiPlayerbot.AhBot.BidVariationHighReducePercent` |
+| `AiPlayerbot.AhMarketTimeMin` | `AiPlayerbot.AhBot.ListingExpireTimeInSecondsMin` (seconds, default `900`) |
+| `AiPlayerbot.AhMarketTimeMax` | `AiPlayerbot.AhBot.ListingExpireTimeInSecondsMax` (seconds, default `86400`) |
+| `ahbot_items` table & `.bot ah item` / `rebuild` | `AiPlayerbot.AhBot.CompleteItemValueOverride.*`, `Disabled*`, `.bot ah reload` / `empty` / `update` |

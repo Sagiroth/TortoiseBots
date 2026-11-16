@@ -85,8 +85,8 @@ flowchart TD
 - **Native mail settlement:** All bot auction transactions use core mail systems. When a bot purchases an auction listed by a human player, gold is delivered directly to the player's in-game mailbox.
 - **Getting to the auction house:** Bots walk to the auction house on their own continent (same map; cross-map listings never open a trip). A bot already on its way there, or within 300 yards of it, is moved the last stretch onto the auctioneer; nobody is teleported across the world to sell.
 - **Settings:** Bots selling is [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) and bots buying with their own gold is [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer); both are on.
-- Made-up listings for an empty auction house are [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply), off by default.
-- Chance, value, spend, quality, level, variance, bid, and duration tuning live in [Economy settings](../server/settings/economy.md).
+- **Stocking an empty or low-population AH (AHBot):** Server admins can optionally enable [`AiPlayerbot.AhBot.Enabled`](../server/settings/economy.md#aiplayerbotahbotenabled) (`0` off by default) to keep Alliance, Horde, and Neutral auction houses stocked via dedicated offline seller characters, and [`AiPlayerbot.AhBot.Buyer.Enabled`](../server/settings/economy.md#aiplayerbotahbotbuyerenabled) (`0` off by default) to bid on and buy out fairly priced listings.
+- Cycle pacing, house targets, buyer rules, and per-tick budgets live in [Economy settings](../server/settings/economy.md).
 
 <details>
 <summary>Organic buyer mechanics in detail</summary>
