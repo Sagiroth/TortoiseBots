@@ -2105,6 +2105,7 @@
           ['Level ladder', flagBadge(bots.level_ladder), cfg('LevelLadder')],
           ['Activity priorities off', flagBadge(bots.disable_activity), cfg('DisableActivityPriorities')]
         ])}
+        ${poolSection(info.pool, num, cfg)}
         ${settingsSection('DIAGNOSTICS · LOGS', [
           ['PerfMon', flagBadge(diag.perf_mon), cfg('PerfMonEnabled')],
           ['bot_events log', flagBadge(diag.bot_events), 'forwarded activity stream (bot_events.csv)'],
@@ -2112,6 +2113,34 @@
           ['deaths log', flagBadge(diag.deaths), 'deaths.csv']
         ])}
       </div>`;
+  }
+
+  // Days for long spans (a level 60's turn comes about once a week), else h/m.
+  function fmtSpan(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    if (sec >= 86400) return `${(sec / 86400).toFixed(1)} d`;
+    return fmtDuration(sec);
+  }
+
+  // Pool health and lineages: every pool character per level band (not only
+  // the online ones), alts rolled by level 60s, and the safety ceiling.
+  function poolSection(pool, num, cfg) {
+    if (!pool) return '';
+    const ceilingHit = pool.ceiling_reached === '1';
+    const bands = (Array.isArray(pool.bands) ? pool.bands : [])
+      .map(b => `${esc(b.name)}: <strong>${esc(b.pool)}</strong> <span class="setting-dim">(${esc(b.online)}/${esc(b.target)} online)</span>`).join('<br>');
+    const mb = Number(pool.character_db_bytes) > 0 ? `${(Number(pool.character_db_bytes) / 1048576).toFixed(0)} MB` : '–';
+    return settingsSection('POOL · LINEAGES', [
+      ['Lineage alts', flagBadge(pool.lineage), cfg('RandomBotLineage')],
+      ['Pool characters', `${num(pool.total)} / ceiling ${num(pool.ceiling)}${ceilingHit ? ' <span class="badge badge-error" title="No new alts are created; nothing is deleted">ceiling reached</span>' : ''}`, cfg('LineagePoolCeiling')],
+      ['Below level 60', `${num(pool.low_pool)} / wanted ${num(pool.low_wanted)}`, cfg('LineageLowBandReserve')],
+      ['Alts created', `${num(pool.alts)} · ${num(pool.alts_24h)} in 24 h (max ${num(pool.per_hour)}/h)`, cfg('LineagePerHour')],
+      ['Alts by faction', `Alliance ${num(pool.alts_alliance)} · Horde ${num(pool.alts_horde)}`, ''],
+      ['Level 60s', num(pool.sixty), ''],
+      ['Longest-unseen 60', `${esc(fmtSpan(pool.oldest_sixty_unseen_sec))} <span class="setting-dim">(expected turn every ${esc(fmtSpan(pool.sixty_cycle_sec))})</span>`, ''],
+      ['Character database', esc(mb), ''],
+      ['Pool per band', bands || '–', '']
+    ]);
   }
 
   // Pool gear summary for the diagnostic report: average equipped item level
@@ -2150,6 +2179,7 @@
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
       `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}${b.gear_bots ? `/ilvl${b.avg_item_level.toFixed(1)}` : ''}`).join(' ')}`,
       `- gear: ${gearDiagLine()}`,
+      `- lineages: ${(() => { const p = info.pool; if (!p) return 'no data'; return `on=${on(p.lineage)} pool=${p.total}/${p.ceiling} ceiling_reached=${on(p.ceiling_reached)} below60=${p.low_pool}/${p.low_wanted} sixty=${p.sixty} alts=${p.alts} alts24h=${p.alts_24h} A/H=${p.alts_alliance}/${p.alts_horde} oldest60=${Math.round((p.oldest_sixty_unseen_sec || 0) / 3600)}h cycle=${Math.round((p.sixty_cycle_sec || 0) / 3600)}h db=${Math.round((p.character_db_bytes || 0) / 1048576)}MB`; })()}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
       `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=${counterWindow()} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
@@ -4315,6 +4345,8 @@
       html += `<div class="offline-note profile-section">Offline — no live status. Everything else comes from the database.</div>`;
     }
 
+    html += lineageHtml(state.profile && state.profile.lineage, guid);
+
     if (mine.length || past.length) {
       html += `<div class="profile-section"><div class="section-label">Issues</div>
         ${mine.map(i => `<div class="issue-chip ${esc(i.severity)}"><span>${esc(ISSUE_LABELS[i.type] || i.type)} · ${esc(getZoneName(i.zone, i.map))}</span><span class="mono">${esc(fmtDuration(i.duration_sec))}</span></div>`).join('')}
@@ -4339,6 +4371,31 @@
           : '<div class="empty-hint">No world PvP fights recorded this session.</div>'
     }</div>`;
     host.innerHTML = html;
+  }
+
+  // The character's lineage: "alt of X" and every member of the line, founder first.
+  function lineageHtml(lin, guid) {
+    if (!lin || !Array.isArray(lin.members) || lin.members.length < 2) return '';
+    const day = t => (t ? new Date(t * 1000).toISOString().slice(0, 10) : DASH);
+    const nameOf = m => {
+      const cls = classNameById(m.class);
+      const label = m.name || `#${m.guid}`;
+      if (m.guid === guid) return `<strong style="color: ${classColor(cls)};">${esc(label)}</strong>`;
+      return m.gone ? `<span class="cell-muted">${esc(label)} (deleted)</span>` : botLink(m.guid, label, cls);
+    };
+    const founder = lin.members[0];
+    const parent = lin.parent_guid ? lin.members.find(m => m.guid === lin.parent_guid) : null;
+    const rows = lin.members.map(m => `<tr>
+        <td>${nameOf(m)}${m.guid === founder.guid ? ' <span class="badge" title="First character of the line">founder</span>' : ''}</td>
+        <td>${esc(classNameById(m.class) || '')}</td>
+        <td class="mono">${m.gone ? DASH : esc(m.level)}</td>
+        <td class="mono">${m.guid === founder.guid ? DASH : day(m.created)}</td>
+        <td class="mono">${day(m.reached_60)}</td>
+        <td class="mono">${m.online ? 'online' : day(m.last_online)}</td>
+      </tr>`).join('');
+    return `<div class="profile-section"><div class="section-label">Lineage${parent ? ` · alt of ${nameOf(parent)}` : ''}</div>
+      <table class="data-table"><thead><tr><th>Character</th><th>Class</th><th>Level</th><th>Created</th><th>Reached 60</th><th>Last online</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
   }
 
   // Everything that depends on the database profile: header, paperdoll, stats

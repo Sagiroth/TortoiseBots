@@ -37,6 +37,20 @@ Adoption runs **only at the server console**:
 
 Confirming is idempotent: already-registered accounts are counted, not errored. Adoption only adds registry rows. It never deletes, renames, or modifies characters or accounts.
 
+## Lineages: level 60s roll new level 1 alts
+
+Pool bots level on their own, so given enough time the whole pool reaches level 60 and the low zones empty. Lineages keep them alive without a reset: when the pool holds too few characters below level 60, a level 60 pool bot "rolls an alt", a new level 1 character, the way a veteran player starts an alt. The 60 is not removed; it stays in the pool and keeps taking turns online.
+
+- **When:** once a minute the server counts the pool characters below level 60. While there are fewer than [`LineageLowBandReserve`](settings/world-population.md#aiplayerbotlineagelowbandreserve) times the number the [level ladder](settings/world-population.md#aiplayerbotlevelladder) wants online in those bands, it rolls alts, spaced out to at most [`LineagePerHour`](settings/world-population.md#aiplayerbotlineageperhour) per hour. It stops by itself once there are enough, and never runs during a pool reset.
+- **Who:** a level 60 pool bot from the smallest lineage. Hired companions, pinned bots, claimed guild bots and the player's own characters never roll alts.
+- **The alt:** always level 1 (the start-level range only populates a fresh world), same faction as the parent on any pool account of that faction (a new account when they are all full), a class the lineage does not have yet (random once all are taken), any race of the faction and a new name. No gold or items from the parent. It joins the parent's guild when [`LineageJoinParentGuild`](settings/world-population.md#aiplayerbotlineagejoinparentguild) is on, the guild has only bots, and it is below [`GuildMaxBotLimit`](settings/world-population.md#aiplayerbotguildmaxbotlimit).
+- **No extra CPU:** the number of bots online does not change. The level ladder simply finds someone to log in at low level again.
+- **Nothing is deleted.** At [`LineagePoolCeiling`](settings/world-population.md#aiplayerbotlineagepoolceiling) times the online bot count no more alts are created, the server log says so once and the dashboard shows "ceiling reached".
+
+Each alt is recorded in the `tortoise_bots_lineage` table with its parent, the founder (the first character of the line), its name, race and class at creation, when it was created and when it reached 60. Existing characters are founders of their own line, so nothing needs migrating. A pool reset clears the table.
+
+The dashboard shows the line on a bot's page ("alt of X", every member with class, level, created, reached 60 and last online) and pool health on the Server panel: pool characters per level band, alts per day and per faction, the longest a level 60 has gone unseen against its expected turn, the distance to the ceiling and the character database size.
+
 ## Resetting the Managed Bot Pool
 
 Use a reset when fresh-character rules change (level seeding, starter gear, talent or profession seeding) and you want every pool character regenerated. The reset deletes all managed characters but keeps the login accounts, so auto-create refills the pool with new characters.
@@ -79,7 +93,7 @@ Set [`AiPlayerbot.RandomBotPoolReset`](settings/world-population.md#aiplayerbotr
 ### What a Reset Intentionally Deletes
 
 - Character progress for pool bots: levels, equipment, inventory, bank, quests, professions (deleted through core character deletion).
-- Module rows tied to those characters: AI state, custom strategies, ownership, hire ledger, armory snapshots, hire-unlock kills, transmogs, unclaimed guild claims, guild orders.
+- Module rows tied to those characters: AI state, custom strategies, ownership, hire ledger, armory snapshots, hire-unlock kills, transmogs, unclaimed guild claims, guild orders, lineage records.
 - Hired mercenaries riding pool accounts: their hire state is forgotten and ledger rows go with the character.
 - Guilds made up only of pool bots, as a side effect of deleting every member.
 - Active auction listings posted by pool bots, after refunding bidders by mail. Hardcore bidders follow core rules and are not refunded. If a bidder cannot be resolved, the reset stops before deleting the listing.
