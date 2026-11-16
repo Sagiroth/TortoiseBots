@@ -340,8 +340,11 @@ void TestProportionsAndMultipliers()
     double const ratio = static_cast<double>(c2589) / static_cast<double>(c2590);
     CHECK(ratio > 9.0 && ratio < 11.0);
 
+    table.SetPhaseStats(2, 17);
     std::string const status = table.GetStatus();
     CHECK(status.find("candidates=3") != std::string::npos);
+    CHECK(status.find("phase=2") != std::string::npos);
+    CHECK(status.find("lockedByPhase=17") != std::string::npos);
     CHECK(status.find("TradeGood") != std::string::npos);
     CHECK(status.find("Weapon") != std::string::npos);
 
@@ -352,6 +355,58 @@ void TestProportionsAndMultipliers()
     CHECK(table.Pick(nextRand) == 0);
 }
 
+void TestContentPhaseRules()
+{
+    // Source phase combination: empty/no-spawn -> 0, world+raid -> 0, raid-only -> min raid phase
+    CHECK(ai::AhBotCombineSourcePhases({}) == 0);
+    CHECK(ai::AhBotCombineSourcePhases({ 1 }) == 1);
+    CHECK(ai::AhBotCombineSourcePhases({ 0, 1 }) == 0);
+    CHECK(ai::AhBotCombineSourcePhases({ 2, 1, 3 }) == 1);
+
+    // Crafted item phase combination
+    // 1) Recipe only in ZG (phase 1) with phase-0 reagents -> crafted item phase 1
+    CHECK(ai::AhBotCombineCraftedPhase(1, { 0, 0 }) == 1);
+    // 2) Trainer recipe (learnPhase 0) with an Elementium reagent (phase 1) -> phase 1
+    CHECK(ai::AhBotCombineCraftedPhase(0, { 0, 1 }) == 1);
+    // 3) Phase-1 recipe with phase-3 reagent -> phase 3
+    CHECK(ai::AhBotCombineCraftedPhase(1, { 3 }) == 3);
+    // 4) Trainer recipe with no reagents -> phase 0
+    CHECK(ai::AhBotCombineCraftedPhase(0, {}) == 0);
+
+    // Candidate filtering across content phases 1..4 (0..3) and RespectContentPhase toggle
+    ai::AhBotItemFilterConfig cfg;
+    cfg.respectContentPhase = true;
+    cfg.contentPhase = 0; // Phase 1
+
+    auto worldItem = MakeValidItem(700, ai::kAhBotClassTradeGoods, ai::kAhBotQualityNormal);
+    worldItem.contentPhase = ai::AhBotCombineSourcePhases({ 0, 1 });
+    CHECK(worldItem.contentPhase == 0);
+    CHECK(ai::AhBotIsItemCandidate(worldItem, cfg));
+
+    auto bwlItem = MakeValidItem(18562, ai::kAhBotClassTradeGoods, ai::kAhBotQualityEpic);
+    bwlItem.contentPhase = ai::AhBotCombineSourcePhases({ 1 });
+    CHECK(!ai::AhBotIsItemCandidate(bwlItem, cfg)); // locked at phase 1
+
+    auto naxxItem = MakeValidItem(22682, ai::kAhBotClassTradeGoods, ai::kAhBotQualityRare);
+    naxxItem.contentPhase = 3;
+    CHECK(!ai::AhBotIsItemCandidate(naxxItem, cfg));
+
+    // Phase 2 unlocks BWL/ZG/ES (phase 1) while keeping AQ/Naxx locked
+    cfg.contentPhase = 1;
+    CHECK(ai::AhBotIsItemCandidate(bwlItem, cfg));
+    CHECK(!ai::AhBotIsItemCandidate(naxxItem, cfg));
+
+    // Phase 4 unlocks everything
+    cfg.contentPhase = 3;
+    CHECK(ai::AhBotIsItemCandidate(naxxItem, cfg));
+
+    // RespectContentPhase = 0 lists everything even at phase 1
+    cfg.contentPhase = 0;
+    cfg.respectContentPhase = false;
+    CHECK(ai::AhBotIsItemCandidate(bwlItem, cfg));
+    CHECK(ai::AhBotIsItemCandidate(naxxItem, cfg));
+}
+
 } // namespace
 
 int main()
@@ -360,6 +415,7 @@ int main()
     TestContentAndPriceFilters();
     TestRestrictionsAndParsing();
     TestProportionsAndMultipliers();
+    TestContentPhaseRules();
     std::printf("OK (%d checks passed)\n", g_checks);
     return 0;
 }

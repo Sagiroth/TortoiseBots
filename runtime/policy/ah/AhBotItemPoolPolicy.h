@@ -321,6 +321,9 @@ struct AhBotItemFilterConfig
     bool disabledRecipeProducedFilterEnabled = false;
     std::map<uint32_t, std::unordered_set<uint32_t>> disabledRecipeProducedClassSubClasses;
     std::set<uint32_t> disabledItems;
+
+    bool respectContentPhase = true;
+    uint32_t contentPhase = 0;
 };
 
 struct AhBotItemFacts
@@ -346,7 +349,28 @@ struct AhBotItemFacts
     bool isObtainable = false;
     bool isSoldByUnlimitedVendor = false;
     bool isProducedByRecipe = false;
+    uint32_t contentPhase = 0;
 };
+
+// Returns the earliest phase across all known sources of an item (0 when empty).
+inline uint32_t AhBotCombineSourcePhases(std::vector<uint32_t> const& sourcePhases)
+{
+    if (sourcePhases.empty())
+        return 0;
+    return *std::min_element(sourcePhases.begin(), sourcePhases.end());
+}
+
+// Crafted item phase is gated by both learning the recipe/spell and obtaining every reagent.
+inline uint32_t AhBotCombineCraftedPhase(uint32_t learnPhase, std::vector<uint32_t> const& reagentPhases)
+{
+    uint32_t maxReagent = 0;
+    for (uint32_t phase : reagentPhases)
+    {
+        if (phase > maxReagent)
+            maxReagent = phase;
+    }
+    return std::max(learnPhase, maxReagent);
+}
 
 inline bool AhBotIsDisabledTextName(std::string_view name)
 {
@@ -430,6 +454,10 @@ inline bool AhBotIsItemCandidate(AhBotItemFacts const& item, AhBotItemFilterConf
     if (cfg.disabledItems.find(item.itemId) != cfg.disabledItems.end())
         return false;
 
+    // Content phase restriction.
+    if (cfg.respectContentPhase && item.contentPhase > cfg.contentPhase)
+        return false;
+
     // Optional filter on recipe-produced class/subclass.
     if (cfg.disabledRecipeProducedFilterEnabled && item.isProducedByRecipe)
     {
@@ -483,6 +511,14 @@ public:
         candidateSet_.clear();
         proportionEntries_.clear();
         totalProportionWeight_ = 0;
+        displayPhase_ = 1;
+        lockedByPhase_ = 0;
+    }
+
+    void SetPhaseStats(uint32_t displayPhase, size_t lockedByPhase)
+    {
+        displayPhase_ = displayPhase;
+        lockedByPhase_ = lockedByPhase;
     }
 
     void AddCandidate(uint32_t itemId, uint32_t itemClass, uint32_t quality)
@@ -594,6 +630,8 @@ public:
     {
         std::ostringstream oss;
         oss << "candidates=" << candidateSet_.size()
+            << " phase=" << displayPhase_
+            << " lockedByPhase=" << lockedByPhase_
             << " proportionWeight=" << totalProportionWeight_;
         for (uint32_t cls = 0; cls < kAhBotMaxItemClass; ++cls)
         {
@@ -633,6 +671,8 @@ private:
     std::unordered_set<uint32_t> candidateSet_;
     std::vector<ProportionEntry> proportionEntries_;
     uint64_t totalProportionWeight_ = 0;
+    uint32_t displayPhase_ = 1;
+    size_t lockedByPhase_ = 0;
 };
 
 } // namespace ai

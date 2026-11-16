@@ -1121,6 +1121,11 @@ AiPlayerbot.AhBot.Buyer.BidAgainstPlayers = 0
 # Per-tick execution budget in microseconds and max listings/actions per tick (default 2000 / 10).
 AiPlayerbot.AhBot.TickBudgetUs = 2000
 AiPlayerbot.AhBot.MaxListingsPerTick = 10
+
+# AhBot phase
+# Hide items whose raids, events, recipes, or reagents are not yet open in the realm's content phase.
+# Default 1 (hide phase-locked items); 0 = list all obtainable items regardless of content phase.
+AiPlayerbot.AhBot.RespectContentPhase = 1
 # Demand-aware WSG/AB/AV/SV/BR queue participation for live Headless RNDBOTs.
 # Default on. SV = Sunnyglade Valley, BR = Blood Ring arena (max-level bots only).
 # Uses the native BattleGroundJoinAction/WorldSession handler path and the

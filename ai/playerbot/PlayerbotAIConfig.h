@@ -95,6 +95,7 @@ public:
     void LoadAhBotServiceKeys();
     void LoadAhBotPriceKeys();
     void LoadAhBotPoolKeys();
+    void LoadAhBotPhaseKeys();
     bool ReloadAhBotConfig();
     bool IsInRandomAccountList(uint32 id);
     bool IsFreeAltBot(uint32 guid);
@@ -369,6 +370,9 @@ public:
     std::string ahBotDisabledCustomItemIds;
     std::array<std::array<uint32, 7>, 16> ahBotListProportions{};
     std::string ahBotListMultipliedItemIds;
+    //
+    // AhBot phase
+    bool ahBotRespectContentPhase = true;
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
     // characters, create only the deficit toward the configured Min/Max target
