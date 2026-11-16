@@ -145,6 +145,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", false);
     dungeonRunKillFirstGrid = config.GetBoolDefault("AiPlayerbot.DungeonRunKillFirstGrid", false);
     dungeonRunTotemFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunTotemFocus", false);
+    dungeonRunPackFocusSparesTacticUnits =
+        config.GetBoolDefault("AiPlayerbot.DungeonRunPackFocusSparesTacticUnits", false);
     dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
     dungeonRunTankSwap = config.GetBoolDefault("AiPlayerbot.DungeonRunTankSwap", false);
     dungeonRunTankPost = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPost", false);

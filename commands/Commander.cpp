@@ -11704,6 +11704,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // them mid-run.
     f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;
     f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;
+    // The pack's fallback skull spares the units the boss tactics own (PackFocusSparesEntry): read every tick, so a
+    // reload switches it mid-run.
+    f.packFocusSparesTacticUnits = sPlayerbotAIConfig.dungeonRunPackFocusSparesTacticUnits;
     f.respawnNest = sPlayerbotAIConfig.dungeonRunRespawnNest; // AiPlayerbot.DungeonRunRespawnNest
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.

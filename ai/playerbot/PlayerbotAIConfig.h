@@ -678,6 +678,12 @@ public:
     // A kill-first focus on a totem is DPS-only and goes out before the guard, and the guard skips totems: off, the
     // focus sends every bot and the guard picks totems, as today (its own key; default off).
     bool dungeonRunTotemFocus = false;
+    // The pack's fallback skull (PickPackFocus) spares every unit the boss tactics own, on every step kind: one whose
+    // entry has its own live rows on the plan's map (a boss engaged before its boss step, an add the rows key on itself),
+    // and one a row of the step or of a unit of the fight names as its target (a seek_aura's Son, a tank_post's unit, a
+    // hold_kill's blocker). Off, the fallback skips the boss and the kill_first/linked_death entries of a boss step only,
+    // as today (its own key; default off).
+    bool dungeonRunPackFocusSparesTacticUnits = false;
     // The use_object boss-tactic kind (one bot clicks the ready game object nearest the boss; mode tank_anchor also
     // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
     // rows are ignored, so the table behaves exactly as before the kind (default off).
