@@ -593,6 +593,7 @@ static bool RunVisible() { return RemoteCommander::RunSurfaceOn(CurrentCommander
 
 static BotCommandEntry const botCommands[] = {
     {"ah", HandleAhBot, "ah <status|reload|rebuild|item ...>", {"ahbot"}, AlwaysVisible},
+    {"camp", HandleCamp, "camp <add [name]|show|remove>", {}, AlwaysVisible},
     {"action", HandleAction, "action <intent>", {}, AlwaysVisible},
     {"commander", HandleCommander, "commander <bind|unbind|status|view ...>", {}, CommanderVisible},
     {"cmd", HandleCommanderOrder, "cmd <order>", {}, CommanderVisible},

@@ -43,7 +43,7 @@ Every bot command evaluates permission gates before executing:
 
 | Tier | Who Can Use | Permitted Operations |
 | :--- | :--- | :--- |
-| **GM Only** | GameMasters with session security above player level | Diagnostics, engine cheats, AI profiles (`save/load/list/reset ai`), `.bot pool`, `.bot ah`, `.reload config`. |
+| **GM Only** | GameMasters with session security above player level | Diagnostics, engine cheats, AI profiles (`save/load/list/reset ai`), `.bot camp`, `.bot pool`, `.bot ah`, `.reload config`. |
 | **Owner or GM** | Account owner of the bot, or any GM | Trading, inventory, gear equipping, talent points, trainer learning, and lifecycle commands. |
 | **Group Member** | Anyone currently grouped with the bot | Tactical combat actions, movement orders, ready checks, and inspection queries sent as whispers, plus whisper `hire` (random bots only). The `.bot` chat commands need a bot you control. |
 | **Any Player** | Any in-game player | Companion recruitment (`.bot hire`, subject to costs, caps, and `AiPlayerbot.HireAnywhere`). |
@@ -180,6 +180,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`/w <BotName> rebuff`](whispers.md#w--rebuff) | Whisper Command | Prompts bot to refresh party buffs out of combat. |
 | [`/w <BotName> end pull`](whispers.md#w--end-pull) | Whisper Command | Aborts active pull and returns tank to follow. |
 | [`/tbm`](addon.md) | Addon | Opens or toggles the TortoiseBotsManager GUI. |
+| [`.bot camp`](../../server/admin-commands.md#bot-camp) | Admin & GM | Manages autonomous bot camp spots (`add`, `show`, `remove`). |
 | [`.bot pool status`](../../server/admin-commands.md#bot-pool-status) | Admin & GM | Displays managed bot pool health and reset status. |
 | [`.bot pool accounts`](../../server/admin-commands.md#bot-pool-accounts) | Admin & GM | Lists managed bot accounts (console only). |
 | [`.bot pool adopt preview`](../../server/admin-commands.md#bot-pool-adopt-preview) | Admin & GM | Previews unmanaged bot accounts for adoption (console). |

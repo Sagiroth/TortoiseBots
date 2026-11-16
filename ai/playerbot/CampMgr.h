@@ -44,6 +44,9 @@ public:
     void Load();
 
     std::optional<CampSpot> FindNearestSpot(uint32 mapId, float x, float y, float z, float maxRangeYd) const;
+    std::optional<std::pair<CampSpot, float>> FindNearestSpotWithDist(uint32 mapId, float x, float y, float z, float maxRangeYd) const;
+    void AddSpot(CampSpot const& spot);
+    bool RemoveSpotById(uint32 id);
 
     void SetActiveCamp(ActiveCampInfo const& info);
     void ClearActiveCamp(uint32 botGuid);
