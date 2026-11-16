@@ -41,7 +41,7 @@ INSERT INTO `ai_playerbot_camp_spot` (`map`, `x`, `y`, `z`, `orientation`, `zone
   (0, -11049.64, 1351.36, 43.33, 2.43, 40, 'Moonbrook Tower Outskirts', 'Flat ground in the Moonbrook area near the tower, clear of Defias patrols', 0),
   (0, -10105.16, 1025.69, 37.54, 1.78, 40, 'Saldean''s Farm Outskirts', 'Roadside clearing just outside Saldean''s Farm', 0),
   (0, -11463.90, 1499.44, 47.81, 0.79, 40, 'Westfall Lighthouse Coast', 'Existing cozy fire on the cliff near the Westfall Lighthouse', 0),
-  (0, -10396.70, -2116.20, 160.24, 5.50, 41, 'Ariden''s Camp', 'Existing campfire near Magus Ariden Dusktower', 0),
+  (0, -10444.00, -2140.45, 90.78, 3.40, 41, 'Ariden''s Camp', 'Existing campfire near Magus Ariden Dusktower', 0),
   (0, -10331.10, -1527.88, 92.72, 3.14, 41, 'Deadman''s Crossing', 'Flat roadside ground near Apothecary Faustin at Deadman''s Crossing', 0),
   (0, -9959.56, -1703.21, 25.81, 3.14, 44, 'Wayfarer''s Camp', 'Existing bright campfire by the western Redridge road', 0),
   (0, -1407.40, -3035.18, 32.27, 3.14, 45, 'Go''Shek Farm Road', 'Flat roadside camp near Kinelory south of Go''Shek Farm', 0),
