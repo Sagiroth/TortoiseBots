@@ -495,6 +495,7 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotQuestItems", "6948,5175,5176,5177,5178,16309,12382,13704,11000,22754"), randomBotQuestItems);
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotSpellIds", ""), randomBotSpellIds);
 	LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.PvpProhibitedZoneIds", "2255,656,2361,2362,2363,976,35,2268,3425,392,541,1446,3828,3712,3738,3565,3539,3623,4152,3988,4658,4284,4418,4436,4275,4323"), pvpProhibitedZoneIds);
+	LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.ExtraTownGuardEntries", "5999,6000,6001,6002,6003"), extraTownGuardEntries);
     randomBotForcePvp = config.GetBoolDefault("AiPlayerbot.RandomBotForcePvp", true);
     worldPvpSeek = config.GetIntDefault("AiPlayerbot.WorldPvpSeek", 2);
     worldPvpSeekBotPercent = config.GetIntDefault("AiPlayerbot.WorldPvpSeekBotPercent", 25);
@@ -1313,6 +1314,11 @@ bool PlayerbotAIConfig::IsInRandomQuestItemList(uint32 id)
 bool PlayerbotAIConfig::IsInPvpProhibitedZone(uint32 id)
 {
 	return find(pvpProhibitedZoneIds.begin(), pvpProhibitedZoneIds.end(), id) != pvpProhibitedZoneIds.end();
+}
+
+bool PlayerbotAIConfig::IsExtraTownGuard(uint32 entry) const
+{
+	return find(extraTownGuardEntries.begin(), extraTownGuardEntries.end(), entry) != extraTownGuardEntries.end();
 }
 
 std::string PlayerbotAIConfig::GetValue(std::string name)

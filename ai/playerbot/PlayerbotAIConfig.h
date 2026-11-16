@@ -95,6 +95,7 @@ public:
     bool IsFreeAltBot(Player* player) {return IsFreeAltBot(player->GetGUIDLow());}
     bool IsInRandomQuestItemList(uint32 id);
 	bool IsInPvpProhibitedZone(uint32 id);
+	bool IsExtraTownGuard(uint32 entry) const;
 
     bool enabled;
     uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay, errorRepeatDelay,
@@ -1072,6 +1073,7 @@ public:
     bool globalSoundEffects;
     bool shareTargets;
 	std::list<uint32> pvpProhibitedZoneIds;
+	std::list<uint32> extraTownGuardEntries;
     bool randomBotForcePvp;
     uint32 worldPvpSeek;
     uint32 worldPvpSeekBotPercent;
