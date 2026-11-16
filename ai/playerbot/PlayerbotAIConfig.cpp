@@ -361,6 +361,7 @@ bool PlayerbotAIConfig::ReloadAhBotConfig()
     LoadAhBotServiceKeys();
     LoadAhBotPriceKeys();
     LoadAhBotPoolKeys();
+    LoadAhBotPhaseKeys();
     return true;
 }
 
@@ -629,6 +630,11 @@ void PlayerbotAIConfig::LoadAhBotPoolKeys()
         "16202:10,16203:10,16204:10,774:10,818:10,1206:10,1210:10,1529:10,1705:10,3864:10,7909:10,7910:10,"
         "12361:10,12364:10,12799:10,12800:10,118:5,858:5,929:5,2455:5,2456:5,3827:5,3928:5,6149:5,13443:5,"
         "13446:5,18253:5");
+}
+
+void PlayerbotAIConfig::LoadAhBotPhaseKeys()
+{
+    ahBotRespectContentPhase = config.GetBoolDefault("AiPlayerbot.AhBot.RespectContentPhase", true);
 }
 
 bool PlayerbotAIConfig::Initialize()
@@ -908,6 +914,9 @@ bool PlayerbotAIConfig::Initialize()
     //
     // AhBot pool
     LoadAhBotPoolKeys();
+    //
+    // AhBot phase
+    LoadAhBotPhaseKeys();
     logInGroupOnly = config.GetBoolDefault("AiPlayerbot.LogInGroupOnly", true);
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);
     fleeingEnabled = config.GetBoolDefault("AiPlayerbot.FleeingEnabled", true);

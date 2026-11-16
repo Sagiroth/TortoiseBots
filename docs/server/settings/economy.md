@@ -43,6 +43,7 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 | [`AiPlayerbot.AhBot.Buyer.AlwaysBidMaxCalculatedPrice`](#aiplayerbotahbotbuyeralwaysbidmaxcalculatedprice) | `0` | Bids the full calculated fair value instead of the minimum next bid. |
 | [`AiPlayerbot.AhBot.Buyer.PreventOverpayingForVendorItems`](#aiplayerbotahbotbuyerpreventoverpayingforvendoritems) | `1` | Prevents the AHBot buyer from paying above vendor sell price on vendor items. |
 | [`AiPlayerbot.AhBot.Buyer.BidAgainstPlayers`](#aiplayerbotahbotbuyerbidagainstplayers) | `0` | Allows the AHBot buyer to outbid auctions that already have a bid. |
+| [`AiPlayerbot.AhBot.RespectContentPhase`](#aiplayerbotahbotrespectcontentphase) | `1` | Hides items whose only sources, recipes, or reagents belong to locked raids or content phases. |
 | [`AiPlayerbot.AhBot.TickBudgetUs` / `MaxListingsPerTick`](#aiplayerbotahbottickbudgetus--maxlistingspertick) | `2000` / `10` | Per-tick microsecond budget and operation cap for AHBot sell/buy/cleanup work. |
 | [`AiPlayerbot.AuctionPriceRefreshInterval`](#aiplayerbotauctionpricerefreshinterval) | `60` (built in; the key is not in the template — add it to `aiplayerbot.conf` to change it) | Seconds between market price evaluation sweeps. |
 | [`AiPlayerbot.AhSellBlacklist`](#aiplayerbotahsellblacklist) | `18256` | Item ids bots never post to the auction house. |
@@ -241,6 +242,10 @@ Prevents the AHBot buyer from bidding or buying out non-trade-good vendor items 
 ### `AiPlayerbot.AhBot.Buyer.BidAgainstPlayers`
 Allows the AHBot buyer to outbid auctions that already have an active bid.
 **Default:** `0` · **Values:** `0` unbid only, `1` may outbid existing bids · **Restart:** `.bot ah reload`
+
+### `AiPlayerbot.AhBot.RespectContentPhase`
+Hides items from the AHBot listing pool until their raid, seasonal event, recipe, or crafting reagents unlock in the realm's current content phase.
+**Default:** `1` · **Values:** `1` respect realm content phase, `0` list everything regardless of phase · **Restart:** `.bot ah reload`
 
 ### `AiPlayerbot.AhBot.TickBudgetUs` / `MaxListingsPerTick`
 Per-tick microsecond time budget and maximum listing/buyer/cleanup operations processed on one world tick.
