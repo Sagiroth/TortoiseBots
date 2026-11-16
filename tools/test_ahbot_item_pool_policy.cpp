@@ -291,7 +291,7 @@ void TestProportionsAndMultipliers()
     CHECK(table.CandidateCount() == 0);
 
     // Add TradeGood Normal (2589 multiplied 10x, 2590 weight 1x) and Weapon Uncommon (3001 weight 1x)
-    // Proportions: TradeGood Normal = 80, Weapon Uncommon = 40 -> 2:1 ratio between categories.
+    // Proportions: TradeGood Normal = 220, Weapon Uncommon = 35 between categories.
     // Also add Armor Poor (if someone tried) - note pool policy already blocks Poor, and here we
     // also test that empty buckets with non-zero proportions are skipped.
     table.AddCandidate(2589, ai::kAhBotClassTradeGoods, ai::kAhBotQualityNormal);
@@ -306,7 +306,7 @@ void TestProportionsAndMultipliers()
     CHECK(table.IsCandidate(2590));
     CHECK(table.IsCandidate(3001));
     CHECK(!table.IsCandidate(9999));
-    CHECK(table.TotalProportionWeight() == 120); // 80 + 40; empty buckets excluded
+    CHECK(table.TotalProportionWeight() == 255); // 220 + 35; empty buckets excluded
 
     std::mt19937_64 rng(42);
     auto nextRand = [&rng](uint64_t limit) -> uint64_t {
@@ -329,12 +329,12 @@ void TestProportionsAndMultipliers()
             CHECK(false);
     }
 
-    // Category ratio: TradeGoods (2589+2590) vs Weapon (3001) must stay ~2:1 (80 vs 40)
+    // Category ratio: TradeGoods (2589+2590) vs Weapon (3001) follows 220 vs 35
     // despite 2589 having a 10x intra-bucket multiplier.
     double const tgShare = static_cast<double>(c2589 + c2590) / kTrials;
     double const wpnShare = static_cast<double>(c3001) / kTrials;
-    CHECK(tgShare > 0.65 && tgShare < 0.685);
-    CHECK(wpnShare > 0.315 && wpnShare < 0.35);
+    CHECK(tgShare > 0.85 && tgShare < 0.875);
+    CHECK(wpnShare > 0.125 && wpnShare < 0.15);
 
     // Intra-bucket multiplier: 2589 should be ~10x more frequent than 2590
     double const ratio = static_cast<double>(c2589) / static_cast<double>(c2590);

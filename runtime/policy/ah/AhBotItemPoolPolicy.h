@@ -122,7 +122,8 @@ inline char const* AhBotQualityName(uint32_t quality)
     }
 }
 
-// Default listing proportion weights matching mod-ah-bot-plus mod_ahbot.conf.dist.
+// Default listing proportion weights. Structure from mod-ah-bot-plus; values tuned so a
+// vanilla house reads like a live server: mostly trade goods and consumables, few epics.
 inline uint32_t AhBotDefaultListProportion(uint32_t itemClass, uint32_t quality)
 {
     if (quality >= kAhBotMaxItemQuality)
@@ -130,22 +131,22 @@ inline uint32_t AhBotDefaultListProportion(uint32_t itemClass, uint32_t quality)
 
     static constexpr uint32_t kDefaults[kAhBotMaxItemClass][kAhBotMaxItemQuality] = {
         // Poor, Normal, Uncommon, Rare, Epic, Legendary, Artifact
-        {  0, 50, 10,  5,  0,  0, 0 }, // 0: Consumable
-        {  0, 20,  8,  6,  3,  0, 0 }, // 1: Container
-        {  0, 10, 40, 15,  4,  0, 0 }, // 2: Weapon
+        {  0, 110, 10,  5,  0,  0, 0 }, // 0: Consumable
+        {  0, 15,  6,  3,  1,  0, 0 }, // 1: Container
+        {  0,  5, 35, 10,  1,  0, 0 }, // 2: Weapon
         {  0,  0,  0,  0,  0,  0, 0 }, // 3: Gem (unused in vanilla)
-        { 10, 20, 50, 25,  8,  0, 0 }, // 4: Armor
-        {  0, 10,  0,  0,  0,  0, 0 }, // 5: Reagent
-        {  0, 10,  6,  4,  2,  0, 0 }, // 6: Projectile
-        {  0, 80, 15,  8,  2,  0, 0 }, // 7: TradeGood
-        { 10, 10, 10, 10, 10, 10, 0 }, // 8: Generic
-        {  0, 30, 40, 15,  5,  0, 0 }, // 9: Recipe
+        {  0, 15, 50, 15,  2,  0, 0 }, // 4: Armor
+        {  0, 15,  0,  0,  0,  0, 0 }, // 5: Reagent
+        {  0, 10,  4,  2,  0,  0, 0 }, // 6: Projectile
+        {  0, 220, 30,  8,  1,  0, 0 }, // 7: TradeGood
+        {  0,  0,  0,  0,  0,  0, 0 }, // 8: Generic
+        {  0, 10, 15,  5,  1,  0, 0 }, // 9: Recipe
         {  0,  0,  0,  0,  0,  0, 0 }, // 10: Money
-        {  0, 10,  8,  3,  0,  0, 0 }, // 11: Quiver
-        {  0, 25,  3,  2,  1,  0, 0 }, // 12: Quest
-        {  0,  5,  2,  0,  0,  0, 0 }, // 13: Key
+        {  0,  6,  4,  1,  0,  0, 0 }, // 11: Quiver
+        {  0, 10,  2,  0,  0,  0, 0 }, // 12: Quest
+        {  0,  3,  1,  0,  0,  0, 0 }, // 13: Key
         {  0,  0,  0,  0,  0,  0, 0 }, // 14: Permanent
-        {  0,  2,  2,  1,  1,  0, 0 }, // 15: Misc
+        {  0,  4,  2,  1,  1,  0, 0 }, // 15: Misc
     };
 
     if (itemClass >= kAhBotMaxItemClass)

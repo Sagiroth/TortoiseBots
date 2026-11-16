@@ -718,7 +718,7 @@ AiPlayerbot.AhBot.DisabledCustomItemIDs =
 # Relative listing proportions per item category and quality (whole numbers; 0 disables).
 # Note: Poor (grey) items are always excluded by the pool filter regardless of weight.
 AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityNormal = 50
+AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityNormal = 110
 AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityUncommon = 10
 AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityRare = 5
 AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityEpic = 0
@@ -726,31 +726,31 @@ AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryConsumable.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityNormal = 20
-AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityUncommon = 8
-AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityRare = 6
-AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityEpic = 3
+AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityNormal = 15
+AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityUncommon = 6
+AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityRare = 3
+AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityEpic = 1
 AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryContainer.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityNormal = 10
-AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityUncommon = 40
-AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityRare = 15
-AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityEpic = 4
+AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityNormal = 5
+AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityUncommon = 35
+AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityRare = 10
+AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityEpic = 1
 AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryWeapon.QualityArtifact = 0
 
-AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityPoor = 10
-AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityNormal = 20
+AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityPoor = 0
+AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityNormal = 15
 AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityUncommon = 50
-AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityRare = 25
-AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityEpic = 8
+AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityRare = 15
+AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityEpic = 2
 AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryArmor.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityNormal = 10
+AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityNormal = 15
 AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityUncommon = 0
 AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityRare = 0
 AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityEpic = 0
@@ -759,62 +759,62 @@ AiPlayerbot.AhBot.ListProportion.CategoryReagent.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityPoor = 0
 AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityNormal = 10
-AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityUncommon = 6
-AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityRare = 4
-AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityEpic = 2
+AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityUncommon = 4
+AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityRare = 2
+AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityEpic = 0
 AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryProjectile.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityNormal = 80
-AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityUncommon = 15
+AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityNormal = 220
+AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityUncommon = 30
 AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityRare = 8
-AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityEpic = 2
+AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityEpic = 1
 AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryTradeGood.QualityArtifact = 0
 
-AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityPoor = 10
-AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityNormal = 10
-AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityUncommon = 10
-AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityRare = 10
-AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityEpic = 10
-AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityLegendary = 10
+AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityPoor = 0
+AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityNormal = 0
+AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityUncommon = 0
+AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityRare = 0
+AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityEpic = 0
+AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryGeneric.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityNormal = 30
-AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityUncommon = 40
-AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityRare = 15
-AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityEpic = 5
+AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityNormal = 10
+AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityUncommon = 15
+AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityRare = 5
+AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityEpic = 1
 AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryRecipe.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityNormal = 10
-AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityUncommon = 8
-AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityRare = 3
+AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityNormal = 6
+AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityUncommon = 4
+AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityRare = 1
 AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityEpic = 0
 AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryQuiver.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityNormal = 25
-AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityUncommon = 3
-AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityRare = 2
-AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityEpic = 1
+AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityNormal = 10
+AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityUncommon = 2
+AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityRare = 0
+AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityEpic = 0
 AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryQuest.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityNormal = 5
-AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityUncommon = 2
+AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityNormal = 3
+AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityUncommon = 1
 AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityRare = 0
 AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityEpic = 0
 AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityLegendary = 0
 AiPlayerbot.AhBot.ListProportion.CategoryKey.QualityArtifact = 0
 
 AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityPoor = 0
-AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityNormal = 2
+AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityNormal = 4
 AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityUncommon = 2
 AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityRare = 1
 AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityEpic = 1
