@@ -783,6 +783,9 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
     Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
     LootItem* item = (loot && slot < loot->items.size()) ? &loot->items[slot] : nullptr;
 
+    bool const hiredYieldsToPlayers = TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+        ai->HasRealPlayerMaster();
+
     // Every member, bots included: GetPlayersInGroup() lists real players only.
     for (Player* member : LiveGroupMembers(group))
     {
@@ -836,6 +839,12 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
         }
         else
         {
+            // A real player gets the whole roll window (the bot waits for it)
+            // and competes only by rolling need, which RealPlayerMayNeed sees.
+            // Only a hired companion still yields to a player it guesses fits.
+            if (!hiredYieldsToPlayers)
+                continue;
+
             if (item && !item->AllowedForPlayer(member, lootTarget))
                 continue;
 
