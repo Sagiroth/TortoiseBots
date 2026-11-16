@@ -11,6 +11,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Creature.h"
 #include "Database/DatabaseEnv.h"
+#include "GameObject.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/Map.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -30,6 +31,29 @@ namespace BotCommands {
 
 namespace
 {
+
+// The core's respawn timer does not remove these summoned objects, so the
+// preview removes its own tent and fire.
+class CampPreviewDespawnEvent : public BasicEvent
+{
+public:
+    explicit CampPreviewDespawnEvent(GameObject& go) : m_go(go) { }
+    bool Execute(uint64, uint32) override
+    {
+        m_go.Delete();
+        return true;
+    }
+
+private:
+    GameObject& m_go;
+};
+
+void ScheduleCampPreviewDespawn(GameObject* go)
+{
+    if (go)
+        go->m_Events.AddEvent(new CampPreviewDespawnEvent(*go),
+            go->m_Events.CalculateTime(uint64(CAMP_SHOW_DURATION_SEC) * 1000));
+}
 
 bool RequireCampGm(ChatHandler* handler, Player*& gm)
 {
@@ -244,16 +268,16 @@ bool HandleCampShow(ChatHandler* handler, Player* gm)
     float const spread = ComputeCamp4PointSpread(tentZ, castZ, fireZ, seatZ);
 
     uint32 const tentEntry = (gm->GetTeam() == HORDE) ? CAMP_TENT_GO_HORDE : CAMP_TENT_GO_ALLIANCE;
-    gm->SummonGameObject(
+    ScheduleCampPreviewDespawn(gm->SummonGameObject(
         tentEntry,
         spot.x, spot.y, tentZ, spot.orientation,
         0.0f, 0.0f, std::sin(spot.orientation / 2.0f), std::cos(spot.orientation / 2.0f),
-        CAMP_SHOW_DURATION_SEC, false);
-    gm->SummonGameObject(
+        CAMP_SHOW_DURATION_SEC, false));
+    ScheduleCampPreviewDespawn(gm->SummonGameObject(
         CAMP_FIRE_GO_ENTRY,
         firePt.x, firePt.y, fireZ, firePt.o,
         0.0f, 0.0f, std::sin(firePt.o / 2.0f), std::cos(firePt.o / 2.0f),
-        CAMP_SHOW_DURATION_SEC, false);
+        CAMP_SHOW_DURATION_SEC, false));
     gm->SummonCreature(
         CAMP_SEAT_MARKER_CREATURE_ENTRY,
         seatPt.x, seatPt.y, seatZ, seatPt.o,
