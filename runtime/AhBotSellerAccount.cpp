@@ -423,6 +423,13 @@ bool AhBotSellerAccount::CreateSellerCharacter(uint32_t accountId, uint8_t facti
     return false;
 }
 
+std::vector<uint32_t> AhBotSellerAccount::TakeRetiredSellerGuids()
+{
+    std::vector<uint32_t> out;
+    out.swap(m_retiredGuids);
+    return out;
+}
+
 void AhBotSellerAccount::RunRepairCheck()
 {
     std::string normalizedName = ai::NormalizeAccountNameUpper(sPlayerbotAIConfig.ahBotAccountName);
@@ -461,7 +468,16 @@ void AhBotSellerAccount::RunRepairCheck()
         // Account missing or deleted (.account delete). Clean up any orphaned
         // registry rows from the vanished account before creating the new one.
         if (regTotal > 0)
+        {
+            std::unique_ptr<QueryResult> oldRows(CharacterDatabase.PQuery("SELECT `guid` FROM `tortoise_bots_ahbot_seller`"));
+            if (oldRows)
+            {
+                do
+                    m_retiredGuids.push_back(oldRows->Fetch()[0].GetUInt32());
+                while (oldRows->NextRow());
+            }
             CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_ahbot_seller`");
+        }
 
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -619,6 +635,7 @@ void AhBotSellerAccount::RunRepairCheck()
     if (!staleGuids.empty())
     {
         DeleteByIdsInChunks("DELETE FROM `tortoise_bots_ahbot_seller` WHERE `guid` IN", staleGuids);
+        m_retiredGuids.insert(m_retiredGuids.end(), staleGuids.begin(), staleGuids.end());
         TB_LOG_BASIC("TortoiseBots: AhBot pruned %zu stale seller row(s) from tortoise_bots_ahbot_seller",
             staleGuids.size());
     }

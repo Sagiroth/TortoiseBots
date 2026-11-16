@@ -48,6 +48,7 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <unordered_set>
 
 namespace TortoiseBots
 {
@@ -308,6 +309,29 @@ void AhBotService::EnqueueOwnExpiringListings()
             }
         }
     }
+}
+
+// A deleted seller's listings would otherwise stay up with no owner: the buyer
+// would treat them as player listings and sale or expiry mail would go nowhere.
+void AhBotService::RemoveRetiredSellerListings()
+{
+    std::vector<uint32_t> retired = AhBotSellerAccount::Instance().TakeRetiredSellerGuids();
+    if (retired.empty())
+        return;
+
+    std::unordered_set<uint32_t> retiredSet(retired.begin(), retired.end());
+    uint32_t removed = 0;
+    for (AuctionHouseObject* house : CollectDistinctHouses())
+    {
+        std::vector<AuctionEntry*> doomed;
+        for (auto const& pair : *house->GetAuctions())
+            if (pair.second && retiredSet.count(pair.second->owner))
+                doomed.push_back(pair.second);
+        for (AuctionEntry* auc : doomed)
+            if (RemoveAuctionFromHouse(house, auc, true))
+                ++removed;
+    }
+    TB_LOG_BASIC("TortoiseBots: AhBot removed %u listing(s) of %zu deleted seller(s)", removed, retired.size());
 }
 
 void AhBotService::EnqueueSellCycle()
@@ -691,6 +715,7 @@ void AhBotService::Update(uint32_t diff)
         return;
 
     AhBotSellerAccount::Instance().Update(diff);
+    RemoveRetiredSellerListings();
     if (!AhBotSellerAccount::Instance().IsReady())
         return;
 

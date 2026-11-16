@@ -26,6 +26,7 @@ public:
     std::vector<uint32_t> SellerGuids() const;
     uint32_t PurgeSellerMail(uint32_t maxMails); // delete up to N mails (+ attached item_instance rows) to sellers
     std::string GetStatus() const;
+    std::vector<uint32_t> TakeRetiredSellerGuids(); // sellers deleted since the last call; their listings must go
 
 private:
     AhBotSellerAccount() = default;
@@ -43,6 +44,7 @@ private:
     mutable std::vector<uint32_t> m_hordeGuids;
     mutable std::unordered_set<uint32_t> m_sellerGuidSet;
     mutable std::unordered_set<uint32_t> m_knownSellerAccounts;
+    std::vector<uint32_t> m_retiredGuids;
 
     bool m_initialCheckDone = false;
     bool m_passwordRotatedThisRun = false;

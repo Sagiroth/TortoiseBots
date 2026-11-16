@@ -63,6 +63,7 @@ private:
     void EnsureVendorPricesLoaded();
     void EnqueueLegacyOwner0Cleanup();
     void EnqueueOwnExpiringListings();
+    void RemoveRetiredSellerListings();
     void EnqueueSellCycle();
     void EnqueueBuyCycle();
     void RunBudgetedSlice();
