@@ -408,7 +408,7 @@ A seeking bot attacks an enemy player only when every item below holds:
 - target zone is not in `AiPlayerbot.PvpProhibitedZoneIds`
 - target is within 20 yards (sight range when the bot has more health)
 - height difference is under 30 yards
-- neither stands within 40 yards of the graveyard they revive at
+- neither stands within 80 yards of a graveyard (either faction's)
 - level-gap odds allow it (never 5+ levels above; closer targets always)
 
 Unflagged players, challenge-mode characters (except War Mode) and GMs with visibility off are never attacked. Owned and hired bots and bots grouped with a real player never seek. Battlegrounds keep their own logic.
