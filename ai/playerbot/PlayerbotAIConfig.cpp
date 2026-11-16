@@ -40,6 +40,7 @@
 // StartZoneBalance.h so the standalone unit test can exercise it.
 #include "../../runtime/StartZoneBalance.h"
 #include "../../runtime/policy/ah/AhBotItemPoolPolicy.h"
+#include "../../runtime/policy/ah/AhBotPricingPolicy.h"
 
 #include "playerbot/TravelMgr.h"
 #include "playerbot/GuildOrderSources.h"
@@ -615,6 +616,156 @@ bool PlayerbotAIConfig::Initialize()
     if (ahMarketTimeMax < 1) ahMarketTimeMax = 1;
     if (ahMarketTimeMax > 72) ahMarketTimeMax = 72;
     if (ahMarketTimeMin > ahMarketTimeMax) ahMarketTimeMin = ahMarketTimeMax;
+    // AhBot price
+    static_assert(PlayerbotAIConfig::kAhBotMaxItemClass == MAX_ITEM_CLASS, "AhBot class array size must match MAX_ITEM_CLASS");
+    ahBotCompleteItemValueOverrideEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.CompleteItemValueOverride.Enabled", false);
+    ahBotCompleteItemValueOverrideItems = config.GetStringDefault("AiPlayerbot.AhBot.CompleteItemValueOverride.Items", "");
+    ahBotCompleteItemValueOverrideDoApplyBidVariations = config.GetBoolDefault("AiPlayerbot.AhBot.CompleteItemValueOverride.DoApplyBidVariations", false);
+    ahBotCompleteItemValueOverrideDoApplyBuyoutVariations = config.GetBoolDefault("AiPlayerbot.AhBot.CompleteItemValueOverride.DoApplyBuyoutVariations", false);
+    ahBotMaxBuyoutPriceInCopper = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.MaxBuyoutPriceInCopper", 1000000000));
+    ahBotBuyoutVariationReducePercent = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.AhBot.BuyoutVariationReducePercent", 0.15f));
+    ahBotBuyoutVariationAddPercent = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.AhBot.BuyoutVariationAddPercent", 0.25f));
+    ahBotBidVariationHighReducePercent = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.AhBot.BidVariationHighReducePercent", 0.0f));
+    ahBotBidVariationLowReducePercent = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.AhBot.BidVariationLowReducePercent", 0.25f));
+    ahBotBuyoutBelowVendorVariationAddPercentEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.BuyoutBelowVendorVariationAddPercentEnabled", true);
+    ahBotBuyoutBelowVendorVariationAddPercent = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.AhBot.BuyoutBelowVendorVariationAddPercent", 0.25f));
+    ahBotBuyerAcceptablePriceModifier = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.AhBot.Buyer.AcceptablePriceModifier", 1.0f));
+    ahBotPriceMinimumCenterBaseUseItemSellPriceIfHigher = config.GetBoolDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.UseItemSellPriceIfHigher", true);
+    ahBotPriceMinimumCenterBaseConsumable = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Consumable", 10));
+    ahBotPriceMinimumCenterBaseContainer = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Container", 50));
+    ahBotPriceMinimumCenterBaseWeapon = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Weapon", 25));
+    ahBotPriceMinimumCenterBaseArmor = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Armor", 25));
+    ahBotPriceMinimumCenterBaseReagent = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Reagent", 20));
+    ahBotPriceMinimumCenterBaseProjectile = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Projectile", 1));
+    ahBotPriceMinimumCenterBaseTradeGood = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.TradeGood", 5));
+    ahBotPriceMinimumCenterBaseGeneric = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Generic", 20));
+    ahBotPriceMinimumCenterBaseRecipe = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Recipe", 20));
+    ahBotPriceMinimumCenterBaseQuiver = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Quiver", 25));
+    ahBotPriceMinimumCenterBaseQuest = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Quest", 20));
+    ahBotPriceMinimumCenterBaseKey = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Key", 25));
+    ahBotPriceMinimumCenterBaseMisc = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.Misc", 20));
+    ahBotPriceMinimumCenterBaseOverrideItems = config.GetStringDefault("AiPlayerbot.AhBot.PriceMinimumCenterBase.OverrideItems",
+        "10940:60,11083:110,11137:220,11176:330,16204:550,"
+        "10938:50,10939:150,10998:200,11082:350,11134:400,11135:800,11174:1000,11175:2500,16202:1500,16203:4000,"
+        "10978:250,11084:400,11138:500,11139:800,11177:1000,11178:1500,14343:1500,14344:4000,20725:15000");
+    ahBotAdvancedPricingConsumablePotionEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.Consumable.Potion.Enabled", true);
+    ahBotAdvancedPricingConsumableElixirEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.Consumable.Elixir.Enabled", true);
+    ahBotAdvancedPricingConsumableFlaskEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.Consumable.Flask.Enabled", true);
+    ahBotAdvancedPricingTradeGoodClothEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Cloth.Enabled", true);
+    ahBotAdvancedPricingTradeGoodHerbEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Herb.Enabled", true);
+    ahBotAdvancedPricingTradeGoodMetalStoneEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.MetalStone.Enabled", true);
+    ahBotAdvancedPricingTradeGoodLeatherEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Leather.Enabled", true);
+    ahBotAdvancedPricingTradeGoodEnchantingEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Enchanting.Enabled", true);
+    ahBotAdvancedPricingTradeGoodElementalEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Elemental.Enabled", true);
+    ahBotAdvancedPricingTradeGoodMeatEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Meat.Enabled", true);
+    ahBotAdvancedPricingMiscJunkEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.Misc.Junk.Enabled", true);
+    ahBotAdvancedPricingMiscMountEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.Misc.Mount.Enabled", true);
+    ahBotAdvancedPricingMiscPetEnabled = config.GetBoolDefault("AiPlayerbot.AhBot.AdvancedPricing.Misc.Pet.Enabled", true);
+    ahBotPriceMultiplierCategoryConsumable = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Consumable", 1.0f);
+    ahBotPriceMultiplierCategoryContainer = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Container", 1.0f);
+    ahBotPriceMultiplierCategoryWeapon = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Weapon", 1.0f);
+    ahBotPriceMultiplierCategoryArmor = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Armor", 1.0f);
+    ahBotPriceMultiplierCategoryReagent = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Reagent", 1.0f);
+    ahBotPriceMultiplierCategoryProjectile = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Projectile", 1.0f);
+    ahBotPriceMultiplierCategoryTradeGood = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.TradeGood", 1.0f);
+    ahBotPriceMultiplierCategoryGeneric = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Generic", 1.0f);
+    ahBotPriceMultiplierCategoryRecipe = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Recipe", 1.0f);
+    ahBotPriceMultiplierCategoryQuiver = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Quiver", 1.0f);
+    ahBotPriceMultiplierCategoryQuest = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Quest", 1.0f);
+    ahBotPriceMultiplierCategoryKey = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Key", 1.0f);
+    ahBotPriceMultiplierCategoryMisc = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Category.Misc", 1.0f);
+    ahBotPriceMultiplierQualityPoor = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Poor", 1.0f);
+    ahBotPriceMultiplierQualityNormal = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Normal", 1.0f);
+    ahBotPriceMultiplierQualityUncommon = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Uncommon", 1.8f);
+    ahBotPriceMultiplierQualityRare = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Rare", 1.9f);
+    ahBotPriceMultiplierQualityEpic = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Epic", 2.1f);
+    ahBotPriceMultiplierQualityLegendary = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Legendary", 3.0f);
+    ahBotPriceMultiplierQualityArtifact = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.Quality.Artifact", 3.0f);
+    ahBotPriceMultiplierItemLevelCategoryConsumable = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Consumable", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryContainer = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Container", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryWeapon = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Weapon", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryArmor = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Armor", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryReagent = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Reagent", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryProjectile = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Projectile", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryTradeGood = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.TradeGood", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryGeneric = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Generic", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryRecipe = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Recipe", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryQuiver = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Quiver", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryQuest = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Quest", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryKey = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Key", 0.0f);
+    ahBotPriceMultiplierItemLevelCategoryMisc = config.GetFloatDefault("AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Misc", 0.0f);
+    {
+        ai::AhBotPricingConfig const ahBotDefaults = ai::MakeDefaultVanillaPricingConfig();
+        static char const* const kCatNames[MAX_ITEM_CLASS] = {
+            "Consumable", "Container", "Weapon", nullptr, "Armor", "Reagent", "Projectile",
+            "TradeGood", "Generic", "Recipe", nullptr, "Quiver", "Quest", "Key", nullptr, "Misc"
+        };
+        static char const* const kQualNames[MAX_ITEM_QUALITY] = {
+            "Poor", "Normal", "Uncommon", "Rare", "Epic", "Legendary", "Artifact"
+        };
+        for (uint32 c = 0; c < MAX_ITEM_CLASS; ++c)
+        {
+            for (uint32 q = 0; q < MAX_ITEM_QUALITY; ++q)
+            {
+                float def = ahBotDefaults.priceMultiplierCategoryQuality[c][q];
+                if (kCatNames[c])
+                {
+                    std::string key = std::string("AiPlayerbot.AhBot.PriceMultiplier.Category") + kCatNames[c] + ".Quality" + kQualNames[q];
+                    ahBotPriceMultiplierCategoryQuality[c][q] = config.GetFloatDefault(key.c_str(), def);
+                }
+                else
+                {
+                    ahBotPriceMultiplierCategoryQuality[c][q] = def;
+                }
+            }
+        }
+        for (uint32 q = 0; q < MAX_ITEM_QUALITY; ++q)
+        {
+            std::string mountKey = std::string("AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.Quality") + kQualNames[q];
+            ahBotPriceMultiplierCategoryMountQuality[q] = config.GetFloatDefault(mountKey.c_str(), ahBotDefaults.priceMultiplierCategoryMountQuality[q]);
+            std::string petKey = std::string("AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.Quality") + kQualNames[q];
+            ahBotPriceMultiplierCategoryPetQuality[q] = config.GetFloatDefault(petKey.c_str(), ahBotDefaults.priceMultiplierCategoryPetQuality[q]);
+        }
+    }
+    ahBotListingStackRandomRatioConsumable = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Consumable", 50)));
+    ahBotListingStackRandomRatioContainer = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Container", 0)));
+    ahBotListingStackRandomRatioWeapon = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Weapon", 0)));
+    ahBotListingStackRandomRatioArmor = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Armor", 0)));
+    ahBotListingStackRandomRatioReagent = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Reagent", 50)));
+    ahBotListingStackRandomRatioProjectile = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Projectile", 100)));
+    ahBotListingStackRandomRatioTradeGood = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.TradeGood", 75)));
+    ahBotListingStackRandomRatioGeneric = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Generic", 100)));
+    ahBotListingStackRandomRatioRecipe = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Recipe", 0)));
+    ahBotListingStackRandomRatioQuiver = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Quiver", 0)));
+    ahBotListingStackRandomRatioQuest = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Quest", 10)));
+    ahBotListingStackRandomRatioKey = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Key", 10)));
+    ahBotListingStackRandomRatioMisc = (uint32)std::min(100, std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomRatio.Misc", 100)));
+    ahBotListingStackRandomStackIncrementConsumable = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Consumable", 5));
+    ahBotListingStackRandomStackIncrementContainer = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Container", 1));
+    ahBotListingStackRandomStackIncrementWeapon = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Weapon", 1));
+    ahBotListingStackRandomStackIncrementArmor = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Armor", 1));
+    ahBotListingStackRandomStackIncrementReagent = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Reagent", 1));
+    ahBotListingStackRandomStackIncrementProjectile = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Projectile", 1000));
+    ahBotListingStackRandomStackIncrementTradeGood = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.TradeGood", 5));
+    ahBotListingStackRandomStackIncrementGeneric = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Generic", 1));
+    ahBotListingStackRandomStackIncrementRecipe = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Recipe", 1));
+    ahBotListingStackRandomStackIncrementQuiver = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Quiver", 1));
+    ahBotListingStackRandomStackIncrementQuest = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Quest", 1));
+    ahBotListingStackRandomStackIncrementKey = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Key", 1));
+    ahBotListingStackRandomStackIncrementMisc = (uint32)std::max(1, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Misc", 1));
+    ahBotListingStackMaxStackSizeConsumable = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Consumable", 0));
+    ahBotListingStackMaxStackSizeContainer = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Container", 0));
+    ahBotListingStackMaxStackSizeWeapon = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Weapon", 0));
+    ahBotListingStackMaxStackSizeArmor = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Armor", 0));
+    ahBotListingStackMaxStackSizeReagent = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Reagent", 0));
+    ahBotListingStackMaxStackSizeProjectile = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Projectile", 0));
+    ahBotListingStackMaxStackSizeTradeGood = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.TradeGood", 0));
+    ahBotListingStackMaxStackSizeGeneric = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Generic", 0));
+    ahBotListingStackMaxStackSizeRecipe = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Recipe", 0));
+    ahBotListingStackMaxStackSizeQuiver = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Quiver", 0));
+    ahBotListingStackMaxStackSizeQuest = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Quest", 0));
+    ahBotListingStackMaxStackSizeKey = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Key", 0));
+    ahBotListingStackMaxStackSizeMisc = (uint32)std::max(0, config.GetIntDefault("AiPlayerbot.AhBot.ListingStack.MaxStackSize.Misc", 0));
     //
     // AhBot seller
     ahBotAccountName = config.GetStringDefault("AiPlayerbot.AhBot.AccountName", "TBAHBOT");

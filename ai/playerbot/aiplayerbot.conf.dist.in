@@ -841,6 +841,267 @@ AiPlayerbot.AhBot.ListProportion.CategoryMisc.QualityArtifact = 0
 # item's category x quality bucket (default: vanilla cloth, leather, ore, herbs,
 # enchanting mats, gems at 10x; healing/mana potions at 5x).
 AiPlayerbot.AhBot.ListProportion.ListMultipliedItemIDs = 2589:10,2592:10,4306:10,4338:10,14047:10,2318:10,2319:10,4234:10,4304:10,8170:10,2770:10,2771:10,2772:10,2775:10,2776:10,3858:10,7911:10,10620:10,2835:10,2836:10,2838:10,12365:10,7912:10,765:10,785:10,2447:10,2449:10,2450:10,2452:10,2453:10,3355:10,3356:10,3357:10,3358:10,3369:10,3818:10,3819:10,3820:10,3821:10,4625:10,8153:10,8831:10,8836:10,8838:10,8839:10,8845:10,8846:10,13463:10,13464:10,13465:10,13466:10,13467:10,13468:10,10938:10,10939:10,10940:10,10978:10,10998:10,11082:10,11084:10,11128:10,11134:10,11135:10,11138:10,11139:10,11174:10,11175:10,11177:10,11178:10,14343:10,16202:10,16203:10,16204:10,774:10,818:10,1206:10,1210:10,1529:10,1705:10,3864:10,7909:10,7910:10,12361:10,12364:10,12799:10,12800:10,118:5,858:5,929:5,2455:5,2456:5,3827:5,3928:5,6149:5,13443:5,13446:5,18253:5
+# AhBot price
+# Complete per-item price overrides in copper ("itemID:priceCopper,...").
+# Default: 0 (disabled) and empty list.
+AiPlayerbot.AhBot.CompleteItemValueOverride.Enabled = 0
+AiPlayerbot.AhBot.CompleteItemValueOverride.Items = ""
+AiPlayerbot.AhBot.CompleteItemValueOverride.DoApplyBidVariations = 0
+AiPlayerbot.AhBot.CompleteItemValueOverride.DoApplyBuyoutVariations = 0
+
+# Global AH bot price bounds and random variation bands.
+# MaxBuyoutPriceInCopper caps per-unit buyout (default 1000000000 = 100k gold).
+# Buyout variation defaults: -15% to +25% (0.15 / 0.25).
+# Bid variation defaults: 0% to -25% below buyout (0.0 / 0.25).
+# BuyoutBelowVendorVariationAddPercent prevents listings below vendor sell price (default 1, +0.25).
+AiPlayerbot.AhBot.MaxBuyoutPriceInCopper = 1000000000
+AiPlayerbot.AhBot.BuyoutVariationReducePercent = 0.15
+AiPlayerbot.AhBot.BuyoutVariationAddPercent = 0.25
+AiPlayerbot.AhBot.BidVariationHighReducePercent = 0.0
+AiPlayerbot.AhBot.BidVariationLowReducePercent = 0.25
+AiPlayerbot.AhBot.BuyoutBelowVendorVariationAddPercentEnabled = 1
+AiPlayerbot.AhBot.BuyoutBelowVendorVariationAddPercent = 0.25
+
+# Multiplier on the buyer bot's calculated fair price per unit (default 1.0).
+AiPlayerbot.AhBot.Buyer.AcceptablePriceModifier = 1.0
+
+# Vanilla-calibrated minimum price centres in copper before multipliers.
+# UseItemSellPriceIfHigher defaults to 1 so vendor sell price is used whenever higher.
+# OverrideItems seeds zero-sell-price enchanting materials with vanilla centres.
+AiPlayerbot.AhBot.PriceMinimumCenterBase.UseItemSellPriceIfHigher = 1
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Consumable = 10
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Container = 50
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Weapon = 25
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Armor = 25
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Reagent = 20
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Projectile = 1
+AiPlayerbot.AhBot.PriceMinimumCenterBase.TradeGood = 5
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Generic = 20
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Recipe = 20
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Quiver = 25
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Quest = 20
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Key = 25
+AiPlayerbot.AhBot.PriceMinimumCenterBase.Misc = 20
+AiPlayerbot.AhBot.PriceMinimumCenterBase.OverrideItems = "10940:60,11083:110,11137:220,11176:330,16204:550,10938:50,10939:150,10998:200,11082:350,11134:400,11135:800,11174:1000,11175:2500,16202:1500,16203:4000,10978:250,11084:400,11138:500,11139:800,11177:1000,11178:1500,14343:1500,14344:4000,20725:15000"
+
+# Item-id based advanced pricing toggles for vanilla item groups (default 1 = enabled).
+AiPlayerbot.AhBot.AdvancedPricing.Consumable.Potion.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.Consumable.Elixir.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.Consumable.Flask.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Cloth.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Herb.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.MetalStone.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Leather.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Enchanting.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Elemental.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.TradeGood.Meat.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.Misc.Junk.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.Misc.Mount.Enabled = 1
+AiPlayerbot.AhBot.AdvancedPricing.Misc.Pet.Enabled = 1
+
+# Broad category multipliers (default 1.0).
+AiPlayerbot.AhBot.PriceMultiplier.Category.Consumable = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Container = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Weapon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Armor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Reagent = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Projectile = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.TradeGood = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Generic = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Recipe = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Quiver = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Quest = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Key = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Category.Misc = 1.0
+
+# Broad quality multipliers (defaults: Poor/Normal 1.0, Uncommon 1.8, Rare 1.9, Epic 2.1, Legendary/Artifact 3.0).
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Poor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Normal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Uncommon = 1.8
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Rare = 1.9
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Epic = 2.1
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Legendary = 3.0
+AiPlayerbot.AhBot.PriceMultiplier.Quality.Artifact = 3.0
+
+# Optional per-category item-level multipliers (default 0.0 = disabled; ignored when advanced pricing applies).
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Consumable = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Container = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Weapon = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Armor = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Reagent = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Projectile = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.TradeGood = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Generic = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Recipe = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Quiver = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Quest = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Key = 0.0
+AiPlayerbot.AhBot.PriceMultiplier.ItemLevel.Category.Misc = 0.0
+
+# Calibrated vanilla category x quality multipliers.
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityNormal = 4.3
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityUncommon = 1.8
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityRare = 1.7
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityEpic = 2.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryConsumable.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityNormal = 3.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityUncommon = 3.1
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityRare = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityEpic = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryContainer.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityNormal = 1.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityUncommon = 2.25
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityRare = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityEpic = 2.3
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryWeapon.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityNormal = 1.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityUncommon = 2.6
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityRare = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityEpic = 2.7
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryArmor.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityNormal = 5.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityUncommon = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityRare = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityEpic = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryReagent.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityNormal = 0.9
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityUncommon = 0.8
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityRare = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityEpic = 2.8
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryProjectile.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityNormal = 3.8
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityUncommon = 2.1
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityRare = 2.4
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityEpic = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityLegendary = 1.4
+AiPlayerbot.AhBot.PriceMultiplier.CategoryTradeGood.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityNormal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityUncommon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityRare = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityEpic = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryGeneric.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityNormal = 4.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityUncommon = 2.75
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityRare = 2.7
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityEpic = 2.5
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryRecipe.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityNormal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityUncommon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityRare = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityEpic = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuiver.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityNormal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityUncommon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityRare = 7.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityEpic = 8.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryQuest.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityNormal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityUncommon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityRare = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityEpic = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryKey.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityNormal = 3.2
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityUncommon = 2.55
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityRare = 1.7
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityEpic = 2.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMisc.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityNormal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityUncommon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityRare = 3000.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityEpic = 5750.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryMount.QualityArtifact = 1.0
+
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityPoor = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityNormal = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityUncommon = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityRare = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityEpic = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityLegendary = 1.0
+AiPlayerbot.AhBot.PriceMultiplier.CategoryPet.QualityArtifact = 1.0
+
+# Listing stack sizing: RandomRatio (0..100 % chance of random stack vs 1),
+# RandomStackIncrement (multiple for random stacks), MaxStackSize (0 = item max).
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Consumable = 50
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Container = 0
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Weapon = 0
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Armor = 0
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Reagent = 50
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Projectile = 100
+AiPlayerbot.AhBot.ListingStack.RandomRatio.TradeGood = 75
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Generic = 100
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Recipe = 0
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Quiver = 0
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Quest = 10
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Key = 10
+AiPlayerbot.AhBot.ListingStack.RandomRatio.Misc = 100
+
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Consumable = 5
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Container = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Weapon = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Armor = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Reagent = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Projectile = 1000
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.TradeGood = 5
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Generic = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Recipe = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Quiver = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Quest = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Key = 1
+AiPlayerbot.AhBot.ListingStack.RandomStackIncrement.Misc = 1
+
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Consumable = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Container = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Weapon = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Armor = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Reagent = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Projectile = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.TradeGood = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Generic = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Recipe = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Quiver = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Quest = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Key = 0
+AiPlayerbot.AhBot.ListingStack.MaxStackSize.Misc = 0
 # Demand-aware WSG/AB/AV/SV/BR queue participation for live Headless RNDBOTs.
 # Default on. SV = Sunnyglade Valley, BR = Blood Ring arena (max-level bots only).
 # Uses the native BattleGroundJoinAction/WorldSession handler path and the

@@ -191,6 +191,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/BotLfgService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotGearService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/AhBotSellerAccount.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/AhBotPricing.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/AhMarketService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/AhBotItemPool.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BattlegroundQueueService.cpp"
