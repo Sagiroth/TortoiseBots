@@ -1008,6 +1008,14 @@ public:
     // 15-min/30-min shape, shorter because the killer is one named player).
     void SetAvoidPlayerKiller(std::string const& name) { avoidPlayerKiller_ = name; avoidPlayerKillerMs_ = WorldTimer::getMSTime(); }
     bool ShouldAvoidPlayerKiller(std::string const& name) const;
+    void SetOwnerTradedItemIds(std::set<uint32> itemIds) { m_ownerTradedItemIds = std::move(itemIds); }
+    std::set<uint32> TakeOwnerTradedItemIds()
+    {
+        std::set<uint32> out = std::move(m_ownerTradedItemIds);
+        m_ownerTradedItemIds.clear();
+        return out;
+    }
+    std::set<uint32> m_ownerTradedItemIds;
     // Open-world PvP kill/death notes from the unit-death hook: the killer
     // camps the victim's corpse for WorldPvpCampSeconds, then ignores the
     // victim for WorldPvpCampIgnoreSeconds. Deaths feed the PvP death counter.

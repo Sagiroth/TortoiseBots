@@ -90,6 +90,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomGearProgression`](#aiplayerbotrandomgearprogression) | `1` (commented out in the template; uncomment to change it) | Controls quality-band variety when pool bots generate gear. |
 | [`AiPlayerbot.RandomGearBlacklist`](#aiplayerbotrandomgearblacklist) | `10,163,19972,58260,21524,21525,7` | Comma-separated list of item IDs excluded from random equipment pools. |
 | [`AiPlayerbot.AutoEquipUpgradeLoot`](#aiplayerbotautoequipupgradeloot) | `1` | Automatically equips stat upgrades acquired from questing or creature loot. |
+| [`AiPlayerbot.ClaimedBotSelfEquip`](#aiplayerbotclaimedbotselfequip) | `1` | Allows claimed guild bots at level 60 to auto-equip upgrades. |
 | [`AiPlayerbot.EquipUpgradeThreshold`](#aiplayerbotequipupgradethreshold) | `1.1` | Stat weight multiplier required for an item to replace current equipment. |
 | [`AiPlayerbot.AutoPickReward`](#aiplayerbotautopickreward) | `yes` | Controls how bots select equipment rewards when completing quests. |
 | [`AiPlayerbot.AutoPickTalents`](#aiplayerbotautopicktalents) | `full` | Automates talent point allocation based on the bot's chosen specialization. |
@@ -1053,7 +1054,18 @@ Directs bots to automatically equip better gear acquired from looting or quest r
 <details>
 <summary>How it works in detail</summary>
 
-When enabled, bots evaluate items from looting, trades, or quest rewards and equip anything beating current gear by the upgrade threshold. Pool bots always auto-equip, even with `0`. Claimed level-60 bots and tier-kit hires skip auto-replacement.
+When enabled, bots evaluate items from looting, trades, or quest rewards and equip anything beating current gear by the upgrade threshold. Pool bots always auto-equip, even with `0`. Tier-kit hires skip auto-replacement, and claimed level-60 bots follow [`AiPlayerbot.ClaimedBotSelfEquip`](#aiplayerbotclaimedbotselfequip).
+
+</details>
+
+### `AiPlayerbot.ClaimedBotSelfEquip`
+Allows claimed guild bots at level 60 to automatically equip stat upgrades they find or receive.
+**Default:** `1` · **Values:** `0` locked at level 60, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When enabled, claimed guild bots at level 60 use the same upgrade rules as leveling claimed bots. Displaced gear stays in their bags marked to keep (never sold, vendored, auctioned, disenchanted, or destroyed by automation), and items equipped by the bot's master or claim owner via `equip`, the addon, or a trade that the bot equips are pinned so auto-equip never replaces them until cleared with `keep none <item>`. Setting `0` restores the level-60 lock so only the player distributes gear at max level.
 
 </details>
 

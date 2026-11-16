@@ -39,16 +39,34 @@ inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed,
 }
 
 // Gear upgrade gate: May this bot automatically equip an upgrade it found?
-// Regular pool bots can equip upgrades. Claimed bots below level 60 can equip
-// upgrades as they level. Claimed bots at level 60 are hard-locked: only their
-// player master can distribute and equip gear on them.
-inline bool MayClaimedBotSelfEquip(uint32_t botLevel, bool isClaimed)
+// Regular pool bots can equip upgrades. Claimed bots auto-equip upgrades at any
+// level when claimedBotSelfEquip is enabled; when disabled, claimed bots at
+// level 60+ are locked so only their player master distributes gear.
+inline bool MayClaimedBotSelfEquip(uint32_t botLevel, bool isClaimed, bool claimedBotSelfEquip = true)
 {
     if (!isClaimed)
+        return true;
+    if (claimedBotSelfEquip)
         return true;
     if (botLevel >= kMaxVanillaPlayerLevel)
         return false;
     return true;
+}
+
+// Player override: when the bot's master or claim owner explicitly puts an
+// item on a claimed bot (equip order or trade that the bot then equips), pin it
+// so auto-equip never replaces it until cleared.
+inline bool ShouldPinPlayerEquippedItem(bool isClaimed, bool isMasterOrClaimOwner)
+{
+    return isClaimed && isMasterOrClaimOwner;
+}
+
+// Displaced gear: when a claimed bot replaces an equipped item during an auto
+// upgrade, keep the displaced item in its bags so automation never sells,
+// vendors, auctions, disenchants, or destroys it.
+inline bool ShouldKeepDisplacedClaimedGear(bool isClaimed)
+{
+    return isClaimed;
 }
 
 // Bag vendor / liquidation gate: May this bot automatically sell an item to a vendor?
