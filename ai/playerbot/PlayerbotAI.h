@@ -1037,6 +1037,10 @@ public:
     // Last player killed and when: ignored for WorldPvpKillIgnoreSeconds (0 = none).
     uint32 worldPvpIgnoreGuidLow_ = 0;
     uint32 worldPvpIgnoreStartMs_ = 0;
+    // When an autonomous ghost first found its revive point unsafe (0 = not),
+    // and the ghost time of that corpse, so a later death starts clean.
+    uint32 safeReviveUnsafeSinceMs_ = 0;
+    time_t safeReviveCorpseGhostTime_ = 0;
     // Last seek-role roll (world-thread ms, 0 = never) and its next deadline
     // with jitter applied by RandomBotService.
     uint32 worldPvpSeekRollMs_ = 0;

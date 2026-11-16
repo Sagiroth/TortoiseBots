@@ -7,6 +7,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/DeadValues.h"
+#include "playerbot/policy/death/SafeRevivePolicy.h"
 #include "Database/DBCStructure.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "runtime/BotManager.h"
@@ -224,6 +225,22 @@ bool ReviveFromCorpseAction::Execute(Event& event)
         return false;
     }
 
+    if (!master && !ai->HasActivePlayerMaster())
+    {
+        std::list<ObjectGuid> nearUnits = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
+        uint32 const aggro = WorldPosition(bot).GetUnitsAggro(nearUnits, bot);
+        if (TortoiseBots::DecideSafeRevive(aggro) == TortoiseBots::SafeReviveDecision::Wait)
+        {
+            if (!ai->safeReviveUnsafeSinceMs_ || ai->safeReviveCorpseGhostTime_ != corpse->GetGhostTime())
+            {
+                ai->safeReviveUnsafeSinceMs_ = WorldTimer::getMSTime();
+                ai->safeReviveCorpseGhostTime_ = corpse->GetGhostTime();
+            }
+            sLog.outDetail("[BOT CORPSE] %s: revive from corpse - BLOCKED: %u hostile(s) would aggro here", bot->GetName(), aggro);
+            return false;
+        }
+    }
+
     sLog.outDetail("[BOT CORPSE] %s: revive from corpse - RECLAIMING corpse now", bot->GetName());
 
     ai->StopMoving();
@@ -238,6 +255,7 @@ bool ReviveFromCorpseAction::Execute(Event& event)
     }
 
     sLog.outDetail("Bot #%d %s:%d <%s> revives at body", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
+    ai->safeReviveUnsafeSinceMs_ = 0;
     SET_AI_VALUE(bool, "corpse run", false);
     // Post-rez rescue (best-effort, fail-closed): a random bot that keeps dying
     // where its level cannot survive is relocated once to validated fitting
