@@ -58,7 +58,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotShopMounts`](#aiplayerbotrandombotshopmounts) | `0` | Restricts bots to racial mounts, blocking cross-race and rare shop mounts. |
 | [`AiPlayerbot.RepopAtGraveyard`](#aiplayerbotrepopatgraveyard) | `1` | Dead masterless bots release to nearest graveyard instead of starting zone. |
 | [`AiPlayerbot.AvoidHostileTowns`](#aiplayerbotavoidhostiletowns) | `1` | Prevents masterless bots from traveling near enemy faction town guards. |
-| [`AiPlayerbot.ExtraTownGuardEntries`](#aiplayerbotextratownguardentries) | `5999,6000,6001,6002,6003` | Creatures that count as town guards although the data does not mark them. |
+| [`AiPlayerbot.ExtraTownGuardEntries`](#aiplayerbotextratownguardentries) | `5996,5997,5998,5999,6000,6001,6002,6003` | Creatures that count as town guards although the data does not mark them. |
 | [`AiPlayerbot.RelocateHopelessDeaths`](#aiplayerbotrelocatehopelessdeaths) | `1` (commented out in the template; uncomment to change it) | Relocates bots repeatedly killed near enemy guards or in death loops. |
 | [`AiPlayerbot.UnstuckHearthLevelFit`](#aiplayerbotunstuckhearthlevelfit) | `1` | Requires bot hearthstone bind point to be within 10 levels of bot level. |
 | [`AiPlayerbot.StuckTravelTeleport`](#aiplayerbotstucktravelteleport) | `1` | Teleports long-stuck masterless bots directly to their travel destinations. |
@@ -634,12 +634,12 @@ This setting also enables the town death-loop rescue (requiring [`AiPlayerbot.Re
 
 ### `AiPlayerbot.ExtraTownGuardEntries`
 Creature entries that count as town guards for `AiPlayerbot.AvoidHostileTowns`, although the data gives them no guard flag and no guard word in the name.
-**Default:** `5999,6000,6001,6002,6003` (commented out in the template; uncomment to change it) · **Values:** comma-separated creature entries · **Restart:** needed
+**Default:** `5996,5997,5998,5999,6000,6001,6002,6003` (commented out in the template; uncomment to change it) · **Values:** comma-separated creature entries · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Guards are normally found by the guard flag or by a guard title in the name (Guard, Sentinel, Grunt, Elite and similar). The default adds the Nethergarde Keep garrison (Soldier, Cleric, Analyst, Riftwatcher, Officer): without it, Horde bots around level 50 took the soldiers for ordinary mobs and died to the keep's elites. Each listed creature still counts only against the faction it is hostile to, so Alliance bots keep using the keep.
+Guards are normally found by the guard flag or by a guard title in the name (Guard, Sentinel, Grunt, Elite and similar). The default adds the Nethergarde Keep garrison and miners (Miner, Engineer, Foreman, Soldier, Cleric, Analyst, Riftwatcher, Officer): without it, Horde bots around level 50 took the soldiers for ordinary mobs and died to the keep's elites. Each listed creature still counts only against the faction it is hostile to, so Alliance bots keep using the keep.
 
 </details>
 

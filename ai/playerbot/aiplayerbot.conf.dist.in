@@ -275,7 +275,7 @@ AiPlayerbot.AvoidHostileTowns = 1
 # Creature entries that count as town guards for AvoidHostileTowns although the
 # data has no guard flag and no guard word in the name. Default: the Nethergarde
 # Keep garrison (Soldier, Cleric, Analyst, Riftwatcher, Officer).
-#AiPlayerbot.ExtraTownGuardEntries = 5999,6000,6001,6002,6003
+#AiPlayerbot.ExtraTownGuardEntries = 5996,5997,5998,5999,6000,6001,6002,6003
 
 # When a random bot without a player master is stuck for a long time it uses its
 # hearthstone. 1 = only if its homebind area is within 10 levels of the bot
