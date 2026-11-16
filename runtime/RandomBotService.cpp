@@ -23,6 +23,7 @@
 #include "playerbot/AiFactory.h"
 #include "playerbot/RandomBotFacade.h"
 #include "RandomBotAccountRegistry.h"
+#include "AhBotSellerAccount.h"
 #include "RandomBotPoolReset.h"
 #include "StartZoneBalance.h"
 #include "BotNameService.h"
@@ -293,6 +294,13 @@ void RandomBotService::LoadCandidates()
     }
 
     std::set<uint32> accountIds(registry.AccountIds().begin(), registry.AccountIds().end());
+    for (auto it = accountIds.begin(); it != accountIds.end(); )
+    {
+        if (AhBotSellerAccount::Instance().IsSellerAccount(*it))
+            it = accountIds.erase(it);
+        else
+            ++it;
+    }
     m_rndBotAccountIds.assign(accountIds.begin(), accountIds.end());
 
     // Hire characters live on pool accounts but are never pool residents:
@@ -330,6 +338,8 @@ void RandomBotService::LoadCandidates()
             if (!guidLow || !characterIds.insert(guidLow).second)
                 continue;
             if (hiredCharacters.count(guidLow))
+                continue;
+            if (AhBotSellerAccount::Instance().IsSellerGuid(guidLow))
                 continue;
 
             Candidate candidate;
@@ -1067,6 +1077,11 @@ void RandomBotService::ResolvePinnedBots()
         if (!guidLow)
         {
             TB_LOG_DETAIL("TortoiseBots: pinned bot '%s' resolved to invalid guid", rawName.c_str());
+            continue;
+        }
+        if (AhBotSellerAccount::Instance().IsSellerGuid(guidLow))
+        {
+            TB_LOG_DETAIL("TortoiseBots: pinned bot '%s' (guid %u) is an AH bot seller, ignoring", rawName.c_str(), guidLow);
             continue;
         }
         // Bounded, resolution-only check: a name that exists in `characters`

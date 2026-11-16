@@ -30,6 +30,8 @@
 // Issue #265: the managed-account registry is the authority for random-pool
 // account identity (prefix matching never authorizes ownership).
 #include "../../runtime/RandomBotAccountRegistry.h"
+#include "../../runtime/AhBotSellerAccount.h"
+#include "../../runtime/policy/ah/AhBotSellerAccountPolicy.h"
 #include "../../runtime/AltBotService.h"
 // logEvent forwards the activity whitelist to the telemetry daemon.
 #include "../../runtime/ObservabilityEmitter.h"
@@ -612,6 +614,15 @@ bool PlayerbotAIConfig::Initialize()
     if (ahMarketTimeMax < 1) ahMarketTimeMax = 1;
     if (ahMarketTimeMax > 72) ahMarketTimeMax = 72;
     if (ahMarketTimeMin > ahMarketTimeMax) ahMarketTimeMin = ahMarketTimeMax;
+    //
+    // AhBot seller
+    ahBotAccountName = config.GetStringDefault("AiPlayerbot.AhBot.AccountName", "TBAHBOT");
+    ahBotSellersPerFaction = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.SellersPerFaction", 4);
+    if (ahBotSellersPerFaction < 1) ahBotSellersPerFaction = 1;
+    if (ahBotSellersPerFaction > 5) ahBotSellersPerFaction = 5;
+    ahBotSellerRepairIntervalSeconds = (uint32)config.GetIntDefault("AiPlayerbot.AhBot.SellerRepairIntervalSeconds", 300);
+    if (ahBotSellerRepairIntervalSeconds < 10) ahBotSellerRepairIntervalSeconds = 10;
+    if (ahBotSellerRepairIntervalSeconds > 86400) ahBotSellerRepairIntervalSeconds = 86400;
     //
     logInGroupOnly = config.GetBoolDefault("AiPlayerbot.LogInGroupOnly", true);
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);
@@ -1454,6 +1465,10 @@ void PlayerbotAIConfig::loadFreeAltBotAccounts()
             // account that was never adopted stays a normal account here.
             if (TortoiseBots::RandomBotAccountRegistry::Instance().IsRegistered(accountId))
                 continue;
+            if (TortoiseBots::AhBotSellerAccount::Instance().IsSellerAccount(accountId) ||
+                (ai::IsValidSellerAccountName(ahBotAccountName, randomBotAccountPrefix) &&
+                 ai::SellerAccountNameEquals(accountName, ahBotAccountName)))
+                continue;
 
             if (std::find(toggleAlwaysOnlineAccounts.begin(), toggleAlwaysOnlineAccounts.end(), accountName) != toggleAlwaysOnlineAccounts.end())
                 accountToggle = true;
@@ -1469,6 +1484,8 @@ void PlayerbotAIConfig::loadFreeAltBotAccounts()
                 Field* fields = result->Fetch();
                 std::string charName = fields[0].GetString();
                 uint32 guid = fields[1].GetUInt32();
+                if (TortoiseBots::AhBotSellerAccount::Instance().IsSellerGuid(guid))
+                    continue;
 
                 BotAlwaysOnline always = BotAlwaysOnline(sRandomBotFacade.GetValue(guid, "always"));
 

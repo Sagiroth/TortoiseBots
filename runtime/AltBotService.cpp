@@ -6,6 +6,7 @@
 #include "HireLifecycle.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
+#include "AhBotSellerAccount.h"
 #include "RandomBotService.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -334,6 +335,9 @@ void AltBotService::TryStart(ObjectGuid guid)
 
     BotRecord* record = BotManager::Instance().FindBot(guid);
     if (!record || record->random || record->lifecycle != BotLifecycle::InWorld)
+        return;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(guid.GetCounter()) ||
+        AhBotSellerAccount::Instance().IsSellerAccount(record->accountId))
         return;
 
     Player* bot = sObjectAccessor.FindPlayer(guid);

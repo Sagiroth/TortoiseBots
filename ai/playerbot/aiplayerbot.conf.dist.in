@@ -682,6 +682,19 @@ AiPlayerbot.AhMarketBidMin = 75
 # AiPlayerbot.AhMarketBidMax = 90
 AiPlayerbot.AhMarketTimeMax = 24
 # AiPlayerbot.AhMarketTimeMin = 8
+# AhBot seller
+# Dedicated login account used to own Auction House bot listings and bids.
+# Default: TBAHBOT (must not start with AiPlayerbot.RandomBotAccountPrefix).
+# Characters on this account never log in and are excluded from the random bot pool.
+AiPlayerbot.AhBot.AccountName = TBAHBOT
+
+# Number of offline seller characters maintained per faction (Alliance and Horde)
+# on the AH bot account (1-5). Default: 4
+AiPlayerbot.AhBot.SellersPerFaction = 4
+
+# How often (in seconds) the AH bot checks that its seller account and characters
+# still exist and recreates any missing or soft-deleted entries. Default: 300
+AiPlayerbot.AhBot.SellerRepairIntervalSeconds = 300
 # Demand-aware WSG/AB/AV/SV/BR queue participation for live Headless RNDBOTs.
 # Default on. SV = Sunnyglade Valley, BR = Blood Ring arena (max-level bots only).
 # Uses the native BattleGroundJoinAction/WorldSession handler path and the

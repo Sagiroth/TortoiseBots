@@ -210,6 +210,11 @@ public:
     uint32 ahMarketTimeMin = 8;             // Min auction duration (hours)
     uint32 ahMarketTimeMax = 24;            // Max auction duration (hours)
     //
+    // AhBot seller
+    std::string ahBotAccountName = "TBAHBOT";
+    uint32 ahBotSellersPerFaction = 4;
+    uint32 ahBotSellerRepairIntervalSeconds = 300;
+    //
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
     // characters, create only the deficit toward the configured Min/Max target

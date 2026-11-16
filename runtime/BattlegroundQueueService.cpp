@@ -5,6 +5,7 @@
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotManager.h"
+#include "AhBotSellerAccount.h"
 #include "HireLifecycle.h"
 #include "RandomBotService.h"
 #include "PlayerbotAIStorage.h"
@@ -206,6 +207,8 @@ bool BattlegroundQueueService::IsEligible(::Player* bot) const
     if (!bot->IsInWorld())
         return false;
     if (!bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(bot->GetGUIDLow()))
         return false;
     // In-memory live Headless/random selection: only random bots discovered
     // via RandomBotService's RNDBOT pool (pinned included). Owned/manual bots

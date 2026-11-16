@@ -1,4 +1,5 @@
 #include "ClaimLifecycle.h"
+#include "AhBotSellerAccount.h"
 
 #include "../host/ModuleLog.h"
 
@@ -49,6 +50,11 @@ bool ClaimLifecycle::Claim(uint32_t botGuidLow, uint32_t ownerAccountId, uint32_
 {
     if (!botGuidLow || !ownerPlayerGuidLow || !guildId)
         return false;
+    if (AhBotSellerAccount::Instance().IsSellerGuid(botGuidLow))
+    {
+        sLog.outError("TortoiseBots: claim refused for AH bot seller character %u", botGuidLow);
+        return false;
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);

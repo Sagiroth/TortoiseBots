@@ -25,6 +25,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/RandomBotAccountRegistry.h"
+#include "../runtime/AhBotSellerAccount.h"
 #include "../runtime/RandomBotPoolReset.h"
 #include "../runtime/RandomBotService.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -429,7 +430,9 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
         // random-pool accounts and are temporary: their character is deleted
         // when the hire ends, so a dismissed companion never shows up here.
         if (it->characterGuid == requester->GetObjectGuid() ||
-            RandomBotAccountRegistry::Instance().IsRegistered(it->characterAccountId))
+            RandomBotAccountRegistry::Instance().IsRegistered(it->characterAccountId) ||
+            AhBotSellerAccount::Instance().IsSellerAccount(it->characterAccountId) ||
+            AhBotSellerAccount::Instance().IsSellerGuid(it->characterGuid.GetCounter()))
             it = rows.erase(it);
         else
             ++it;
