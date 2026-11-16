@@ -47,13 +47,13 @@ int main()
     {
         AhBotPricingConfig cfg = MakeDefaultVanillaPricingConfig();
         AhBotItemSpec sword{};
-        sword.itemClass = ai::kAhBotClassWeapon;
+        sword.itemClass = ai::kAhBotPriceClassWeapon;
         sword.maxStackSize = 1;
         CHECK(GetStackSizeForItem(sword, cfg, [](uint32_t lo, uint32_t) { return lo; }) == 1);
 
         AhBotItemSpec linen{};
         linen.itemId = 2589;
-        linen.itemClass = ai::kAhBotClassTradeGoods;
+        linen.itemClass = ai::kAhBotPriceClassTradeGoods;
         linen.maxStackSize = 20;
         // RandomRatio = 75: roll 0 (<75) triggers stacked, roll 1..4 selects increment multiples of 5.
         CHECK(GetStackSizeForItem(linen, cfg, [](uint32_t lo, uint32_t hi) { return (hi == 99) ? 0 : lo; }) == 5);
@@ -62,12 +62,12 @@ int main()
         CHECK(GetStackSizeForItem(linen, cfg, [](uint32_t, uint32_t hi) { return (hi == 99) ? 75 : hi; }) == 1);
 
         // MaxStackSize cap clamps stack size.
-        cfg.listingStackMaxStackSize[ai::kAhBotClassTradeGoods] = 10;
+        cfg.listingStackMaxStackSize[ai::kAhBotPriceClassTradeGoods] = 10;
         CHECK(GetStackSizeForItem(linen, cfg, [](uint32_t, uint32_t hi) { return (hi == 99) ? 0 : hi; }) == 10);
 
         // Projectile increment 1000 clamps to item max stack (200).
         AhBotItemSpec arrow{};
-        arrow.itemClass = ai::kAhBotClassProjectile;
+        arrow.itemClass = ai::kAhBotPriceClassProjectile;
         arrow.maxStackSize = 200;
         CHECK(GetStackSizeForItem(arrow, cfg, [](uint32_t, uint32_t hi) { return (hi == 99) ? 0 : hi; }) == 200);
     }
@@ -80,8 +80,8 @@ int main()
 
         AhBotItemSpec linen{};
         linen.itemId = 2589;
-        linen.itemClass = ai::kAhBotClassTradeGoods;
-        linen.quality = ai::kAhBotQualityNormal;
+        linen.itemClass = ai::kAhBotPriceClassTradeGoods;
+        linen.quality = ai::kAhBotPriceQualityNormal;
         linen.sellPrice = 13;
 
         uint64_t bid = 0, buyout = 0;
@@ -112,38 +112,38 @@ int main()
         };
 
         // Copper Ore: sell 5c, ilvl 10 -> ~18c
-        checkMid({ 2770, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 10, 5, 10, 13, 0 }, 15, 22);
+        checkMid({ 2770, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 10, 5, 10, 13, 0 }, 15, 22);
         // Linen Cloth: sell 13c, ilvl 5 -> ~44c
-        checkMid({ 2589, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 5, 13, 20, 0, 0 }, 38, 52);
+        checkMid({ 2589, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 5, 13, 20, 0, 0 }, 38, 52);
         // Runecloth: sell 400c, ilvl 50 -> ~2200c
-        checkMid({ 14047, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 50, 400, 20, 0, 0 }, 1900, 2500);
+        checkMid({ 14047, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 50, 400, 20, 0, 0 }, 1900, 2500);
         // Peacebloom: sell 10c, ilvl 5 -> ~82c
-        checkMid({ 2447, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 5, 10, 20, 6, 0 }, 70, 95);
+        checkMid({ 2447, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 5, 10, 20, 6, 0 }, 70, 95);
         // Major Healing Potion: sell 1000c, ilvl 55 -> ~9200c
-        checkMid({ 13446, ai::kAhBotClassConsumable, 0, ai::kAhBotQualityNormal, 55, 1000, 10, 0, 0 }, 8000, 10500);
+        checkMid({ 13446, ai::kAhBotPriceClassConsumable, 0, ai::kAhBotPriceQualityNormal, 55, 1000, 10, 0, 0 }, 8000, 10500);
         // Flask of the Titans: sell 5000c, ilvl 60 -> ~22g-25g
-        checkMid({ 13510, ai::kAhBotClassConsumable, 0, ai::kAhBotQualityNormal, 60, 5000, 10, 0, 0 }, 200000, 260000);
+        checkMid({ 13510, ai::kAhBotPriceClassConsumable, 0, ai::kAhBotPriceQualityNormal, 60, 5000, 10, 0, 0 }, 200000, 260000);
         // Strange Dust: sell 0c, min center override 60c -> ~239c
-        checkMid({ 10940, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 10, 0, 20, 7, 0 }, 200, 280);
+        checkMid({ 10940, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 10, 0, 20, 7, 0 }, 200, 280);
         // Large Brilliant Shard: sell 0c, min center override 4000c -> ~19000c
-        checkMid({ 14344, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityRare, 55, 0, 20, 7, 0 }, 16000, 22000);
+        checkMid({ 14344, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityRare, 55, 0, 20, 7, 0 }, 16000, 22000);
         // Uncommon Armor ilvl 45: sell 6692c -> ~32800c
-        checkMid({ 7332, ai::kAhBotClassArmor, 4, ai::kAhBotQualityUncommon, 45, 6692, 1, 0, 0 }, 29000, 37000);
+        checkMid({ 7332, ai::kAhBotPriceClassArmor, 4, ai::kAhBotPriceQualityUncommon, 45, 6692, 1, 0, 0 }, 29000, 37000);
         // Rare Weapon ilvl 50: sell 35042c -> ~174000c
-        checkMid({ 13046, ai::kAhBotClassWeapon, 4, ai::kAhBotQualityRare, 50, 35042, 1, 0, 0 }, 155000, 195000);
+        checkMid({ 13046, ai::kAhBotPriceClassWeapon, 4, ai::kAhBotPriceQualityRare, 50, 35042, 1, 0, 0 }, 155000, 195000);
     }
 
     // 5. BagFamily / LockID fallback for custom items & disabling advanced pricing
     {
         AhBotPricingConfig cfg = MakeDefaultVanillaPricingConfig();
-        AhBotItemSpec customHerb{ 99001, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 30, 100, 20, ai::kAhBotBagFamilyHerbs, 0 };
+        AhBotItemSpec customHerb{ 99001, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 30, 100, 20, ai::kAhBotBagFamilyHerbs, 0 };
         CHECK(ClassifyAdvancedGroup(customHerb, cfg) == AhBotAdvancedGroup::TradeGoodHerb);
         CHECK(GetAdvancedPricingMultiplier(customHerb, cfg) > 1.5f);
 
         cfg.advancedPricingEnabled[static_cast<size_t>(AhBotAdvancedGroup::TradeGoodHerb)] = false;
         CHECK(GetAdvancedPricingMultiplier(customHerb, cfg) == 1.0f);
 
-        AhBotItemSpec customBox{ 99002, ai::kAhBotClassMisc, 0, ai::kAhBotQualityUncommon, 40, 150, 1, 0, 42 };
+        AhBotItemSpec customBox{ 99002, ai::kAhBotPriceClassMisc, 0, ai::kAhBotPriceQualityUncommon, 40, 150, 1, 0, 42 };
         CHECK(ClassifyAdvancedGroup(customBox, cfg) == AhBotAdvancedGroup::MiscJunk);
     }
 
@@ -153,11 +153,11 @@ int main()
         cfg.buyoutVariationReducePercent = 0.0f;
         cfg.buyoutVariationAddPercent = 0.0f;
         cfg.bidVariationLowReducePercent = 0.0f;
-        cfg.priceMultiplierCategoryQuality[ai::kAhBotClassArmor][ai::kAhBotQualityUncommon] = 1.0f;
-        cfg.priceMultiplierQuality[ai::kAhBotQualityUncommon] = 1.0f;
-        cfg.priceMultiplierItemLevelCategory[ai::kAhBotClassArmor] = 0.1f;
+        cfg.priceMultiplierCategoryQuality[ai::kAhBotPriceClassArmor][ai::kAhBotPriceQualityUncommon] = 1.0f;
+        cfg.priceMultiplierQuality[ai::kAhBotPriceQualityUncommon] = 1.0f;
+        cfg.priceMultiplierItemLevelCategory[ai::kAhBotPriceClassArmor] = 0.1f;
 
-        AhBotItemSpec armor{ 99003, ai::kAhBotClassArmor, 1, ai::kAhBotQualityUncommon, 40, 1000, 1, 0, 0 };
+        AhBotItemSpec armor{ 99003, ai::kAhBotPriceClassArmor, 1, ai::kAhBotPriceQualityUncommon, 40, 1000, 1, 0, 0 };
         uint64_t bid = 0, buyout = 0;
         CalculateItemValue(armor, cfg, [](uint32_t lo, uint32_t) { return lo; }, bid, buyout);
         // 1000 * (40 * 0.1) = 4000
@@ -169,11 +169,11 @@ int main()
         AhBotPricingConfig cfg = MakeDefaultVanillaPricingConfig();
         cfg.buyoutVariationReducePercent = 0.5f;
         cfg.buyoutVariationAddPercent = 0.0f;
-        cfg.priceMultiplierCategoryQuality[ai::kAhBotClassArmor][ai::kAhBotQualityNormal] = 0.2f;
+        cfg.priceMultiplierCategoryQuality[ai::kAhBotPriceClassArmor][ai::kAhBotPriceQualityNormal] = 0.2f;
         cfg.buyoutBelowVendorVariationAddPercentEnabled = true;
         cfg.buyoutBelowVendorVariationAddPercent = 0.25f;
 
-        AhBotItemSpec vendorItem{ 99004, ai::kAhBotClassArmor, 1, ai::kAhBotQualityNormal, 10, 500, 1, 0, 0 };
+        AhBotItemSpec vendorItem{ 99004, ai::kAhBotPriceClassArmor, 1, ai::kAhBotPriceQualityNormal, 10, 500, 1, 0, 0 };
         uint64_t bid = 0, buyout = 0;
         CalculateItemValue(vendorItem, cfg, [](uint32_t lo, uint32_t) { return lo; }, bid, buyout);
         CHECK(buyout >= 500);
@@ -188,7 +188,7 @@ int main()
         cfg.buyoutVariationReducePercent = 0.0f;
         cfg.buyoutVariationAddPercent = 0.0f;
         cfg.bidVariationLowReducePercent = 0.0f;
-        AhBotItemSpec linen{ 2589, ai::kAhBotClassTradeGoods, 0, ai::kAhBotQualityNormal, 5, 13, 20, 0, 0 };
+        AhBotItemSpec linen{ 2589, ai::kAhBotPriceClassTradeGoods, 0, ai::kAhBotPriceQualityNormal, 5, 13, 20, 0, 0 };
         AhBotPricePair p1 = CalculateListingPrice(linen, 1, cfg, [](uint32_t lo, uint32_t) { return lo; });
         AhBotPricePair p10 = CalculateListingPrice(linen, 10, cfg, [](uint32_t lo, uint32_t) { return lo; });
         CHECK(p10.buyout == p1.buyout * 10);

@@ -495,9 +495,10 @@ bool AhBotService::StepSellOne()
     uint32_t etimeMax = sPlayerbotAIConfig.ahBotListingExpireTimeInSecondsMax;
     uint32_t etime = (etimeMin >= etimeMax) ? etimeMin : urand(etimeMin, etimeMax);
 
-    std::unique_ptr<Item> item(Item::CreateItem(itemId, stackCount, ObjectGuid(HIGHGUID_PLAYER, sellerGuid)));
+    std::unique_ptr<Item> item(Item::CreateItem(itemId, stackCount));
     if (!item)
         return true;
+    item->SetOwnerGuid(ObjectGuid(HIGHGUID_PLAYER, sellerGuid));
 
     ApplyRandomItemPropertiesOffline(item.get(), itemId);
     item->ClearUpdateMask(false);

@@ -40,38 +40,38 @@
 
 namespace ai
 {
-inline constexpr uint32_t kAhBotMaxItemClass = 16;
-inline constexpr uint32_t kAhBotMaxItemQuality = 7;
+inline constexpr uint32_t kAhBotPriceMaxItemClass = 16;
+inline constexpr uint32_t kAhBotPriceMaxItemQuality = 7;
 
 enum AhBotItemClass : uint32_t
 {
-    kAhBotClassConsumable = 0,
-    kAhBotClassContainer = 1,
-    kAhBotClassWeapon = 2,
-    kAhBotClassGem = 3,
-    kAhBotClassArmor = 4,
-    kAhBotClassReagent = 5,
-    kAhBotClassProjectile = 6,
-    kAhBotClassTradeGoods = 7,
-    kAhBotClassGeneric = 8,
-    kAhBotClassRecipe = 9,
-    kAhBotClassMoney = 10,
-    kAhBotClassQuiver = 11,
-    kAhBotClassQuest = 12,
-    kAhBotClassKey = 13,
-    kAhBotClassPermanent = 14,
-    kAhBotClassMisc = 15,
+    kAhBotPriceClassConsumable = 0,
+    kAhBotPriceClassContainer = 1,
+    kAhBotPriceClassWeapon = 2,
+    kAhBotPriceClassGem = 3,
+    kAhBotPriceClassArmor = 4,
+    kAhBotPriceClassReagent = 5,
+    kAhBotPriceClassProjectile = 6,
+    kAhBotPriceClassTradeGoods = 7,
+    kAhBotPriceClassGeneric = 8,
+    kAhBotPriceClassRecipe = 9,
+    kAhBotPriceClassMoney = 10,
+    kAhBotPriceClassQuiver = 11,
+    kAhBotPriceClassQuest = 12,
+    kAhBotPriceClassKey = 13,
+    kAhBotPriceClassPermanent = 14,
+    kAhBotPriceClassMisc = 15,
 };
 
 enum AhBotItemQuality : uint32_t
 {
-    kAhBotQualityPoor = 0,
-    kAhBotQualityNormal = 1,
-    kAhBotQualityUncommon = 2,
-    kAhBotQualityRare = 3,
-    kAhBotQualityEpic = 4,
-    kAhBotQualityLegendary = 5,
-    kAhBotQualityArtifact = 6,
+    kAhBotPriceQualityPoor = 0,
+    kAhBotPriceQualityNormal = 1,
+    kAhBotPriceQualityUncommon = 2,
+    kAhBotPriceQualityRare = 3,
+    kAhBotPriceQualityEpic = 4,
+    kAhBotPriceQualityLegendary = 5,
+    kAhBotPriceQualityArtifact = 6,
 };
 
 enum class AhBotAdvancedGroup : uint8_t
@@ -140,22 +140,22 @@ struct AhBotPricingConfig
     float buyerAcceptablePriceModifier = 1.0f;
 
     bool useItemSellPriceIfHigherThanPriceMinimumCenterBase = true;
-    std::array<uint32_t, kAhBotMaxItemClass> priceMinimumCenterBase{};
+    std::array<uint32_t, kAhBotPriceMaxItemClass> priceMinimumCenterBase{};
     std::unordered_map<uint32_t, uint32_t> priceMinimumCenterBaseOverrides;
 
     std::array<bool, static_cast<size_t>(AhBotAdvancedGroup::Count)> advancedPricingEnabled{};
     std::unordered_map<uint32_t, AhBotAdvancedGroup> advancedPricingItemGroups;
 
-    std::array<float, kAhBotMaxItemClass> priceMultiplierCategory{};
-    std::array<float, kAhBotMaxItemQuality> priceMultiplierQuality{};
-    std::array<float, kAhBotMaxItemClass> priceMultiplierItemLevelCategory{};
-    std::array<std::array<float, kAhBotMaxItemQuality>, kAhBotMaxItemClass> priceMultiplierCategoryQuality{};
-    std::array<float, kAhBotMaxItemQuality> priceMultiplierCategoryMountQuality{};
-    std::array<float, kAhBotMaxItemQuality> priceMultiplierCategoryPetQuality{};
+    std::array<float, kAhBotPriceMaxItemClass> priceMultiplierCategory{};
+    std::array<float, kAhBotPriceMaxItemQuality> priceMultiplierQuality{};
+    std::array<float, kAhBotPriceMaxItemClass> priceMultiplierItemLevelCategory{};
+    std::array<std::array<float, kAhBotPriceMaxItemQuality>, kAhBotPriceMaxItemClass> priceMultiplierCategoryQuality{};
+    std::array<float, kAhBotPriceMaxItemQuality> priceMultiplierCategoryMountQuality{};
+    std::array<float, kAhBotPriceMaxItemQuality> priceMultiplierCategoryPetQuality{};
 
-    std::array<uint32_t, kAhBotMaxItemClass> listingStackRandomRatio{};
-    std::array<uint32_t, kAhBotMaxItemClass> listingStackRandomStackIncrement{};
-    std::array<uint32_t, kAhBotMaxItemClass> listingStackMaxStackSize{};
+    std::array<uint32_t, kAhBotPriceMaxItemClass> listingStackRandomRatio{};
+    std::array<uint32_t, kAhBotPriceMaxItemClass> listingStackRandomStackIncrement{};
+    std::array<uint32_t, kAhBotPriceMaxItemClass> listingStackMaxStackSize{};
 };
 
 // Parse comma-separated "itemID:value" pairs (first occurrence wins, matching std::unordered_map::insert).
@@ -293,103 +293,103 @@ inline AhBotPricingConfig MakeDefaultVanillaPricingConfig()
     cfg.priceMinimumCenterBaseOverrides = ParseItemValuePairs(kAhBotDefaultMinCenterOverrides);
 
     cfg.priceMinimumCenterBase.fill(20);
-    cfg.priceMinimumCenterBase[kAhBotClassConsumable] = 10;
-    cfg.priceMinimumCenterBase[kAhBotClassContainer] = 50;
-    cfg.priceMinimumCenterBase[kAhBotClassWeapon] = 25;
-    cfg.priceMinimumCenterBase[kAhBotClassArmor] = 25;
-    cfg.priceMinimumCenterBase[kAhBotClassReagent] = 20;
-    cfg.priceMinimumCenterBase[kAhBotClassProjectile] = 1;
-    cfg.priceMinimumCenterBase[kAhBotClassTradeGoods] = 5;
-    cfg.priceMinimumCenterBase[kAhBotClassGeneric] = 20;
-    cfg.priceMinimumCenterBase[kAhBotClassRecipe] = 20;
-    cfg.priceMinimumCenterBase[kAhBotClassQuiver] = 25;
-    cfg.priceMinimumCenterBase[kAhBotClassQuest] = 20;
-    cfg.priceMinimumCenterBase[kAhBotClassKey] = 25;
-    cfg.priceMinimumCenterBase[kAhBotClassMisc] = 20;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassConsumable] = 10;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassContainer] = 50;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassWeapon] = 25;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassArmor] = 25;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassReagent] = 20;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassProjectile] = 1;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassTradeGoods] = 5;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassGeneric] = 20;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassRecipe] = 20;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassQuiver] = 25;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassQuest] = 20;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassKey] = 25;
+    cfg.priceMinimumCenterBase[kAhBotPriceClassMisc] = 20;
 
     cfg.priceMultiplierCategory.fill(1.0f);
     cfg.priceMultiplierItemLevelCategory.fill(0.0f);
 
-    cfg.priceMultiplierQuality[kAhBotQualityPoor] = 1.0f;
-    cfg.priceMultiplierQuality[kAhBotQualityNormal] = 1.0f;
-    cfg.priceMultiplierQuality[kAhBotQualityUncommon] = 1.8f;
-    cfg.priceMultiplierQuality[kAhBotQualityRare] = 1.9f;
-    cfg.priceMultiplierQuality[kAhBotQualityEpic] = 2.1f;
-    cfg.priceMultiplierQuality[kAhBotQualityLegendary] = 3.0f;
-    cfg.priceMultiplierQuality[kAhBotQualityArtifact] = 3.0f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityPoor] = 1.0f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityNormal] = 1.0f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityUncommon] = 1.8f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityRare] = 1.9f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityEpic] = 2.1f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityLegendary] = 3.0f;
+    cfg.priceMultiplierQuality[kAhBotPriceQualityArtifact] = 3.0f;
 
     for (auto& row : cfg.priceMultiplierCategoryQuality)
         row.fill(1.0f);
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassConsumable][kAhBotQualityNormal] = 4.3f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassConsumable][kAhBotQualityUncommon] = 1.8f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassConsumable][kAhBotQualityRare] = 1.7f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassConsumable][kAhBotQualityEpic] = 2.0f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassConsumable][kAhBotPriceQualityNormal] = 4.3f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassConsumable][kAhBotPriceQualityUncommon] = 1.8f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassConsumable][kAhBotPriceQualityRare] = 1.7f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassConsumable][kAhBotPriceQualityEpic] = 2.0f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassContainer][kAhBotQualityNormal] = 3.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassContainer][kAhBotQualityUncommon] = 3.1f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassContainer][kAhBotQualityRare] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassContainer][kAhBotQualityEpic] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassContainer][kAhBotPriceQualityNormal] = 3.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassContainer][kAhBotPriceQualityUncommon] = 3.1f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassContainer][kAhBotPriceQualityRare] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassContainer][kAhBotPriceQualityEpic] = 2.5f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassWeapon][kAhBotQualityNormal] = 1.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassWeapon][kAhBotQualityUncommon] = 2.25f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassWeapon][kAhBotQualityRare] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassWeapon][kAhBotQualityEpic] = 2.3f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassWeapon][kAhBotPriceQualityNormal] = 1.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassWeapon][kAhBotPriceQualityUncommon] = 2.25f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassWeapon][kAhBotPriceQualityRare] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassWeapon][kAhBotPriceQualityEpic] = 2.3f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassArmor][kAhBotQualityNormal] = 1.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassArmor][kAhBotQualityUncommon] = 2.6f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassArmor][kAhBotQualityRare] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassArmor][kAhBotQualityEpic] = 2.7f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassArmor][kAhBotPriceQualityNormal] = 1.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassArmor][kAhBotPriceQualityUncommon] = 2.6f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassArmor][kAhBotPriceQualityRare] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassArmor][kAhBotPriceQualityEpic] = 2.7f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassReagent][kAhBotQualityNormal] = 5.0f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassReagent][kAhBotQualityUncommon] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassReagent][kAhBotQualityRare] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassReagent][kAhBotQualityEpic] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassReagent][kAhBotPriceQualityNormal] = 5.0f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassReagent][kAhBotPriceQualityUncommon] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassReagent][kAhBotPriceQualityRare] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassReagent][kAhBotPriceQualityEpic] = 2.5f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassProjectile][kAhBotQualityNormal] = 0.9f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassProjectile][kAhBotQualityUncommon] = 0.8f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassProjectile][kAhBotQualityRare] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassProjectile][kAhBotQualityEpic] = 2.8f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassProjectile][kAhBotPriceQualityNormal] = 0.9f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassProjectile][kAhBotPriceQualityUncommon] = 0.8f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassProjectile][kAhBotPriceQualityRare] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassProjectile][kAhBotPriceQualityEpic] = 2.8f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassTradeGoods][kAhBotQualityNormal] = 3.8f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassTradeGoods][kAhBotQualityUncommon] = 2.1f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassTradeGoods][kAhBotQualityRare] = 2.4f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassTradeGoods][kAhBotQualityEpic] = 2.5f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassTradeGoods][kAhBotQualityLegendary] = 1.4f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassTradeGoods][kAhBotPriceQualityNormal] = 3.8f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassTradeGoods][kAhBotPriceQualityUncommon] = 2.1f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassTradeGoods][kAhBotPriceQualityRare] = 2.4f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassTradeGoods][kAhBotPriceQualityEpic] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassTradeGoods][kAhBotPriceQualityLegendary] = 1.4f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassRecipe][kAhBotQualityNormal] = 4.0f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassRecipe][kAhBotQualityUncommon] = 2.75f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassRecipe][kAhBotQualityRare] = 2.7f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassRecipe][kAhBotQualityEpic] = 2.5f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassRecipe][kAhBotPriceQualityNormal] = 4.0f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassRecipe][kAhBotPriceQualityUncommon] = 2.75f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassRecipe][kAhBotPriceQualityRare] = 2.7f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassRecipe][kAhBotPriceQualityEpic] = 2.5f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassQuest][kAhBotQualityRare] = 7.0f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassQuest][kAhBotQualityEpic] = 8.0f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassQuest][kAhBotPriceQualityRare] = 7.0f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassQuest][kAhBotPriceQualityEpic] = 8.0f;
 
-    cfg.priceMultiplierCategoryQuality[kAhBotClassMisc][kAhBotQualityNormal] = 3.2f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassMisc][kAhBotQualityUncommon] = 2.55f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassMisc][kAhBotQualityRare] = 1.7f;
-    cfg.priceMultiplierCategoryQuality[kAhBotClassMisc][kAhBotQualityEpic] = 2.0f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassMisc][kAhBotPriceQualityNormal] = 3.2f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassMisc][kAhBotPriceQualityUncommon] = 2.55f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassMisc][kAhBotPriceQualityRare] = 1.7f;
+    cfg.priceMultiplierCategoryQuality[kAhBotPriceClassMisc][kAhBotPriceQualityEpic] = 2.0f;
 
     cfg.priceMultiplierCategoryMountQuality.fill(1.0f);
-    cfg.priceMultiplierCategoryMountQuality[kAhBotQualityRare] = 3000.0f;
-    cfg.priceMultiplierCategoryMountQuality[kAhBotQualityEpic] = 5750.0f;
+    cfg.priceMultiplierCategoryMountQuality[kAhBotPriceQualityRare] = 3000.0f;
+    cfg.priceMultiplierCategoryMountQuality[kAhBotPriceQualityEpic] = 5750.0f;
 
     cfg.priceMultiplierCategoryPetQuality.fill(1.0f);
 
     cfg.listingStackRandomRatio.fill(0);
-    cfg.listingStackRandomRatio[kAhBotClassConsumable] = 50;
-    cfg.listingStackRandomRatio[kAhBotClassReagent] = 50;
-    cfg.listingStackRandomRatio[kAhBotClassProjectile] = 100;
-    cfg.listingStackRandomRatio[kAhBotClassTradeGoods] = 75;
-    cfg.listingStackRandomRatio[kAhBotClassGeneric] = 100;
-    cfg.listingStackRandomRatio[kAhBotClassQuest] = 10;
-    cfg.listingStackRandomRatio[kAhBotClassKey] = 10;
-    cfg.listingStackRandomRatio[kAhBotClassMisc] = 100;
+    cfg.listingStackRandomRatio[kAhBotPriceClassConsumable] = 50;
+    cfg.listingStackRandomRatio[kAhBotPriceClassReagent] = 50;
+    cfg.listingStackRandomRatio[kAhBotPriceClassProjectile] = 100;
+    cfg.listingStackRandomRatio[kAhBotPriceClassTradeGoods] = 75;
+    cfg.listingStackRandomRatio[kAhBotPriceClassGeneric] = 100;
+    cfg.listingStackRandomRatio[kAhBotPriceClassQuest] = 10;
+    cfg.listingStackRandomRatio[kAhBotPriceClassKey] = 10;
+    cfg.listingStackRandomRatio[kAhBotPriceClassMisc] = 100;
 
     cfg.listingStackRandomStackIncrement.fill(1);
-    cfg.listingStackRandomStackIncrement[kAhBotClassConsumable] = 5;
-    cfg.listingStackRandomStackIncrement[kAhBotClassProjectile] = 1000;
-    cfg.listingStackRandomStackIncrement[kAhBotClassTradeGoods] = 5;
+    cfg.listingStackRandomStackIncrement[kAhBotPriceClassConsumable] = 5;
+    cfg.listingStackRandomStackIncrement[kAhBotPriceClassProjectile] = 1000;
+    cfg.listingStackRandomStackIncrement[kAhBotPriceClassTradeGoods] = 5;
 
     cfg.listingStackMaxStackSize.fill(0);
     return cfg;
@@ -401,7 +401,7 @@ inline AhBotAdvancedGroup ClassifyAdvancedGroup(AhBotItemSpec const& item, AhBot
     if (it != cfg.advancedPricingItemGroups.end())
         return it->second;
 
-    if (item.itemClass == kAhBotClassMisc)
+    if (item.itemClass == kAhBotPriceClassMisc)
     {
         if (item.itemSubClass == kAhBotSubClassMiscPet)
             return AhBotAdvancedGroup::MiscPet;
@@ -410,7 +410,7 @@ inline AhBotAdvancedGroup ClassifyAdvancedGroup(AhBotItemSpec const& item, AhBot
         if (item.lockId > 0)
             return AhBotAdvancedGroup::MiscJunk;
     }
-    else if (item.itemClass == kAhBotClassTradeGoods)
+    else if (item.itemClass == kAhBotPriceClassTradeGoods)
     {
         switch (item.bagFamily)
         {
@@ -460,15 +460,15 @@ inline float GetAdvancedPricingMultiplier(AhBotItemSpec const& item, AhBotPricin
         case AhBotAdvancedGroup::TradeGoodEnchanting:
             return 1.0f;
         case AhBotAdvancedGroup::TradeGoodElemental:
-            return (item.quality >= kAhBotQualityUncommon) ? 7.0f : 1.0f;
+            return (item.quality >= kAhBotPriceQualityUncommon) ? 7.0f : 1.0f;
         case AhBotAdvancedGroup::TradeGoodMeat:
             return 0.85f;
         case AhBotAdvancedGroup::MiscJunk:
             return static_cast<float>(std::max(0.5, 0.65 + 0.0095 * ilvl));
         case AhBotAdvancedGroup::MiscMount:
-            return item.quality < kAhBotMaxItemQuality ? cfg.priceMultiplierCategoryMountQuality[item.quality] : 1.0f;
+            return item.quality < kAhBotPriceMaxItemQuality ? cfg.priceMultiplierCategoryMountQuality[item.quality] : 1.0f;
         case AhBotAdvancedGroup::MiscPet:
-            return item.quality < kAhBotMaxItemQuality ? cfg.priceMultiplierCategoryPetQuality[item.quality] : 1.0f;
+            return item.quality < kAhBotPriceMaxItemQuality ? cfg.priceMultiplierCategoryPetQuality[item.quality] : 1.0f;
         default:
             return 1.0f;
     }
@@ -480,7 +480,7 @@ inline uint32_t GetStackSizeForItem(AhBotItemSpec const& item, AhBotPricingConfi
     uint32_t stackRatio = 0;
     uint32_t stackIncrement = 1;
     uint32_t configStackSizeMax = 0;
-    if (item.itemClass < kAhBotMaxItemClass)
+    if (item.itemClass < kAhBotPriceMaxItemClass)
     {
         stackRatio = cfg.listingStackRandomRatio[item.itemClass];
         stackIncrement = cfg.listingStackRandomStackIncrement[item.itemClass];
@@ -567,9 +567,9 @@ inline void CalculateItemValue(AhBotItemSpec const& item, AhBotPricingConfig con
     else
         outBuyoutPrice = 1;
 
-    float classPriceMultiplier = (item.itemClass < kAhBotMaxItemClass) ? cfg.priceMultiplierCategory[item.itemClass] : 1.0f;
-    float qualityPriceMultiplier = (item.quality < kAhBotMaxItemQuality) ? cfg.priceMultiplierQuality[item.quality] : 1.0f;
-    float classQualityPriceMultiplier = (item.itemClass < kAhBotMaxItemClass && item.quality < kAhBotMaxItemQuality)
+    float classPriceMultiplier = (item.itemClass < kAhBotPriceMaxItemClass) ? cfg.priceMultiplierCategory[item.itemClass] : 1.0f;
+    float qualityPriceMultiplier = (item.quality < kAhBotPriceMaxItemQuality) ? cfg.priceMultiplierQuality[item.quality] : 1.0f;
+    float classQualityPriceMultiplier = (item.itemClass < kAhBotPriceMaxItemClass && item.quality < kAhBotPriceMaxItemQuality)
         ? cfg.priceMultiplierCategoryQuality[item.itemClass][item.quality]
         : 1.0f;
     float advancedPricingMultiplier = GetAdvancedPricingMultiplier(item, cfg);
@@ -578,7 +578,7 @@ inline void CalculateItemValue(AhBotItemSpec const& item, AhBotPricingConfig con
     auto minIt = cfg.priceMinimumCenterBaseOverrides.find(item.itemId);
     if (minIt != cfg.priceMinimumCenterBaseOverrides.end())
         priceMinimumCenterBase = minIt->second;
-    else if (item.itemClass < kAhBotMaxItemClass)
+    else if (item.itemClass < kAhBotPriceMaxItemClass)
         priceMinimumCenterBase = cfg.priceMinimumCenterBase[item.itemClass];
 
     if (outBuyoutPrice < priceMinimumCenterBase)
@@ -595,7 +595,7 @@ inline void CalculateItemValue(AhBotItemSpec const& item, AhBotPricingConfig con
     if (advancedPricingMultiplier <= 0.0f)
         advancedPricingMultiplier = 1.0f;
 
-    float itemLevelPriceMultiplier = (item.itemClass < kAhBotMaxItemClass) ? cfg.priceMultiplierItemLevelCategory[item.itemClass] : 0.0f;
+    float itemLevelPriceMultiplier = (item.itemClass < kAhBotPriceMaxItemClass) ? cfg.priceMultiplierItemLevelCategory[item.itemClass] : 0.0f;
 
     double scaled = static_cast<double>(outBuyoutPrice);
     scaled *= static_cast<double>(qualityPriceMultiplier);

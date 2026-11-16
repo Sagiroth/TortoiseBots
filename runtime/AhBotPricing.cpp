@@ -130,7 +130,7 @@ void AhBotPricing::Reload()
     cfg.priceMultiplierItemLevelCategory[ITEM_CLASS_KEY] = aiCfg.ahBotPriceMultiplierItemLevelCategoryKey;
     cfg.priceMultiplierItemLevelCategory[ITEM_CLASS_JUNK] = aiCfg.ahBotPriceMultiplierItemLevelCategoryMisc;
 
-    for (uint32_t c = 0; c < ai::kAhBotMaxItemClass; ++c)
+    for (uint32_t c = 0; c < ai::kAhBotPriceMaxItemClass; ++c)
         for (uint32_t q = 0; q < MAX_ITEM_QUALITY; ++q)
             cfg.priceMultiplierCategoryQuality[c][q] = aiCfg.ahBotPriceMultiplierCategoryQuality[c][q];
 
