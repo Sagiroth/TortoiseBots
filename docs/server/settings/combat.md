@@ -413,7 +413,7 @@ A seeking bot attacks an enemy player only when every item below holds:
 
 Unflagged players, challenge-mode characters (except War Mode) and GMs with visibility off are never attacked. Owned and hired bots and bots grouped with a real player never seek. Battlegrounds keep their own logic.
 
-A seeker chases a fleeing target for up to 60 seconds, camps a player it killed for up to 5 minutes and then ignores that player for 10 minutes, and joins a PvP fight within 30 yards that someone from its own faction is in.
+A seeker chases a fleeing target for up to 60 seconds, ignores a player it killed for 10 minutes (no corpse camping), and joins a PvP fight within 30 yards that someone from its own faction is in.
 
 One bot can be switched on with `nc +world pvp` (combat copy needs `co +world pvp`). `nc -world pvp` alone leaves the combat copy seeking, and the next auto-grant can add it back.
 

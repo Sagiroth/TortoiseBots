@@ -1944,8 +1944,8 @@ void PlayerbotAI::NotePvpKill(Player* victim)
         return;
 
     uint32 const nowMs = WorldTimer::getMSTime();
-    worldPvpCampGuidLow_ = victim->GetGUIDLow();
-    worldPvpCampStartMs_ = nowMs;
+    worldPvpIgnoreGuidLow_ = victim->GetGUIDLow();
+    worldPvpIgnoreStartMs_ = nowMs;
     worldPvpPursuitGuidLow_ = 0;
     worldPvpPursuitStartMs_ = 0;
 
@@ -1957,8 +1957,6 @@ void PlayerbotAI::NotePvpDeath(Player* killer)
     if (!bot || !killer || bot->InBattleGround() || !sPlayerbotAIConfig.worldPvpSeek)
         return;
 
-    worldPvpCampGuidLow_ = 0;
-    worldPvpCampStartMs_ = 0;
     worldPvpPursuitGuidLow_ = 0;
     worldPvpPursuitStartMs_ = 0;
 

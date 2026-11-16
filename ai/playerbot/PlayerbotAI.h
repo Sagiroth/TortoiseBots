@@ -1009,8 +1009,8 @@ public:
     void SetAvoidPlayerKiller(std::string const& name) { avoidPlayerKiller_ = name; avoidPlayerKillerMs_ = WorldTimer::getMSTime(); }
     bool ShouldAvoidPlayerKiller(std::string const& name) const;
     // Open-world PvP kill/death notes from the unit-death hook: the killer
-    // camps the victim's corpse for WorldPvpCampSeconds, then ignores the
-    // victim for WorldPvpCampIgnoreSeconds. Deaths feed the PvP death counter.
+    // ignores the victim for WorldPvpKillIgnoreSeconds. Deaths feed the PvP
+    // death counter.
     void NotePvpKill(Player* victim);
     void NotePvpDeath(Player* killer);
     // Open-world PvP seek: the level-gap decision per (bot, target) pair stays
@@ -1026,10 +1026,7 @@ public:
     // up after WorldPvpPursuitSeconds or when the target leaves sight range.
     uint32 worldPvpPursuitGuidLow_ = 0;
     uint32 worldPvpPursuitStartMs_ = 0;
-    // Camp after a kill: who was killed and when; after WorldPvpCampSeconds
-    // the victim is ignored for WorldPvpCampIgnoreSeconds (0 = none).
-    uint32 worldPvpCampGuidLow_ = 0;
-    uint32 worldPvpCampStartMs_ = 0;
+    // Last player killed and when: ignored for WorldPvpKillIgnoreSeconds (0 = none).
     uint32 worldPvpIgnoreGuidLow_ = 0;
     uint32 worldPvpIgnoreStartMs_ = 0;
     // Last seek-role roll (world-thread ms, 0 = never) and its next deadline

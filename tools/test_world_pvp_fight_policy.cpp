@@ -25,8 +25,7 @@ static int checks = 0;
 int main()
 {
     CHECK(WorldPvpPursuitSeconds() == 60);
-    CHECK(WorldPvpCampSeconds() == 5 * 60);
-    CHECK(WorldPvpCampIgnoreSeconds() == 10 * 60);
+    CHECK(WorldPvpKillIgnoreSeconds() == 10 * 60);
 
     // Pursuit gives up after 60 s.
     CHECK(!WorldPvpPursuitExpired(1000, 1000));
@@ -44,10 +43,6 @@ int main()
     CHECK(!WorldPvpPursuitHolds(2000, 1000, true));
 
     // Camp ends after 5 min.
-    CHECK(!WorldPvpCampExpired(1000, 1000));
-    CHECK(!WorldPvpCampExpired(1000, 1000 + 5 * 60 * 1000 - 1));
-    CHECK(WorldPvpCampExpired(1000, 1000 + 5 * 60 * 1000));
-    CHECK(!WorldPvpCampExpired(2000, 1000));
 
     // The ignore after a camp lasts 10 min.
     CHECK(WorldPvpIgnoreFresh(1000, 1000));
