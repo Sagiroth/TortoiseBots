@@ -93,6 +93,8 @@ public:
     bool ReloadDungeonRunKeys();
     // Reloads aiplayerbot.conf and re-reads AH bot service keys (.bot ah reload).
     void LoadAhBotServiceKeys();
+    void LoadAhBotPriceKeys();
+    void LoadAhBotPoolKeys();
     bool ReloadAhBotConfig();
     bool IsInRandomAccountList(uint32 id);
     bool IsFreeAltBot(uint32 guid);
