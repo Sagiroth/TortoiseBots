@@ -196,6 +196,17 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.28.2 (2026-11-17)
+
+### World & Bots
+- Pool resets now keep bots on your friends list, not just bots in your guild. [#1650](https://github.com/Sagiroth/TortoiseBots/pull/1650)
+- Only a real character's friends list counts, so bots friending each other protects nothing. [#1650](https://github.com/Sagiroth/TortoiseBots/pull/1650)
+
+### Behind the scenes
+- The setting's description and docs now explain which bots a reset keeps. [#1650](https://github.com/Sagiroth/TortoiseBots/pull/1650)
+
+---
+
 ## v1.28.0 (2026-11-17)
 
 ### Bots & Companions
