@@ -3600,11 +3600,11 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
     Vector3 const origin(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ());
     LeadMoveCheck const check = CheckLeadMove(lead, origin, request.point, s_runIssuing);
     RemoteCommander::MovePoint const& point = check.point;
-    if (check.keptInWater)
+    if (check.keptInWater && !s_runIssuing)
         handler->PSendSysMessage("Move point kept in the water: %.1f %.1f %.1f (surface %.1f; the floor above it at "
             "%.1f has no usable path: type 0x%x)", point.x, point.y, point.z, check.waterLevel, check.raisedZ,
             check.raisedPathType);
-    if (check.snapped)
+    if (check.snapped && !s_runIssuing)
         handler->PSendSysMessage("Move point snapped to the floor: %.1f %.1f %.1f",
             point.x, point.y, point.z);
 

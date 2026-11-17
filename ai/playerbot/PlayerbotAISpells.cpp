@@ -2025,7 +2025,8 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType, const DispelO
 			// but it must not blind the rest of the scan: skip it and keep
 			// looking (donor `continue`s here; `return false` dropped every
 			// real debuff behind one short aura).
-			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)
+			// A permanent aura reports -1 and stays until dispelled (Mother's Milk).
+			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() > 0 && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)
 			    continue;
 
 			if (!canDispel(entry, dispelType, override))
