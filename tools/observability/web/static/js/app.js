@@ -2865,7 +2865,7 @@
 
     const rows = botRows();
     const issues = issueSet();
-    const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim();
+    const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim().replace(/\s*,\s*/g, ',');
     const presenceOk = r => state.botsPresence === 'all' || (state.botsPresence === 'online') === r.online;
     // The Bots/Players segment is the coarse cut; the kind chips refine it.
     const segOk = r => state.botsKind === 'all' || (state.botsKind === 'player') === (r.kind === 'player' || r.kind === 'own');
