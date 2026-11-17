@@ -28,6 +28,8 @@ namespace ai
 {
     uint32_t const kSkinningLootType = 6;   // LOOT_SKINNING (LootMgr.h)
     uint32_t const kPickpocketLootType = 2; // LOOT_PICKPOCKETING (LootMgr.h)
+    uint32_t const kHerbalismSkillId = 182; // SKILL_HERBALISM (SharedDefines.h)
+    uint32_t const kMiningSkillId = 186;    // SKILL_MINING (SharedDefines.h)
     uint32_t const kSkinningSkillId = 393;  // SKILL_SKINNING (SharedDefines.h)
     uint32_t const kNoGatherSkill = 0;      // SKILL_NONE
 
@@ -50,5 +52,16 @@ namespace ai
     inline bool IsSkinningLoot(uint32_t internalLootType)
     {
         return internalLootType == kSkinningLootType;
+    }
+
+    // True when a loot window may skip the bot's IsLootAllowed filter.
+    // Only a skinned creature or a Herbalism/Mining node may bypass it;
+    // chests, lockpicked boxes and quest objects also open with LOOT_SKINNING
+    // via EffectOpenLock and must go through the filter like a corpse.
+    inline bool ShouldSkipLootFilter(uint32_t internalLootType, bool targetIsGameObject, uint32_t gatherSkill)
+    {
+        if (!targetIsGameObject)
+            return internalLootType == kSkinningLootType;
+        return gatherSkill == kHerbalismSkillId || gatherSkill == kMiningSkillId;
     }
 }

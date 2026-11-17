@@ -12,6 +12,9 @@
 
 using ai::DecideGatherSkillForLoot;
 using ai::IsSkinningLoot;
+using ai::ShouldSkipLootFilter;
+using ai::kHerbalismSkillId;
+using ai::kMiningSkillId;
 using ai::kNoGatherSkill;
 using ai::kPickpocketLootType;
 using ai::kSkinningLootType;
@@ -57,6 +60,18 @@ int main()
     CHECK(DecideGatherSkillForLoot(6, true, 182) == 182);
     CHECK(DecideGatherSkillForLoot(6, true, 0) == kNoGatherSkill);
     std::cout << "  [PASS] node loot keeps the lock skill, also under the skinning type\n";
+
+    // 5. Filter bypass: only a skinned creature or an Herbalism/Mining node
+    // skips IsLootAllowed; chests, quest objects and lockpicked boxes all
+    // arrive with LOOT_SKINNING from EffectOpenLock and must be filtered.
+    CHECK(ShouldSkipLootFilter(kSkinningLootType, false, kSkinningSkillId));
+    CHECK(!ShouldSkipLootFilter(1, false, kNoGatherSkill));
+    CHECK(!ShouldSkipLootFilter(kPickpocketLootType, false, kNoGatherSkill));
+    CHECK(ShouldSkipLootFilter(kSkinningLootType, true, kHerbalismSkillId));
+    CHECK(ShouldSkipLootFilter(kSkinningLootType, true, kMiningSkillId));
+    CHECK(!ShouldSkipLootFilter(kSkinningLootType, true, kNoGatherSkill));
+    CHECK(!ShouldSkipLootFilter(kSkinningLootType, true, 633)); // SKILL_LOCKPICKING
+    std::cout << "  [PASS] filter bypass limited to skinned creatures and herb/ore nodes\n";
 
     std::cout << "skinning-loot policy: OK\n";
     return 0;
