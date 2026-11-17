@@ -19,11 +19,16 @@ static void TestEligibility()
     // Already claimed -> rejected
     assert(!MayClaimBot(true, true, true, false));
 
-    // Opposing faction -> rejected
+    // Opposing faction -> rejected by default or when cross-faction guilds are off
     assert(!MayClaimBot(true, true, false, true));
+    assert(!MayClaimBot(true, true, false, true, false, false));
 
-    // Hired bot -> rejected
+    // Opposing faction -> allowed when cross-faction guilds are enabled
+    assert(MayClaimBot(true, true, false, true, false, true));
+
+    // Hired bot -> rejected even with cross-faction guilds enabled
     assert(!MayClaimBot(true, true, false, false, true));
+    assert(!MayClaimBot(true, true, false, true, true, true));
 }
 
 static void TestSelfEquip()

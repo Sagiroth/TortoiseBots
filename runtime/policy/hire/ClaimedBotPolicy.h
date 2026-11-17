@@ -23,7 +23,7 @@ constexpr uint32_t kQualityLegendary = 5;
 constexpr uint32_t kMaxVanillaPlayerLevel = 60;
 
 // Eligibility gate: May a bot be claimed into a guild?
-inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed, bool isOpposingFaction, bool isHired = false)
+inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed, bool isOpposingFaction, bool isHired = false, bool allowCrossFactionGuilds = false)
 {
     if (!isUnguilded)
         return false;
@@ -31,7 +31,7 @@ inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed,
         return false;
     if (isAlreadyClaimed)
         return false;
-    if (isOpposingFaction)
+    if (isOpposingFaction && !allowCrossFactionGuilds)
         return false;
     if (isHired)
         return false;

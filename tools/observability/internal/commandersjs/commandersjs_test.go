@@ -634,3 +634,8 @@ func TestControlsDebugJS(t *testing.T) {
 func TestAhBotUIJS(t *testing.T) {
 	runCheck(t, "ahbot_ui_check.js", "../../web/static/js/app.js")
 }
+
+// TestRosterSearchJS runs roster_search_check.js: #bot-search comma-separated OR filter and AND semantics across words.
+func TestRosterSearchJS(t *testing.T) {
+	runCheck(t, "roster_search_check.js", "../../web/static/js/app.js")
+}
