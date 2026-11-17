@@ -196,6 +196,34 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.28.0 (2026-11-17)
+
+### Bots & Companions
+- You can now send a bot or your party to walk over and use a nearby lever, door or chest with the new use order. [#1648](https://github.com/Sagiroth/TortoiseBots/pull/1648)
+- When equipping a one-hand weapon, ring or trinket on a bot, you can now pick which hand or slot it goes into. [#1648](https://github.com/Sagiroth/TortoiseBots/pull/1648)
+- Gear you placed by hand on your own alts or hired bots is no longer overwritten at the next gear check. [#1648](https://github.com/Sagiroth/TortoiseBots/pull/1648)
+
+### Loot & Items
+- Bots now follow your loot rules when opening chests and quest objects, so quest items you still need stay where they are. [#1648](https://github.com/Sagiroth/TortoiseBots/pull/1648)
+
+### World & Population
+- When the world runs short of characters below level 60, a level 60 pool bot now starts a brand new level 1 alt. [#1644](https://github.com/Sagiroth/TortoiseBots/pull/1644)
+- Each alt is level 1, same faction as its parent, with a new name and a class that character's line does not have yet. [#1644](https://github.com/Sagiroth/TortoiseBots/pull/1644)
+- Alts get no gold or items from their parent, and join the parent's guild when it has room. [#1644](https://github.com/Sagiroth/TortoiseBots/pull/1644)
+- The level 60 parent stays in the world and keeps taking its turns online, so low-level zones never empty out. [#1644](https://github.com/Sagiroth/TortoiseBots/pull/1644)
+
+### Guilds
+- Bots from the other faction are now properly claimed in cross-faction guilds, so they appear in the Guild tab. [#1645](https://github.com/Sagiroth/TortoiseBots/pull/1645)
+- The usual same-faction rule for guilds works exactly as before. [#1645](https://github.com/Sagiroth/TortoiseBots/pull/1645)
+
+### Dashboard
+- The bot list no longer jumps around, and rows keep a steady height while you read them. [#1645](https://github.com/Sagiroth/TortoiseBots/pull/1645)
+- The name search now accepts more than one name at a time. [#1645](https://github.com/Sagiroth/TortoiseBots/pull/1645)
+- The loot log now shows pickups from dungeon finder and pool bots, plus need, greed and pass votes. [#1645](https://github.com/Sagiroth/TortoiseBots/pull/1645)
+- Votes cast with the roll command are now recorded in the loot log too. [#1645](https://github.com/Sagiroth/TortoiseBots/pull/1645)
+
+---
+
 ## v1.27.0 (2026-11-16)
 
 ### World & Economy
