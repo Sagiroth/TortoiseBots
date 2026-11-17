@@ -66,7 +66,7 @@ namespace
             Player* member = ObjectAccessor::FindPlayer(slot.guid);
             if (!member || member == bot || !member->IsInWorld() || !ai->IsRealPlayer(member))
                 continue;
-            PlayerbotChatHandler(member).sysmessage(wireLine);
+            member->SendAddonMessage("TBM", wireLine);
         }
     }
 

@@ -499,6 +499,7 @@ static void DescribeLootSource(PlayerbotAI* ai, ObjectGuid guid, uint32 gatherSk
 
 // Live copy of a stored item row for every real player in the bot's group:
 // the same TBM:LOOT line the .bot lootlog reply sends, pushed as the bot loots.
+// Sent on the addon channel so group members without the addon never see raw lines.
 static void NotifyOwnerOfLoot(PlayerbotAI* ai, Player* bot, std::string item, uint32 itemId,
     std::string const& sourceType, std::string source, uint32 quality)
 {
@@ -523,7 +524,7 @@ static void NotifyOwnerOfLoot(PlayerbotAI* ai, Player* bot, std::string item, ui
         Player* member = ObjectAccessor::FindPlayer(slot.guid);
         if (!member || member == bot || !member->IsInWorld() || !ai->IsRealPlayer(member))
             continue;
-        PlayerbotChatHandler(member).sysmessage(wireLine);
+        member->SendAddonMessage("TBM", wireLine);
     }
 }
 
