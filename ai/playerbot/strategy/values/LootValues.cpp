@@ -518,6 +518,8 @@ bool ShouldLootObject::Calculate()
 		return false;
 
 	LootAccess lootAccess(objLoot2);
+	uint32 const gatherSkill = DecideGatherSkillForLoot((uint32)lootAccess.lootType(), object->IsGameObject(),
+		object->IsGameObject() ? GetNodeGatherSkill(static_cast<GameObject*>(object)) : (uint32)SKILL_NONE);
 
 	for (auto& lItem : lootAccess.GetLootContentFor(bot))
 	{
@@ -530,9 +532,8 @@ bool ShouldLootObject::Calculate()
 			continue;
 
 		ItemQualifier ltemQualifier(lItem);
-        // #403: skins arrive on the wire as LOOT_PICKPOCKETING (core rewrites LOOT_SKINNING for the
-        // 1.12 client), so the wire type can never identify them. The server-side loot_type still can.
-        if (!IsSkinningLoot((uint32)lootAccess.lootType()) && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
+        if (!ShouldSkipLootFilter((uint32)lootAccess.lootType(), object->IsGameObject(), gatherSkill) &&
+            !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
             continue;
 
         return true;

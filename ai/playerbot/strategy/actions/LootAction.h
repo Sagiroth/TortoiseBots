@@ -48,4 +48,6 @@ namespace ai
     // the creature's own loot template for quality-2/3 entries again at (multiplier - 1) x
     // the entry's chance and adds the hits, so the bot finds them in the loot window.
     void ApplyBotLootBonus(PlayerbotAI* ai, Player* bot, ObjectGuid victimGuid);
+
+    uint32 GetNodeGatherSkill(GameObject* go);
 }

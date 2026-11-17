@@ -438,7 +438,7 @@ bool OpenLootAction::CanOpenLock(uint32 skillId, uint32 reqSkillValue)
 // The gathering skill a game object's lock asks for (herbalism / mining / ...), i.e. the value
 // LootObject::Refresh derives when it classifies the node. Refresh only looks at an object that
 // is still GO_READY, so it returns nothing for the node whose loot window is open right now.
-static uint32 GetNodeGatherSkill(GameObject* go)
+uint32 ai::GetNodeGatherSkill(GameObject* go)
 {
     if (!go)
         return SKILL_NONE;
@@ -610,10 +610,12 @@ bool StoreLootAction::Execute(Event& event)
     }
 
     static_assert((uint32)LOOT_SKINNING == ai::kSkinningLootType, "SkinningLootPolicy kSkinningLootType drifted from core LOOT_SKINNING");
+    static_assert((uint32)SKILL_HERBALISM == ai::kHerbalismSkillId, "SkinningLootPolicy kHerbalismSkillId drifted from core SKILL_HERBALISM");
+    static_assert((uint32)SKILL_MINING == ai::kMiningSkillId, "SkinningLootPolicy kMiningSkillId drifted from core SKILL_MINING");
     static_assert((uint32)SKILL_SKINNING == ai::kSkinningSkillId, "SkinningLootPolicy kSkinningSkillId drifted from core SKILL_SKINNING");
     LootType const internalLootType = LootAccess(loot).lootType();
     uint32 gatherSkill = ai::DecideGatherSkillForLoot((uint32)internalLootType, guid.IsGameObject(),
-        guid.IsGameObject() ? GetNodeGatherSkill(ai->GetGameObject(guid)) : (uint32)SKILL_NONE);
+        guid.IsGameObject() ? ai::GetNodeGatherSkill(ai->GetGameObject(guid)) : (uint32)SKILL_NONE);
 
     uint32 itemsTaken = 0;
 
@@ -679,7 +681,8 @@ bool StoreLootAction::Execute(Event& event)
             if (!orderedProto || (orderedProto->MaxCount > 0 && bot->HasItemCount(itemid, orderedProto->MaxCount, true)))
                 continue;
         }
-        else if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
+        else if (!ai::ShouldSkipLootFilter((uint32)internalLootType, guid.IsGameObject(), gatherSkill) &&
+            !IsLootAllowed(itemQualifier, ai))
         {
             // A Working skin order needs the corpse empty before the
             // Skinning cast is legal, so kills of order mobs give up
