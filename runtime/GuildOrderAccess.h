@@ -51,6 +51,10 @@ void OpenBotBankTabForNextStart();
 // the database; unknown means not blocked.
 bool BotRankBlocksManagement(uint32_t guildId);
 
+// True when the guild has a member who is not a bot (a real player's
+// character). One database read; world thread only.
+bool GuildHasRealPlayer(uint32_t guildId);
+
 // Forget the stored choice when the guild is gone.
 void OnBotRankDisband(uint32_t guildId);
 

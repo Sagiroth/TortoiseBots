@@ -368,6 +368,11 @@ void OnBotRankDisband(uint32_t guildId)
     BotRankStore::Instance().Forget(guildId);
 }
 
+bool GuildHasRealPlayer(uint32_t guildId)
+{
+    return GuildHasRealPlayerMember(guildId, 0);
+}
+
 bool BotRankBlocksManagement(uint32_t guildId)
 {
     // Map threads (AI ticks) only read the cache, which the world thread

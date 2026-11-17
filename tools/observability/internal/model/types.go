@@ -443,6 +443,10 @@ type ServerInfoPayload struct {
 	// dropped by the unmarshaller. The UI renders numbers and flags alike.
 	Bots        map[string]any    `json:"bots"`
 	Diagnostics map[string]string `json:"diagnostics"`
+	// Pool is the pool health the random-bot service counts once a minute:
+	// every pool character per level band, the lineages and the distance to
+	// their safety ceiling. Absent from servers that predate it.
+	Pool map[string]any `json:"pool,omitempty"`
 }
 
 // GrindingSummary is the daemon's pool-wide "are they grinding" rollup,
