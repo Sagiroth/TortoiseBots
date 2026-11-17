@@ -142,7 +142,9 @@ bool RandomBotPoolReset::SnapshotTargets(std::string& error)
         "SELECT `guid`, `account`, `name` FROM `characters` "
         "WHERE `deleteDate` IS NULL AND `account` IN (%s) "
         "AND `guid` NOT IN (SELECT `bot_guid` FROM `tortoise_bots_claimed`) "
-        "ORDER BY `account`, `guid`", accounts.c_str()));
+        "AND `guid` NOT IN (SELECT s.`friend` FROM `character_social` s "
+        "JOIN `characters` o ON o.`guid` = s.`guid` WHERE (s.`flags` & 1) AND o.`account` NOT IN (%s)) "
+        "ORDER BY `account`, `guid`", accounts.c_str(), accounts.c_str()));
     if (!rows)
     {
         uint32 remaining = 0;
