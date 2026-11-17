@@ -59,6 +59,8 @@ static void TestPlayerOverridePin()
     assert(!ShouldPinPlayerEquippedItem(true, false));
     assert(!ShouldPinPlayerEquippedItem(false, true));
     assert(!ShouldPinPlayerEquippedItem(false, false));
+    assert(ShouldPinPlayerEquippedItem(false, true, true));
+    assert(!ShouldPinPlayerEquippedItem(false, false, true));
 }
 
 static void TestKeepDisplacedGear()

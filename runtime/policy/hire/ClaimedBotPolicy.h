@@ -54,11 +54,11 @@ inline bool MayClaimedBotSelfEquip(uint32_t botLevel, bool isClaimed, bool claim
 }
 
 // Player override: when the bot's master or claim owner explicitly puts an
-// item on a claimed bot (equip order or trade that the bot then equips), pin it
-// so auto-equip never replaces it until cleared.
-inline bool ShouldPinPlayerEquippedItem(bool isClaimed, bool isMasterOrClaimOwner)
+// item on a claimed, owned, or hired bot, pin it so auto-equip never replaces
+// it until cleared.
+inline bool ShouldPinPlayerEquippedItem(bool isClaimed, bool isMasterOrClaimOwner, bool isOwnedOrHired = false)
 {
-    return isClaimed && isMasterOrClaimOwner;
+    return (isClaimed || isOwnedOrHired) && isMasterOrClaimOwner;
 }
 
 // Displaced gear: when a claimed bot replaces an equipped item during an auto
