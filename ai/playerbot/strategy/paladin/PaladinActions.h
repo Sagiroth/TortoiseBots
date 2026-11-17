@@ -41,6 +41,10 @@ namespace ai
 		// on nothing else; on cooldown against a single enemy it empties the paladin in
 		// half a minute.
 		virtual bool isUseful() override;
+
+	protected:
+		// Cast around the paladin: a reach step toward the target never completes for it.
+		virtual std::string GetReachActionName() override { return ""; }
 	};
 
 	// repentance
