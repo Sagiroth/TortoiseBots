@@ -78,6 +78,7 @@
 #include "../runtime/CombatMonitorPolicy.h"
 #include "../runtime/BoundFightPolicy.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/PlayerUseObjectPolicy.h"
 #include "../runtime/RunItemNeedPolicy.h" // item-leg skip (spec C1/D): needs + ledger, namespace TortoiseBots::RunItemNeed
 #include "../runtime/RunItemNeedFacts.h" // the leg's need facts from the party's bags (item-leg skip review round 2)
 #include "../runtime/RunGivenItemRegistry.h" // the run's given item instances (item-leg skip review round 2)
@@ -4172,6 +4173,10 @@ struct CommanderTask
     // cmd gossip: the option to pick, and the text of the one picked (the ACK's detail).
     GossipOrder::Request gossip;
     std::string gossipPicked;
+    // .bot use / .bot action use: unbound player order to walk to a nearby object and use it.
+    bool playerUse = false;
+    bool playerUseParty = false;
+    std::string playerUsePayload;
 };
 
 std::unordered_map<uint64, CommanderTask>& CommanderTasks()
@@ -4645,7 +4650,8 @@ void TaskReplyAck(CommanderTask const& task, uint32 count, std::string const& pa
     std::unique_ptr<ChatHandler> const chat = CommanderReplyHandler(task.commanderRaw, IsSystemBinding(task.commanderRaw));
     if (!chat)
         return;
-    SendActionAck(chat.get(), task.intent, "bot:" + task.botName, count, payload);
+    std::string const scope = (task.playerUse && task.playerUseParty) ? std::string("party") : ("bot:" + task.botName);
+    SendActionAck(chat.get(), task.intent, scope, count, payload);
 }
 
 void TaskReplyErr(CommanderTask const& task, std::string const& code, std::string const& message)
@@ -5158,7 +5164,15 @@ bool TaskActDone(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
         return watch && watch->finished;
     }
     if (task.state.kind == RemoteCommander::TaskKind::Open)
+    {
+        if (task.playerUse && !task.lootLike)
+        {
+            if (GameObject* go = ai->GetGameObject(ObjectGuid(task.targetRaw)))
+                if (go->GetGoType() == GAMEOBJECT_TYPE_QUESTGIVER)
+                    return true;
+        }
         return ObjectEffectOf(task, ai) == RemoteCommander::ObjectEffect::Reacted;
+    }
     if (task.state.kind == RemoteCommander::TaskKind::Gossip)
         return true; // the core ran the choice inside the select handler
     return !bot->IsNonMeleeSpellCasted(false);
@@ -5189,12 +5203,13 @@ void CompleteCommanderTask(CommanderTask& task)
                 "That item was not in the loot for this bot (group rules, taken, or no room in its bags).");
             return;
         }
-        FinishCommanderTask(task, true, count, payload, "", "");
+        std::string const finalPayload = (task.playerUse && payload.empty()) ? task.playerUsePayload : payload;
+        FinishCommanderTask(task, true, count, finalPayload, "", "");
         return;
     }
     if (task.state.kind == RemoteCommander::TaskKind::Open)
     {
-        FinishCommanderTask(task, true, 1, "opened", "", "");
+        FinishCommanderTask(task, true, 1, task.playerUse ? task.playerUsePayload : std::string("opened"), "", "");
         return;
     }
     if (task.state.kind == RemoteCommander::TaskKind::Gossip)
@@ -5391,7 +5406,7 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
     }
 
     // A follower that left the commanded party is not ours to order any more.
-    if (bot && !IsCommandedBy(commander, bot))
+    if (bot && !task.playerUse && !IsCommandedBy(commander, bot))
     {
         task.departed = true;
         FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeUnavailable,
@@ -5512,6 +5527,11 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
                 {
                     code = RemoteCommander::kCodeFailed;
                     message = "The object showed no change after the bot used it.";
+                }
+                else if (task.playerUse && task.state.stage == RemoteCommander::TaskStage::Walk)
+                {
+                    code = "unreachable";
+                    message = "I can't reach it";
                 }
             }
             // cmd gossip names the NPC it lost in its own words.
@@ -15561,9 +15581,11 @@ void UpdateRemoteCommanders(uint32_t diff)
     // The run's raid icons a run's end could not clear yet (its group not found then).
     if (!PendingRunCcIcons().empty())
         RetryRunCcIcons(diff);
-    // Nothing runs while no commander is bound.
+    // Nothing runs while no commander is bound (except unbound `.bot use` tasks).
     if (CommanderBindings().Empty())
     {
+        if (!CommanderTasks().empty())
+            UpdateCommanderTasks(diff);
         // Every release restored its bots; anything left (a late joiner that
         // left in the last second) goes back now.
         SweepCommanderAutonomy();
@@ -17720,6 +17742,267 @@ bool HandleTrace(ChatHandler* handler, char const* args)
     return true;
 }
 
+
+namespace
+{
+class UseObjectGridCheck
+{
+public:
+    UseObjectGridCheck(RemoteCommander::MovePoint const& reference, float range)
+        : m_reference(reference), m_range(range) {}
+    bool operator()(GameObject* go)
+    {
+        return go && sServerFacade.isSpawned(go) && DistanceToPoint(m_reference, go) <= m_range;
+    }
+
+private:
+    RemoteCommander::MovePoint m_reference;
+    float m_range;
+};
+
+UseObjectPolicy::ObjectKind ToUseObjectKind(GameobjectTypes type)
+{
+    switch (type)
+    {
+        case GAMEOBJECT_TYPE_BUTTON:     return UseObjectPolicy::ObjectKind::Button;
+        case GAMEOBJECT_TYPE_GOOBER:     return UseObjectPolicy::ObjectKind::Goober;
+        case GAMEOBJECT_TYPE_DOOR:       return UseObjectPolicy::ObjectKind::Door;
+        case GAMEOBJECT_TYPE_CHEST:      return UseObjectPolicy::ObjectKind::Chest;
+        case GAMEOBJECT_TYPE_QUESTGIVER: return UseObjectPolicy::ObjectKind::QuestGiver;
+        default:                         return UseObjectPolicy::ObjectKind::Other;
+    }
+}
+
+std::string FormatUseLockError(Player* bot, GameObject* go)
+{
+    RemoteCommander::LockFacts const facts = GoLockFacts(bot, go);
+    if (facts.keyItem > 0 && !facts.hasKey)
+    {
+        if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(facts.keyItem))
+            return std::string("Locked: needs ") + proto->Name1;
+        return "Locked: needs key";
+    }
+    if (facts.skillId > 0 && facts.skillValue < facts.reqSkill)
+        return "Locked: needs skill " + std::to_string(facts.reqSkill);
+    return "Locked";
+}
+} // namespace
+
+bool ExecuteUseOrder(ChatHandler* handler, Player* requester, std::string const& botNameArg, std::string const& intent)
+{
+    if (!requester || !requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
+    {
+        SendActionError(handler, intent, "requester", "Requester must be alive, in world, and not teleporting.");
+        return true;
+    }
+
+    std::vector<Player*> candidates;
+    bool usePartyScope = false;
+    std::string const trimmedBot = Trim(botNameArg);
+    if (!trimmedBot.empty())
+    {
+        Player* named = nullptr;
+        BotRecord* namedRecord = nullptr;
+        std::string namedName;
+        if (!ResolveOwnedBot(handler, trimmedBot.c_str(), named, namedRecord, namedName))
+        {
+            SendActionError(handler, intent, "no-bot", ("No online owned bot named " + trimmedBot + ".").c_str());
+            return true;
+        }
+        candidates.push_back(named);
+    }
+    else
+    {
+        BotCommandContext const context = BuildContext(requester);
+        if (context.selectedBot && IsLiveHeadlessBot(context.selectedBot))
+        {
+            candidates.push_back(context.selectedBot);
+        }
+        else if (!context.partyBots.empty())
+        {
+            candidates = context.partyBots;
+            usePartyScope = true;
+        }
+        else
+        {
+            SendActionError(handler, intent, "no-bot", "No online bots in your party.");
+            return true;
+        }
+    }
+
+    auto& tasks = CommanderTasks();
+    std::vector<Player*> eligibleBots;
+    for (Player* bot : candidates)
+    {
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->IsTaxiFlying())
+            continue;
+        if (bot->GetMapId() != requester->GetMapId())
+            continue;
+        if (!PlayerbotAIStorage::Instance().GetAI(bot))
+            continue;
+        if (tasks.find(bot->GetObjectGuid().GetRawValue()) != tasks.end())
+            continue;
+        eligibleBots.push_back(bot);
+    }
+
+    if (eligibleBots.empty())
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeUnavailable, "No eligible bot is available nearby.");
+        return true;
+    }
+
+    Map* map = requester->GetMap();
+    if (!map)
+    {
+        SendActionError(handler, intent, "no-object", "Nothing usable near you");
+        return true;
+    }
+
+    RemoteCommander::MovePoint refPoint;
+    refPoint.x = requester->GetPositionX();
+    refPoint.y = requester->GetPositionY();
+    refPoint.z = requester->GetPositionZ();
+    float const scanRadius = UseObjectPolicy::kSearchRadiusYd + UseObjectPolicy::kDoorButtonRadiusYd;
+
+    std::list<GameObject*> nearbyObjects;
+    UseObjectGridCheck check(refPoint, scanRadius);
+    MaNGOS::GameObjectListSearcher<UseObjectGridCheck> searcher(nearbyObjects, check);
+    Cell::VisitGridObjects(refPoint.x, refPoint.y, map, searcher, scanRadius);
+
+    Player* bestBot = nullptr;
+    GameObject* bestGo = nullptr;
+    UseObjectPolicy::ObjectKind bestKind = UseObjectPolicy::ObjectKind::Other;
+    float bestBotDist = 0.0f;
+    bool bestOutOfReach = false;
+
+    Player* lockedBot = nullptr;
+    GameObject* lockedGo = nullptr;
+
+    for (Player* bot : eligibleBots)
+    {
+        std::vector<UseObjectPolicy::Candidate> policyCandidates;
+        policyCandidates.reserve(nearbyObjects.size());
+        for (GameObject* go : nearbyObjects)
+        {
+            if (!go || !go->GetGOInfo())
+                continue;
+            UseObjectPolicy::Candidate c;
+            c.guid = go->GetObjectGuid().GetRawValue();
+            c.kind = ToUseObjectKind(go->GetGoType());
+            c.distToRequester = requester->GetDistance(go);
+            c.x = go->GetPositionX();
+            c.y = go->GetPositionY();
+            c.z = go->GetPositionZ();
+            c.spawned = sServerFacade.isSpawned(go);
+            c.ready = (go->getLootState() != GO_ACTIVATED && go->GetGoState() == GO_STATE_READY);
+            c.noInteract = go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT);
+            c.inUse = go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE);
+
+            RemoteCommander::LockFacts const lockFacts = GoLockFacts(bot, go);
+            RemoteCommander::LockVerdict const lockVerdict = RemoteCommander::CheckLock(lockFacts);
+            bool const hasLockEntries = (lockFacts.keyItem > 0 || lockFacts.skillId > 0);
+            c.hasUsableLock = hasLockEntries && (lockVerdict == RemoteCommander::LockVerdict::Open);
+            c.lockedBlocked = (lockVerdict != RemoteCommander::LockVerdict::Open) ||
+                (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_LOCKED) && !c.hasUsableLock);
+
+            policyCandidates.push_back(c);
+        }
+
+        UseObjectPolicy::SelectionResult const sel = UseObjectPolicy::SelectObject(policyCandidates);
+        if (sel.outcome == UseObjectPolicy::SelectionOutcome::Use)
+        {
+            GameObject* chosenGo = nullptr;
+            for (GameObject* go : nearbyObjects)
+            {
+                if (go && go->GetObjectGuid().GetRawValue() == sel.guid)
+                {
+                    chosenGo = go;
+                    break;
+                }
+            }
+            if (!chosenGo)
+                continue;
+
+            float const botDist = bot->GetDistance(chosenGo);
+            if (!RemoteCommander::WithinReactDistance(botDist, sPlayerbotAIConfig.reactDistance))
+            {
+                bestOutOfReach = true;
+                continue;
+            }
+            if (!bestBot || botDist < bestBotDist)
+            {
+                bestBot = bot;
+                bestGo = chosenGo;
+                bestKind = ToUseObjectKind(chosenGo->GetGoType());
+                bestBotDist = botDist;
+            }
+        }
+        else if (sel.outcome == UseObjectPolicy::SelectionOutcome::LockBlocked && !lockedGo)
+        {
+            for (GameObject* go : nearbyObjects)
+            {
+                if (go && go->GetObjectGuid().GetRawValue() == sel.guid)
+                {
+                    lockedBot = bot;
+                    lockedGo = go;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!bestBot || !bestGo)
+    {
+        if (bestOutOfReach)
+        {
+            SendActionError(handler, intent, "unreachable", "I can't reach it");
+            return true;
+        }
+        if (lockedBot && lockedGo)
+        {
+            std::string const lockMsg = FormatUseLockError(lockedBot, lockedGo);
+            SendActionError(handler, intent, "locked", lockMsg.c_str());
+            return true;
+        }
+        SendActionError(handler, intent, "no-object", "Nothing usable near you");
+        return true;
+    }
+
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bestBot);
+    if (!ai)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeUnavailable, "Bot AI is not available.");
+        return true;
+    }
+
+    CommanderTask task;
+    task.playerUse = true;
+    task.playerUseParty = usePartyScope;
+    task.lootLike = (bestGo->GetGoType() == GAMEOBJECT_TYPE_CHEST);
+    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Open, bestBotDist, true, task.lootLike);
+    task.targetRaw = bestGo->GetObjectGuid().GetRawValue();
+    task.intent = intent;
+    std::string const goName = bestGo->GetGOInfo() ? bestGo->GetGOInfo()->name : "object";
+    task.playerUsePayload = std::string(UseObjectPolicy::VerbForKind(bestKind)) + " " + goName;
+    task.commanderRaw = requester->GetObjectGuid().GetRawValue();
+    task.botRaw = bestBot->GetObjectGuid().GetRawValue();
+    task.botName = bestBot->GetName();
+
+    TaskTarget const target = ResolveTaskTarget(ai, task.targetRaw);
+    if (!TaskInRange(task, bestBot, target))
+        BeginTaskWalk(task, requester, bestBot, ai, bestGo);
+
+    CommanderTask& stored = tasks[task.botRaw] = task;
+    if (StepCommanderTask(stored, 0))
+        tasks.erase(task.botRaw);
+    return true;
+}
+
+bool HandleUse(ChatHandler* handler, char const* args)
+{
+    Player* requester = Requester(handler);
+    return ExecuteUseOrder(handler, requester, args ? args : "", "use");
+}
 
 void ClearRemoteCommanders()
 {

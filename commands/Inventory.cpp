@@ -14,6 +14,8 @@
 #include "../runtime/HireSpecPolicy.h"
 #include "../runtime/HireLevelPolicy.h"
 #include "../runtime/HireTierRequestPolicy.h"
+#include "../runtime/policy/infra/EquipSlotPolicy.h"
+#include "../runtime/policy/hire/ClaimedBotPolicy.h"
 #include "BotCommandContext.h"
 #include "../behavior/PlayerConvenience.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -298,9 +300,53 @@ static bool OpenTradeWith(Player* bot, Player* requester)
 }
 
 // .bot item <bot> trade
-// .bot item <bot> equip|unequip|give <bag> <slot>
+// .bot item <bot> equip <bag> <slot> [mainhand|offhand|finger1|finger2|trinket1|trinket2]
+// .bot item <bot> unequip|give <bag> <slot>
 // Every reply is one TBM:ACTION_ACK / TBM:ACTION_ERR with intent "item <op>";
 // equip and unequip follow it with a fresh inventory snapshot.
+namespace
+{
+static_assert(EQUIPMENT_SLOT_MAINHAND == TortoiseBots::EquipSlotConstants::kSlotMainHand, "mainhand slot mismatch");
+static_assert(EQUIPMENT_SLOT_OFFHAND == TortoiseBots::EquipSlotConstants::kSlotOffHand, "offhand slot mismatch");
+static_assert(EQUIPMENT_SLOT_FINGER1 == TortoiseBots::EquipSlotConstants::kSlotFinger1, "finger1 slot mismatch");
+static_assert(EQUIPMENT_SLOT_FINGER2 == TortoiseBots::EquipSlotConstants::kSlotFinger2, "finger2 slot mismatch");
+static_assert(EQUIPMENT_SLOT_TRINKET1 == TortoiseBots::EquipSlotConstants::kSlotTrinket1, "trinket1 slot mismatch");
+static_assert(EQUIPMENT_SLOT_TRINKET2 == TortoiseBots::EquipSlotConstants::kSlotTrinket2, "trinket2 slot mismatch");
+
+char const* EquipResultMessage(InventoryResult msg)
+{
+    switch (msg)
+    {
+        case EQUIP_ERR_CANT_DUAL_WIELD:
+            return "This bot cannot dual wield.";
+        case EQUIP_ERR_NOT_IN_COMBAT:
+            return "The bot cannot swap that item while in combat.";
+        case EQUIP_ERR_INVENTORY_FULL:
+            return "No free bag space for the displaced item.";
+        default:
+            return "The equip was refused (combat, level, or skill).";
+    }
+}
+
+void ClearDisplacedEquipPin(PlayerbotAI* ai, Player* bot, Item* item)
+{
+    if (!ai || !bot || !item || !item->GetProto())
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!context)
+        return;
+    uint32 const itemId = item->GetProto()->ItemId;
+    if (AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", itemId, ForceItemUsage::FORCE_USAGE_NONE) != ForceItemUsage::FORCE_USAGE_EQUIP)
+        return;
+    bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
+    ForceItemUsage const nextUsage = TortoiseBots::ShouldKeepDisplacedClaimedGear(isClaimed)
+        ? ForceItemUsage::FORCE_USAGE_KEEP
+        : ForceItemUsage::FORCE_USAGE_NONE;
+    SET_AI_VALUE2(ForceItemUsage, "force item usage", itemId, nextUsage);
+    RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
+}
+}
+
 bool HandleItem(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
@@ -372,11 +418,77 @@ bool HandleItem(ChatHandler* handler, char const* args)
     if (op == "equip")
     {
         ItemPrototype const* proto = item->GetProto();
+        std::string slotToken;
+        bool const hasTargetSlot = static_cast<bool>(input >> slotToken);
+        uint8 targetSlot = NULL_SLOT;
+        if (hasTargetSlot)
+        {
+            if (!TortoiseBots::ParseEquipTargetSlot(slotToken, targetSlot))
+            {
+                SendActionError(handler, intent, "invalid",
+                    "Unknown target slot (use mainhand, offhand, finger1, finger2, trinket1, or trinket2).");
+                return true;
+            }
+            std::string_view slotErr;
+            if (!TortoiseBots::ValidateEquipTargetSlot(proto->InventoryType, targetSlot, bot->CanDualWield(), slotErr))
+            {
+                SendActionError(handler, intent, "cannot-equip", std::string(slotErr).c_str());
+                return true;
+            }
+        }
+
         if (equipped || proto->InventoryType == INVTYPE_NON_EQUIP || bot->CanUseItem(proto) != EQUIP_ERR_OK)
         {
             SendActionError(handler, intent, "cannot-equip", "The bot cannot equip this item.");
             return true;
         }
+
+        if (hasTargetSlot)
+        {
+            uint16 dest = 0;
+            InventoryResult const check = bot->CanEquipItem(targetSlot, dest, item, true);
+            if (check != EQUIP_ERR_OK || (dest & 0xFF) != targetSlot)
+            {
+                SendActionError(handler, intent, "cannot-equip", EquipResultMessage(check));
+                return true;
+            }
+            Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, targetSlot);
+            Item* oldOffhand = (targetSlot == EQUIPMENT_SLOT_MAINHAND && proto->InventoryType == INVTYPE_2HWEAPON)
+                ? bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND)
+                : nullptr;
+            uint16 const dstPos = (static_cast<uint16>(INVENTORY_SLOT_BAG_0) << 8) | targetSlot;
+            bot->SwapItem(item->GetPos(), dstPos);
+            bool const done = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, targetSlot) == item;
+            if (!done)
+                SendActionError(handler, intent, "failed", "The equip was refused (combat, level, or skill).");
+            else
+            {
+                if (AiObjectContext* context = ai->GetAiObjectContext())
+                {
+                    RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
+                    if (oldItem && oldItem != item)
+                        RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(oldItem).GetQualifier());
+                    if (oldOffhand && oldOffhand != item)
+                        RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(oldOffhand).GetQualifier());
+                }
+                if (oldItem && oldItem != item &&
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0, targetSlot) != oldItem)
+                    ClearDisplacedEquipPin(ai, bot, oldItem);
+                if (oldOffhand && oldOffhand != item &&
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND) != oldOffhand)
+                    ClearDisplacedEquipPin(ai, bot, oldOffhand);
+                ai::EquipAction::PinPlayerEquippedItemIfClaimed(ai, requester, item);
+                SendActionAck(handler, intent, scope, 1, std::to_string(itemId));
+            }
+            SendInventorySnapshot(handler, bot, requester);
+            return true;
+        }
+
+        uint16 defaultDest = 0;
+        Item* oldDefault = (proto->InventoryType != INVTYPE_AMMO && !item->IsBag() &&
+            bot->CanEquipItem(NULL_SLOT, defaultDest, item, true) == EQUIP_ERR_OK)
+            ? bot->GetItemByPos(defaultDest)
+            : nullptr;
         ai::EquipAction::EquipItem(ai, requester, item, true);
         // Equip and bag slots all sit below the backpack range; ammo stays in
         // the bag and is equipped through the ammo field instead.
@@ -387,6 +499,9 @@ bool HandleItem(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "failed", "The equip was refused (combat, level, or skill).");
         else
         {
+            if (oldDefault && oldDefault != item &&
+                (oldDefault->GetBagSlot() != INVENTORY_SLOT_BAG_0 || oldDefault->GetSlot() >= INVENTORY_SLOT_ITEM_START))
+                ClearDisplacedEquipPin(ai, bot, oldDefault);
             ai::EquipAction::PinPlayerEquippedItemIfClaimed(ai, requester, item);
             SendActionAck(handler, intent, scope, 1, std::to_string(itemId));
         }
@@ -405,7 +520,12 @@ bool HandleItem(ChatHandler* handler, char const* args)
         if (bot->GetItemByPos(static_cast<uint8>(bag), static_cast<uint8>(slot)) == item)
             SendActionError(handler, intent, "failed", "No free bag space, or the item cannot be removed now.");
         else
+        {
+            ClearDisplacedEquipPin(ai, bot, item);
+            if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
+                sPlayerbotDbStore.Save(ai);
             SendActionAck(handler, intent, scope, 1, std::to_string(itemId));
+        }
         SendInventorySnapshot(handler, bot, requester);
         return true;
     }

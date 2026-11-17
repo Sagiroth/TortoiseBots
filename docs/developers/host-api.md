@@ -518,7 +518,7 @@ commander bind <LeadBot> [<Bot>...] [inparty] | unbind | status | view on|off  #
 cmd attack|pull|pullback <guid> [seconds] | cc <mark> <guid> [bot] [family] | focus <guid> | move <x> <y> <z> | stay | follow | rest | revive <bot> | summon <bot>  # orders to the bound group; ACK/ERR intent "cmd <verb>"
 inv <bot>  # TBM:INV_BEGIN/INV_EQ/INV_ITEM/INV_END inventory snapshot
 professions <bot>  # TBM:PROF_BEGIN/PROF/RECIPE/RECIPE_MISSING/PROF_END profession snapshot (RECIPE carries an order field: ok/enchant/bound/needsprofession/cooldown)
-item <bot> trade | equip|unequip|give <bag> <slot>  # item order by server bag/slot; ACK/ERR intent "item <op>"
+item <bot> trade | equip <bag> <slot> [mainhand|offhand|finger1|finger2|trinket1|trinket2] | unequip|give <bag> <slot>  # item order by server bag/slot; ACK/ERR intent "item <op>"
 behavior <bot> <loot|aoe|autocc|savemana|boost|threat|potions|mimic|spread|hold|noblink> <on|off>  # allowlisted per-bot strategy toggle; ACK + TBM:BOTSTATE line
 follow
 invite
