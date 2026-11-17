@@ -2612,15 +2612,20 @@
           : '';
         const pvp = pvpBadge(r.live) || worldPvpBadge(r.live);
         const kind = kindBadge(r.kind);
-        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${kind}${pvp ? ` ${pvp}` : ''}${badge}`;
+        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" title="${esc(r.name)}" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${kind}${pvp ? ` ${pvp}` : ''}${badge}`;
       }
     },
     class: {
       label: 'Class',
       sort: r => `${r.cls} ${r.spec}`.toLowerCase(),
-      cell: r => `${esc(capClass(r.cls))}${r.spec ? ` <span class="cell-muted">${esc(specLabel(r.spec, r.cls, r.live))}</span>` : ''}`
+      cell: r => {
+        const cls = capClass(r.cls);
+        const spec = r.spec ? specLabel(r.spec, r.cls, r.live) : '';
+        const full = spec ? `${cls} ${spec}` : cls;
+        return `<span title="${esc(full)}">${esc(cls)}${spec ? ` <span class="cell-muted">${esc(spec)}</span>` : ''}</span>`;
+      }
     },
-    race: { label: 'Race', sort: r => r.race.toLowerCase(), cell: r => (r.race ? esc(r.race) : DASH) },
+    race: { label: 'Race', sort: r => r.race.toLowerCase(), cell: r => (r.race ? `<span title="${esc(r.race)}">${esc(r.race)}</span>` : DASH) },
     prof: {
       label: 'Professions',
       title: 'Trade professions with skill level; cooking, fishing and first aid muted',
@@ -2658,20 +2663,27 @@
     target: {
       label: 'Target',
       sort: r => (r.live ? displayTarget(r.live).toLowerCase() : ''),
-      cell: r => (r.live && r.live.target
-        ? `<span class="target-cell">${esc(displayTarget(r.live))}</span>${r.live.target_level ? ` <span class="cell-muted">L${esc(r.live.target_level)}</span>` : ''}`
-        : DASH)
+      cell: r => {
+        if (!r.live || !r.live.target) return DASH;
+        const t = displayTarget(r.live);
+        const lvl = r.live.target_level ? ` L${r.live.target_level}` : '';
+        return `<span title="${esc(t + lvl)}"><span class="target-cell">${esc(t)}</span>${r.live.target_level ? ` <span class="cell-muted">L${esc(r.live.target_level)}</span>` : ''}</span>`;
+      }
     },
     zone: {
       label: 'Zone',
       sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
-      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
+      cell: r => {
+        if (!r.live) return DASH;
+        const z = getZoneName(r.live.zone, r.live.map);
+        return `<span class="mono" title="${esc(z)}">${esc(z)}</span>`;
+      }
     },
     guild: {
       label: 'Guild',
       title: 'Guild the bot is in (dash when guildless)',
       sort: r => (r.guild || '').toLowerCase(),
-      cell: r => (r.guild ? `<span class="mono">${esc(r.guild)}</span>` : DASH)
+      cell: r => (r.guild ? `<span class="mono" title="${esc(r.guild)}">${esc(r.guild)}</span>` : DASH)
     },
     xp: {
       label: 'XP',
@@ -2703,7 +2715,7 @@
       sort: r => (r.live && r.live.activity ? r.live.activity.money_earned || 0 : -1),
       cell: r => {
         const a = r.live && r.live.activity;
-        return a ? `<span class="mono" style="font-size: 0.74rem;">+${formatMoney(a.money_earned)}<br>-${formatMoney(a.money_spent)}</span>` : DASH;
+        return a ? `<span class="mono" style="font-size: 0.74rem;">+${formatMoney(a.money_earned)} / -${formatMoney(a.money_spent)}</span>` : DASH;
       }
     },
     vendors: Object.assign({ label: 'Vendors' }, actNum('vendor_visits')),
@@ -2835,6 +2847,16 @@
 
   const profNames = r => r.profs.map(p => skillNameById(p.skill));
 
+  function matchBotSearchWord(r, w) {
+    if (w.includes(',')) {
+      const parts = w.split(',').map(s => s.trim()).filter(Boolean);
+      if (!parts.length) return true;
+      const name = r.name.toLowerCase();
+      return parts.some(p => name.includes(p));
+    }
+    return r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w) || r.race.toLowerCase().includes(w);
+  }
+
   function renderRoster() {
     if (!el.rosterTable) return;
     paintSeg(el.presenceSeg, state.botsPresence);
@@ -2852,8 +2874,7 @@
     const fields = words.map(queryField);
     const text = words.filter((w, i) => !fields[i]);
     const tests = fields.filter(Boolean);
-    const queryOk = r => tests.every(t => t(r)) &&
-      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w) || r.race.toLowerCase().includes(w));
+    const queryOk = r => tests.every(t => t(r)) && text.every(w => matchBotSearchWord(r, w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const specOk = r => state.botsClass === 'all' || state.botsSpec === 'all' || r.spec === state.botsSpec;

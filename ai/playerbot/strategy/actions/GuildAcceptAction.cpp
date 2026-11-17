@@ -93,7 +93,8 @@ bool GuildAcceptAction::Execute(Event& event)
         // Issue #489: Claim a wandering world bot into the player's guild.
         // The bot already passed the unguilded gates above (inviter has a guild,
         // bot has none). Enforce the remaining MayClaimBot gates here: pool bot,
-        // not already claimed, same faction.
+        // not already claimed, faction (unless cross-faction guilds are enabled),
+        // and not hired.
         if (inviter && inviter->GetSession() && !inviter->GetSession()->IsHeadless() &&
             sRandomBotFacade.IsRandomBot(bot))
         {
@@ -103,7 +104,8 @@ bool GuildAcceptAction::Execute(Event& event)
             bool const isAlreadyClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(botGuidLow);
             bool const isOpposingFaction = bot->GetTeam() != inviter->GetTeam();
             bool const isHired = TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
-            if (!TortoiseBots::MayClaimBot(true, true, isAlreadyClaimed, isOpposingFaction, isHired))
+            bool const allowCrossFactionGuilds = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GUILD);
+            if (!TortoiseBots::MayClaimBot(true, true, isAlreadyClaimed, isOpposingFaction, isHired, allowCrossFactionGuilds))
             {
                 sLog.outBasic("TortoiseBots: claim refused for bot %u (already claimed, opposing faction, or hired)", botGuidLow);
             }
