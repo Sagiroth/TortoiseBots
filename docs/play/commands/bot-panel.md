@@ -125,13 +125,13 @@ The trace is bounded: at most 20 `TBWHY|` lines per second (extra ticks and orde
 
 ### `.bot lootlog`
 
-Replays loot rows for the controllable bots in your party (owned alts and hired companions): the last 24 hours, newest piece first, up to 40 rows per reply.
+Replays loot and roll rows for every bot in your current group (owned alts, hired companions, and dungeon finder / random bots; or your own bots when ungrouped): the last 24 hours, newest piece first, up to 40 rows per reply.
 
 ```text
 .bot lootlog [cursor]
 ```
 
-Send the returned cursor back for the next page. A money row carries the copper amount; `expired` means the piece it pointed at was pruned, so start over without a cursor.
+Send the returned cursor back for the next page. A money row carries the copper amount; a `LootRoll` row carries the vote (`need`, `greed`, `disenchant`, or `pass`) and reason; `expired` means the piece it pointed at was pruned, so start over without a cursor.
 
 
 ### `.bot lease`
