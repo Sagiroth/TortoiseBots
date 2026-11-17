@@ -497,14 +497,13 @@ static void DescribeLootSource(PlayerbotAI* ai, ObjectGuid guid, uint32 gatherSk
         name = goInfo->name;
 }
 
-// Live copy of a stored item row for the owner's addon: the same TBM:LOOT line
-// the .bot lootlog reply sends, pushed as the bot loots. Only bots in the
-// owner's party, since that is who the addon shows them to.
+// Live copy of a stored item row for every real player in the bot's group:
+// the same TBM:LOOT line the .bot lootlog reply sends, pushed as the bot loots.
 static void NotifyOwnerOfLoot(PlayerbotAI* ai, Player* bot, std::string item, uint32 itemId,
     std::string const& sourceType, std::string source, uint32 quality)
 {
-    Player* owner = ai->GetMaster();
-    if (!owner || !owner->GetGroup() || owner->GetGroup() != bot->GetGroup())
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
         return;
 
     std::string timestamp = sPlayerbotAIConfig.GetTimestampStr() + "+00";
@@ -518,7 +517,14 @@ static void NotifyOwnerOfLoot(PlayerbotAI* ai, Player* bot, std::string item, ui
             if (character == '|' || character == '\r' || character == '\n')
                 character = ' ';
 
-    PlayerbotChatHandler(owner).sysmessage(head + item + "|" + sourceType + "|" + source + "|" + qualityText);
+    std::string wireLine = head + item + "|" + sourceType + "|" + source + "|" + qualityText;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        Player* member = ObjectAccessor::FindPlayer(slot.guid);
+        if (!member || member == bot || !member->IsInWorld() || !ai->IsRealPlayer(member))
+            continue;
+        PlayerbotChatHandler(member).sysmessage(wireLine);
+    }
 }
 
 bool StoreLootAction::Execute(Event& event)

@@ -545,8 +545,8 @@ bool LootPieceOlder(std::string const& a, std::string const& b)
 }
 } // namespace
 
-// .bot lootlog [cursor] - the last day of loot rows for the requester's
-// controllable party bots (owned alts and hired companions), newest first.
+// .bot lootlog [cursor] - the last day of loot and roll rows for every bot in
+// the requester's current group (or owned bots when ungrouped), newest first.
 // TBM:LOOT_BEGIN|<n>|<nextCursor>, one TBM:LOOT row per message, then
 // TBM:LOOT_END|<nextCursor>. A cursor into a pruned piece answers expired.
 bool HandleLootLog(ChatHandler* handler, char const* args)
@@ -564,15 +564,28 @@ bool HandleLootLog(ChatHandler* handler, char const* args)
         SendActionError(handler, "lootlog", "invalid", "Usage: .bot lootlog [cursor]");
         return true;
     }
-    BotCommandContext context = BuildContext(requester);
-    std::vector<Player*> scope = ResolveDynamicScope(context);
     std::set<std::string> names;
-    for (Player* bot : scope)
-        if (bot)
-            names.insert(bot->GetName());
+    if (Group* group = requester->GetGroup())
+    {
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (!member || member == requester)
+                continue;
+            if (BotManager::Instance().FindBot(slot.guid) || PlayerbotAIStorage::Instance().GetAI(member))
+                names.insert(member->GetName());
+        }
+    }
+    else
+    {
+        BotCommandContext context = BuildContext(requester);
+        for (Player* bot : context.partyBots)
+            if (bot)
+                names.insert(bot->GetName());
+    }
     if (names.empty())
     {
-        SendActionError(handler, "lootlog", "no-bot", "No live owned party bots are controllable.");
+        SendActionError(handler, "lootlog", "no-bot", "No live group bots found.");
         return true;
     }
     std::string const livePath = sPlayerbotAIConfig.logsDirPath() + "bot_events.csv";
@@ -671,16 +684,29 @@ bool HandleLootLog(ChatHandler* handler, char const* args)
     handler->PSendSysMessage("TBM:LOOT_BEGIN|%u|%s", static_cast<uint32>(rows.size()), nextCursor.c_str());
     for (ai::LootHistoryRow const& row : rows)
     {
+        std::string ts = ProtocolSafe(row.timestamp);
+        std::string botName = ProtocolSafe(row.bot);
+        std::string eventName = ProtocolSafe(row.event);
+        std::string info2 = ProtocolSafe(row.info2);
         std::string item = ProtocolSafe(row.info1);
+        std::string sourceType = ProtocolSafe(row.info3);
         std::string source = ProtocolSafe(row.info4);
-        std::string fixed = "TBM:LOOT|" + ProtocolSafe(row.timestamp) + "|" + ProtocolSafe(row.bot) + "|" +
-            ProtocolSafe(row.event) + "|" + ProtocolSafe(row.info2) + "||" + ProtocolSafe(row.info3) + "||" +
-            ProtocolSafe(row.info5);
-        ai::LootHistoryPolicy::FitLootWireLine(item, source, fixed.size());
+        std::string quality = ProtocolSafe(row.info5);
+        if (row.event == "LootRoll")
+        {
+            size_t fixedBytes = 9 + ts.size() + 1 + botName.size() + 1 + eventName.size() + 1 +
+                1 + sourceType.size() + 1 + source.size() + 1 + quality.size();
+            ai::LootHistoryPolicy::FitLootRollWireLine(info2, item, fixedBytes);
+        }
+        else
+        {
+            std::string fixed = "TBM:LOOT|" + ts + "|" + botName + "|" +
+                eventName + "|" + info2 + "||" + sourceType + "||" + quality;
+            ai::LootHistoryPolicy::FitLootWireLine(item, source, fixed.size());
+        }
         handler->PSendSysMessage("TBM:LOOT|%s|%s|%s|%s|%s|%s|%s|%s",
-            ProtocolSafe(row.timestamp).c_str(), ProtocolSafe(row.bot).c_str(),
-            ProtocolSafe(row.event).c_str(), ProtocolSafe(row.info2).c_str(), item.c_str(),
-            ProtocolSafe(row.info3).c_str(), source.c_str(), ProtocolSafe(row.info5).c_str());
+            ts.c_str(), botName.c_str(), eventName.c_str(), info2.c_str(),
+            item.c_str(), sourceType.c_str(), source.c_str(), quality.c_str());
     }
     handler->PSendSysMessage("TBM:LOOT_END|%s", nextCursor.c_str());
     return true;

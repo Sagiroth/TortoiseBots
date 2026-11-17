@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "LootRollAction.h"
+#include "../../policy/loot/LootHistoryPolicy.h"
 #include "../../policy/loot/LootRollPolicy.h"
 #include "../../policy/loot/LootSpecPriorityPolicy.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
@@ -34,13 +35,39 @@ namespace
 
     void LogLootRoll(PlayerbotAI* ai, ItemQualifier& itemQualifier, RollVote vote, std::string const& reason)
     {
-        if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
-            return;
-
         ItemPrototype const* proto = itemQualifier.GetProto();
         std::string itemName = proto ? proto->Name1 : "unknown item";
-        sPlayerbotAIConfig.logEvent(ai, "LootRoll", itemName,
-            RollVoteName(vote) + ":" + std::to_string(itemQualifier.GetId()) + ":" + reason);
+        std::string info2 = RollVoteName(vote) + ":" + std::to_string(itemQualifier.GetId()) + ":" + reason;
+        if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+            sPlayerbotAIConfig.logEvent(ai, "LootRoll", itemName, info2);
+
+        Player* bot = ai->GetBot();
+        Group* group = bot ? bot->GetGroup() : nullptr;
+        if (!group)
+            return;
+
+        std::string timestamp = sPlayerbotAIConfig.GetTimestampStr() + "+00";
+        std::string botName = bot->GetName();
+        auto sanitize = [](std::string& field)
+        {
+            for (char& c : field)
+                if (c == '|' || c == '\r' || c == '\n')
+                    c = ' ';
+        };
+        sanitize(botName);
+        sanitize(itemName);
+        sanitize(info2);
+        size_t fixedBytes = 9 + timestamp.size() + 1 + botName.size() + 1 + 8 + 1 + 1 + 3;
+        ai::LootHistoryPolicy::FitLootRollWireLine(info2, itemName, fixedBytes);
+        std::string wireLine = "TBM:LOOT|" + timestamp + "|" + botName + "|LootRoll|" + info2 + "|" + itemName + "|||";
+
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (!member || member == bot || !member->IsInWorld() || !ai->IsRealPlayer(member))
+                continue;
+            PlayerbotChatHandler(member).sysmessage(wireLine);
+        }
     }
 
     ai::ItemStatSummary SummarizeItemStats(ItemPrototype const* proto, int32 randomPropertyId)
