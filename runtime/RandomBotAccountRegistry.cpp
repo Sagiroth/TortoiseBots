@@ -210,7 +210,10 @@ bool RandomBotAccountRegistry::CountManagedCharacters(uint32_t& out, std::string
     std::string accounts = AccountIdList();
     std::unique_ptr<QueryResult> count(CharacterDatabase.PQuery(
         "SELECT COUNT(*) FROM `characters` WHERE `deleteDate` IS NULL AND `account` IN (%s) "
-        "AND `guid` NOT IN (SELECT `bot_guid` FROM `tortoise_bots_claimed`)", accounts.c_str()));
+        "AND `guid` NOT IN (SELECT `bot_guid` FROM `tortoise_bots_claimed`) "
+        "AND `guid` NOT IN (SELECT s.`friend` FROM `character_social` s "
+        "JOIN `characters` o ON o.`guid` = s.`guid` WHERE (s.`flags` & 1) AND o.`account` NOT IN (%s))",
+        accounts.c_str(), accounts.c_str()));
     if (!count)
     {
         error = "managed character count could not be read";

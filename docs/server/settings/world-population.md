@@ -184,7 +184,7 @@ This setting is strictly required when using `RandomBotPoolReset`. If pool reset
 </details>
 
 ### `AiPlayerbot.RandomBotPoolReset`
-Controls managed bot pool resets at server startup. Use with care, as resetting deletes all existing bot progression and equipment.
+Controls managed bot pool resets at server startup. Use with care, as resetting deletes all existing bot progression and equipment. Bots claimed by a player's guild and bots on a player's friends list are kept.
 **Default:** `off` · **Values:** `off`, `once:<token>`, `always` · **Restart:** needed
 
 <details>
