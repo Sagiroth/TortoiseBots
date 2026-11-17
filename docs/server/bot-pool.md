@@ -102,6 +102,7 @@ What survives or is guaranteed:
 
 - **Login accounts are never deleted.** The server keeps them. Auto-create makes level 1 characters on them, and each fresh bot is level-seeded on first login to a random level between `AiPlayerbot.RandomBotStartLevelMin` and `RandomBotStartLevelMax` (defaults `5` and `60`).
 - **Claimed bots survive.** A pool bot that accepted your guild invite (claimed) is excluded from the deletion set.
+- **Friends survive.** A pool bot on a player's friends list is excluded from the deletion set too. Only friends lists of characters outside the managed pool count.
 - **Pinned names do not resurrect.** Pinned bots on managed accounts are deleted with the pool. Pinned resolution looks names up, so a deleted pinned name does not come back by itself; auto-create picks new random names.
 - **An empty pool is a verified no-op.** The generation is still recorded, so a token cannot silently wipe a pool that auto-create builds afterwards.
 
