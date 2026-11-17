@@ -109,6 +109,8 @@ bool HandleTotem(ChatHandler* handler, char const* args);
 bool HandleBlessing(ChatHandler* handler, char const* args);
 bool HandleChoice(ChatHandler* handler, char const* args);
 bool HandleFocus(ChatHandler* handler, char const* args);
+bool HandleUse(ChatHandler* handler, char const* args);
+bool ExecuteUseOrder(ChatHandler* handler, Player* requester, std::string const& botNameArg, std::string const& intent);
 bool HandleStrategy(ChatHandler* handler, char const* args);
 bool HandleHelp(ChatHandler* handler, char const* args);
 

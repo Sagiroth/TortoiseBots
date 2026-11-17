@@ -66,15 +66,15 @@ inline std::vector<std::string> SplitLootCsv(std::string const& line)
     return fields;
 }
 
-// True when the line is a loot row the stream can serve (StoreLootAction or
-// LootMoney with at least the base nine columns). Older short events and
-// malformed lines are skipped by the reader.
+// True when the line is a loot row the stream can serve (StoreLootAction,
+// LootMoney, or LootRoll with at least the base nine columns). Older short
+// events and malformed lines are skipped by the reader.
 inline bool ParseLootHistoryRow(std::string const& line, LootHistoryRow& row)
 {
     std::vector<std::string> fields = SplitLootCsv(line);
     if (fields.size() < 9)
         return false;
-    if (fields[2] != "StoreLootAction" && fields[2] != "LootMoney")
+    if (fields[2] != "StoreLootAction" && fields[2] != "LootMoney" && fields[2] != "LootRoll")
         return false;
     row.timestamp = fields[0];
     row.bot = fields[1];
@@ -178,6 +178,20 @@ inline void FitLootWireLine(std::string& item, std::string& source, size_t fixed
         item.resize(item.size() - 1);
     while (!source.empty() && fixedBytes + item.size() + source.size() > kLootHistoryMaxWireBytes)
         source.resize(source.size() - 1);
+}
+
+// Shortens a LootRoll's trailing reason in <vote>:<itemId>:<reason> (keeping
+// the vote and itemId intact) and, only if still needed, the item name so the
+// wire line fits the 250-byte addon budget without dropping the item name.
+inline void FitLootRollWireLine(std::string& info2, std::string& item, size_t fixedBytes)
+{
+    size_t firstColon = info2.find(':');
+    size_t secondColon = (firstColon != std::string::npos) ? info2.find(':', firstColon + 1) : std::string::npos;
+    size_t minPrefix = (secondColon != std::string::npos) ? secondColon + 1 : info2.size();
+    while (info2.size() > minPrefix && fixedBytes + info2.size() + item.size() > kLootHistoryMaxWireBytes)
+        info2.resize(info2.size() - 1);
+    while (item.size() > 1 && fixedBytes + info2.size() + item.size() > kLootHistoryMaxWireBytes)
+        item.resize(item.size() - 1);
 }
 
 } // namespace LootHistoryPolicy

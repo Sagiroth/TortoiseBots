@@ -23,7 +23,7 @@ constexpr uint32_t kQualityLegendary = 5;
 constexpr uint32_t kMaxVanillaPlayerLevel = 60;
 
 // Eligibility gate: May a bot be claimed into a guild?
-inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed, bool isOpposingFaction, bool isHired = false)
+inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed, bool isOpposingFaction, bool isHired = false, bool allowCrossFactionGuilds = false)
 {
     if (!isUnguilded)
         return false;
@@ -31,7 +31,7 @@ inline bool MayClaimBot(bool isUnguilded, bool isPoolBot, bool isAlreadyClaimed,
         return false;
     if (isAlreadyClaimed)
         return false;
-    if (isOpposingFaction)
+    if (isOpposingFaction && !allowCrossFactionGuilds)
         return false;
     if (isHired)
         return false;
@@ -54,11 +54,11 @@ inline bool MayClaimedBotSelfEquip(uint32_t botLevel, bool isClaimed, bool claim
 }
 
 // Player override: when the bot's master or claim owner explicitly puts an
-// item on a claimed bot (equip order or trade that the bot then equips), pin it
-// so auto-equip never replaces it until cleared.
-inline bool ShouldPinPlayerEquippedItem(bool isClaimed, bool isMasterOrClaimOwner)
+// item on a claimed, owned, or hired bot, pin it so auto-equip never replaces
+// it until cleared.
+inline bool ShouldPinPlayerEquippedItem(bool isClaimed, bool isMasterOrClaimOwner, bool isOwnedOrHired = false)
 {
-    return isClaimed && isMasterOrClaimOwner;
+    return (isClaimed || isOwnedOrHired) && isMasterOrClaimOwner;
 }
 
 // Displaced gear: when a claimed bot replaces an equipped item during an auto

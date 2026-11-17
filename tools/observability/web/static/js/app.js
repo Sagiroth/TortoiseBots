@@ -2105,6 +2105,7 @@
           ['Level ladder', flagBadge(bots.level_ladder), cfg('LevelLadder')],
           ['Activity priorities off', flagBadge(bots.disable_activity), cfg('DisableActivityPriorities')]
         ])}
+        ${poolSection(info.pool, num, cfg)}
         ${settingsSection('DIAGNOSTICS · LOGS', [
           ['PerfMon', flagBadge(diag.perf_mon), cfg('PerfMonEnabled')],
           ['bot_events log', flagBadge(diag.bot_events), 'forwarded activity stream (bot_events.csv)'],
@@ -2112,6 +2113,34 @@
           ['deaths log', flagBadge(diag.deaths), 'deaths.csv']
         ])}
       </div>`;
+  }
+
+  // Days for long spans (a level 60's turn comes about once a week), else h/m.
+  function fmtSpan(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    if (sec >= 86400) return `${(sec / 86400).toFixed(1)} d`;
+    return fmtDuration(sec);
+  }
+
+  // Pool health and lineages: every pool character per level band (not only
+  // the online ones), alts rolled by level 60s, and the safety ceiling.
+  function poolSection(pool, num, cfg) {
+    if (!pool) return '';
+    const ceilingHit = pool.ceiling_reached === '1';
+    const bands = (Array.isArray(pool.bands) ? pool.bands : [])
+      .map(b => `${esc(b.name)}: <strong>${esc(b.pool)}</strong> <span class="setting-dim">(${esc(b.online)}/${esc(b.target)} online)</span>`).join('<br>');
+    const mb = Number(pool.character_db_bytes) > 0 ? `${(Number(pool.character_db_bytes) / 1048576).toFixed(0)} MB` : '–';
+    return settingsSection('POOL · LINEAGES', [
+      ['Lineage alts', flagBadge(pool.lineage), cfg('RandomBotLineage')],
+      ['Pool characters', `${num(pool.total)} / ceiling ${num(pool.ceiling)}${ceilingHit ? ' <span class="badge badge-error" title="No new alts are created; nothing is deleted">ceiling reached</span>' : ''}`, cfg('LineagePoolCeiling')],
+      ['Below level 60', `${num(pool.low_pool)} / wanted ${num(pool.low_wanted)}`, cfg('LineageLowBandReserve')],
+      ['Alts created', `${num(pool.alts)} · ${num(pool.alts_24h)} in 24 h (max ${num(pool.per_hour)}/h)`, cfg('LineagePerHour')],
+      ['Alts by faction', `Alliance ${num(pool.alts_alliance)} · Horde ${num(pool.alts_horde)}`, ''],
+      ['Level 60s', num(pool.sixty), ''],
+      ['Longest-unseen 60', `${esc(fmtSpan(pool.oldest_sixty_unseen_sec))} <span class="setting-dim">(expected turn every ${esc(fmtSpan(pool.sixty_cycle_sec))})</span>`, ''],
+      ['Character database', esc(mb), ''],
+      ['Pool per band', bands || '–', '']
+    ]);
   }
 
   // Pool gear summary for the diagnostic report: average equipped item level
@@ -2150,6 +2179,7 @@
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
       `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}${b.gear_bots ? `/ilvl${b.avg_item_level.toFixed(1)}` : ''}`).join(' ')}`,
       `- gear: ${gearDiagLine()}`,
+      `- lineages: ${(() => { const p = info.pool; if (!p) return 'no data'; return `on=${on(p.lineage)} pool=${p.total}/${p.ceiling} ceiling_reached=${on(p.ceiling_reached)} below60=${p.low_pool}/${p.low_wanted} sixty=${p.sixty} alts=${p.alts} alts24h=${p.alts_24h} A/H=${p.alts_alliance}/${p.alts_horde} oldest60=${Math.round((p.oldest_sixty_unseen_sec || 0) / 3600)}h cycle=${Math.round((p.sixty_cycle_sec || 0) / 3600)}h db=${Math.round((p.character_db_bytes || 0) / 1048576)}MB`; })()}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
       `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=${counterWindow()} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
@@ -2612,15 +2642,20 @@
           : '';
         const pvp = pvpBadge(r.live) || worldPvpBadge(r.live);
         const kind = kindBadge(r.kind);
-        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${kind}${pvp ? ` ${pvp}` : ''}${badge}`;
+        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" title="${esc(r.name)}" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${kind}${pvp ? ` ${pvp}` : ''}${badge}`;
       }
     },
     class: {
       label: 'Class',
       sort: r => `${r.cls} ${r.spec}`.toLowerCase(),
-      cell: r => `${esc(capClass(r.cls))}${r.spec ? ` <span class="cell-muted">${esc(specLabel(r.spec, r.cls, r.live))}</span>` : ''}`
+      cell: r => {
+        const cls = capClass(r.cls);
+        const spec = r.spec ? specLabel(r.spec, r.cls, r.live) : '';
+        const full = spec ? `${cls} ${spec}` : cls;
+        return `<span title="${esc(full)}">${esc(cls)}${spec ? ` <span class="cell-muted">${esc(spec)}</span>` : ''}</span>`;
+      }
     },
-    race: { label: 'Race', sort: r => r.race.toLowerCase(), cell: r => (r.race ? esc(r.race) : DASH) },
+    race: { label: 'Race', sort: r => r.race.toLowerCase(), cell: r => (r.race ? `<span title="${esc(r.race)}">${esc(r.race)}</span>` : DASH) },
     prof: {
       label: 'Professions',
       title: 'Trade professions with skill level; cooking, fishing and first aid muted',
@@ -2658,20 +2693,27 @@
     target: {
       label: 'Target',
       sort: r => (r.live ? displayTarget(r.live).toLowerCase() : ''),
-      cell: r => (r.live && r.live.target
-        ? `<span class="target-cell">${esc(displayTarget(r.live))}</span>${r.live.target_level ? ` <span class="cell-muted">L${esc(r.live.target_level)}</span>` : ''}`
-        : DASH)
+      cell: r => {
+        if (!r.live || !r.live.target) return DASH;
+        const t = displayTarget(r.live);
+        const lvl = r.live.target_level ? ` L${r.live.target_level}` : '';
+        return `<span title="${esc(t + lvl)}"><span class="target-cell">${esc(t)}</span>${r.live.target_level ? ` <span class="cell-muted">L${esc(r.live.target_level)}</span>` : ''}</span>`;
+      }
     },
     zone: {
       label: 'Zone',
       sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
-      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
+      cell: r => {
+        if (!r.live) return DASH;
+        const z = getZoneName(r.live.zone, r.live.map);
+        return `<span class="mono" title="${esc(z)}">${esc(z)}</span>`;
+      }
     },
     guild: {
       label: 'Guild',
       title: 'Guild the bot is in (dash when guildless)',
       sort: r => (r.guild || '').toLowerCase(),
-      cell: r => (r.guild ? `<span class="mono">${esc(r.guild)}</span>` : DASH)
+      cell: r => (r.guild ? `<span class="mono" title="${esc(r.guild)}">${esc(r.guild)}</span>` : DASH)
     },
     xp: {
       label: 'XP',
@@ -2703,7 +2745,7 @@
       sort: r => (r.live && r.live.activity ? r.live.activity.money_earned || 0 : -1),
       cell: r => {
         const a = r.live && r.live.activity;
-        return a ? `<span class="mono" style="font-size: 0.74rem;">+${formatMoney(a.money_earned)}<br>-${formatMoney(a.money_spent)}</span>` : DASH;
+        return a ? `<span class="mono" style="font-size: 0.74rem;">+${formatMoney(a.money_earned)} / -${formatMoney(a.money_spent)}</span>` : DASH;
       }
     },
     vendors: Object.assign({ label: 'Vendors' }, actNum('vendor_visits')),
@@ -2835,6 +2877,16 @@
 
   const profNames = r => r.profs.map(p => skillNameById(p.skill));
 
+  function matchBotSearchWord(r, w) {
+    if (w.includes(',')) {
+      const parts = w.split(',').map(s => s.trim()).filter(Boolean);
+      if (!parts.length) return true;
+      const name = r.name.toLowerCase();
+      return parts.some(p => name.includes(p));
+    }
+    return r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w) || r.race.toLowerCase().includes(w);
+  }
+
   function renderRoster() {
     if (!el.rosterTable) return;
     paintSeg(el.presenceSeg, state.botsPresence);
@@ -2843,7 +2895,7 @@
 
     const rows = botRows();
     const issues = issueSet();
-    const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim();
+    const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim().replace(/\s*,\s*/g, ',');
     const presenceOk = r => state.botsPresence === 'all' || (state.botsPresence === 'online') === r.online;
     // The Bots/Players segment is the coarse cut; the kind chips refine it.
     const segOk = r => state.botsKind === 'all' || (state.botsKind === 'player') === (r.kind === 'player' || r.kind === 'own');
@@ -2852,8 +2904,7 @@
     const fields = words.map(queryField);
     const text = words.filter((w, i) => !fields[i]);
     const tests = fields.filter(Boolean);
-    const queryOk = r => tests.every(t => t(r)) &&
-      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w) || r.race.toLowerCase().includes(w));
+    const queryOk = r => tests.every(t => t(r)) && text.every(w => matchBotSearchWord(r, w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const specOk = r => state.botsClass === 'all' || state.botsSpec === 'all' || r.spec === state.botsSpec;
@@ -4315,6 +4366,8 @@
       html += `<div class="offline-note profile-section">Offline — no live status. Everything else comes from the database.</div>`;
     }
 
+    html += lineageHtml(state.profile && state.profile.lineage, guid);
+
     if (mine.length || past.length) {
       html += `<div class="profile-section"><div class="section-label">Issues</div>
         ${mine.map(i => `<div class="issue-chip ${esc(i.severity)}"><span>${esc(ISSUE_LABELS[i.type] || i.type)} · ${esc(getZoneName(i.zone, i.map))}</span><span class="mono">${esc(fmtDuration(i.duration_sec))}</span></div>`).join('')}
@@ -4339,6 +4392,31 @@
           : '<div class="empty-hint">No world PvP fights recorded this session.</div>'
     }</div>`;
     host.innerHTML = html;
+  }
+
+  // The character's lineage: "alt of X" and every member of the line, founder first.
+  function lineageHtml(lin, guid) {
+    if (!lin || !Array.isArray(lin.members) || lin.members.length < 2) return '';
+    const day = t => (t ? new Date(t * 1000).toISOString().slice(0, 10) : DASH);
+    const nameOf = m => {
+      const cls = classNameById(m.class);
+      const label = m.name || `#${m.guid}`;
+      if (m.guid === guid) return `<strong style="color: ${classColor(cls)};">${esc(label)}</strong>`;
+      return m.gone ? `<span class="cell-muted">${esc(label)} (deleted)</span>` : botLink(m.guid, label, cls);
+    };
+    const founder = lin.members[0];
+    const parent = lin.parent_guid ? lin.members.find(m => m.guid === lin.parent_guid) : null;
+    const rows = lin.members.map(m => `<tr>
+        <td>${nameOf(m)}${m.guid === founder.guid ? ' <span class="badge" title="First character of the line">founder</span>' : ''}</td>
+        <td>${esc(classNameById(m.class) || '')}</td>
+        <td class="mono">${m.gone ? DASH : esc(m.level)}</td>
+        <td class="mono">${m.guid === founder.guid ? DASH : day(m.created)}</td>
+        <td class="mono">${day(m.reached_60)}</td>
+        <td class="mono">${m.online ? 'online' : day(m.last_online)}</td>
+      </tr>`).join('');
+    return `<div class="profile-section"><div class="section-label">Lineage${parent ? ` · alt of ${nameOf(parent)}` : ''}</div>
+      <table class="data-table"><thead><tr><th>Character</th><th>Class</th><th>Level</th><th>Created</th><th>Reached 60</th><th>Last online</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
   }
 
   // Everything that depends on the database profile: header, paperdoll, stats

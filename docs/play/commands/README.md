@@ -85,6 +85,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot action learn`](party-actions.md#bot-action-learn) | Tactical Action | Commands bots to train spells at nearby trainers. |
 | [`.bot action trade`](party-actions.md#bot-action-trade) | Tactical Action | Opens a trade window with the targeted companion. |
 | [`.bot action ready`](party-actions.md#bot-action-ready) | Tactical Action | Performs a readiness check across all party bots. |
+| [`.bot action use`](party-actions.md#bot-use) | Tactical Action | Orders the targeted or nearest party bot to walk to and use a nearby lever, door, chest, or quest object. |
 | [`.bot action raid status`](party-actions.md#bot-action-raid-status) | Tactical Action | Reports active raid encounter strategy states. |
 | [`.bot action raid tankface`](party-actions.md#bot-action-raid-tankface) | Tactical Action | Orders tank bots to face dragon bosses away. |
 | [`.bot action raid douse`](party-actions.md#bot-action-raid-douse) | Tactical Action | Commands bots to douse nearby Molten Core runes. |
@@ -107,6 +108,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot sell`](party-actions.md#bot-sell) | Direct Party | Orders targeted bot or party to sell gray junk. |
 | [`.bot rest`](party-actions.md#bot-rest) | Direct Party | Orders bots to sit and consume food and drink. |
 | [`.bot downtime`](party-actions.md#bot-downtime) | Direct Party | Orders own alt bots to run town errands (trainer, junk, repair). |
+| [`.bot use`](party-actions.md#bot-use) | Direct Party | Orders a bot (or the best party bot) to walk to and use a nearby lever, door, chest, or quest object. |
 | [`.bot commander bind`](commander.md#bot-commander-bind) | Remote Commander | Binds a bot-only party to remote leadership (with `inparty`: you and up to three other players stay in the party). |
 | [`.bot commander unbind`](commander.md#bot-commander-unbind) | Remote Commander | Releases your current remote commander binding. |
 | [`.bot commander status`](commander.md#bot-commander-status) | Remote Commander | Displays commanded party status and roster. |

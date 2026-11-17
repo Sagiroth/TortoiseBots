@@ -974,6 +974,13 @@ select.input {
    sideways on a narrow screen. */
 .bots-table td {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.bots-table tbody td {
+  height: 40px;
 }
 
 .bots-table th:first-child,

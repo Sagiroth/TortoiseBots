@@ -783,6 +783,24 @@ Runs town errands on one of your own alt bots: trainer, junk sale, and repair.
 - A follow or stay order while the alt is out cancels the errands at once.
 - Alt bots already playing on their own refuse.
 
+<a id="bot-use"></a>
+### `.bot use` / `.bot action use`
+
+Orders a bot to walk to the nearest usable game object next to you and use it.
+
+```text
+.bot use [botName]
+.bot action use [botName]
+```
+
+- Searches within 15 yards of you for buttons/levers, goobers, doors, chests, and questgiver objects.
+- Skips despawned, already-open, in-use, and non-interactable objects, as well as locked objects the bot cannot open.
+- Prefers the object closest to you; when the closest object is a door without a usable lock and a button or goober sits within 15 yards of that door, picks the button or goober instead (such as the Door Lever next to the Heavy Door in the Deadmines).
+- With no bot named or targeted, picks the best available party bot (preferring a bot that can unlock a locked object, or the closest bot to the object).
+- Walks the bot to the object and uses it through the bot's own object interaction (preserving key, lockpicking, and chest loot rules), then restores its movement stance.
+- Replies with `TBM:ACTION_ACK|use|<scope>|1|<action>` (for example `Pulling Door Lever`) or `TBM:ACTION_ERR|use|<code>|<message>` (`Nothing usable near you`, `I can't reach it`, `Locked: needs <key>`).
+- Servers that have the command advertise the `use-object` capability.
+
 > [!NOTE]
 > **Pet Stance, Autocast, and Boost Notes:**
 > - There are no direct `.bot pet aggressive` or `.bot pet autocast` chat commands. Pet commands are issued via whisper (`/w <Bot> pet aggressive`, `/w <Bot> pet autocast <spell>`) or the proxy (`.bot command <Bot> pet aggressive`, `.bot command <Bot> pet autocast <spell>`).

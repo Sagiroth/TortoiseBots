@@ -438,7 +438,7 @@ bool OpenLootAction::CanOpenLock(uint32 skillId, uint32 reqSkillValue)
 // The gathering skill a game object's lock asks for (herbalism / mining / ...), i.e. the value
 // LootObject::Refresh derives when it classifies the node. Refresh only looks at an object that
 // is still GO_READY, so it returns nothing for the node whose loot window is open right now.
-static uint32 GetNodeGatherSkill(GameObject* go)
+uint32 ai::GetNodeGatherSkill(GameObject* go)
 {
     if (!go)
         return SKILL_NONE;
@@ -497,14 +497,14 @@ static void DescribeLootSource(PlayerbotAI* ai, ObjectGuid guid, uint32 gatherSk
         name = goInfo->name;
 }
 
-// Live copy of a stored item row for the owner's addon: the same TBM:LOOT line
-// the .bot lootlog reply sends, pushed as the bot loots. Only bots in the
-// owner's party, since that is who the addon shows them to.
+// Live copy of a stored item row for every real player in the bot's group:
+// the same TBM:LOOT line the .bot lootlog reply sends, pushed as the bot loots.
+// Sent on the addon channel so group members without the addon never see raw lines.
 static void NotifyOwnerOfLoot(PlayerbotAI* ai, Player* bot, std::string item, uint32 itemId,
     std::string const& sourceType, std::string source, uint32 quality)
 {
-    Player* owner = ai->GetMaster();
-    if (!owner || !owner->GetGroup() || owner->GetGroup() != bot->GetGroup())
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
         return;
 
     std::string timestamp = sPlayerbotAIConfig.GetTimestampStr() + "+00";
@@ -518,7 +518,14 @@ static void NotifyOwnerOfLoot(PlayerbotAI* ai, Player* bot, std::string item, ui
             if (character == '|' || character == '\r' || character == '\n')
                 character = ' ';
 
-    PlayerbotChatHandler(owner).sysmessage(head + item + "|" + sourceType + "|" + source + "|" + qualityText);
+    std::string wireLine = head + item + "|" + sourceType + "|" + source + "|" + qualityText;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        Player* member = ObjectAccessor::FindPlayer(slot.guid);
+        if (!member || member == bot || !member->IsInWorld() || !ai->IsRealPlayer(member))
+            continue;
+        member->SendAddonMessage("TBM", wireLine);
+    }
 }
 
 bool StoreLootAction::Execute(Event& event)
@@ -603,10 +610,12 @@ bool StoreLootAction::Execute(Event& event)
     }
 
     static_assert((uint32)LOOT_SKINNING == ai::kSkinningLootType, "SkinningLootPolicy kSkinningLootType drifted from core LOOT_SKINNING");
+    static_assert((uint32)SKILL_HERBALISM == ai::kHerbalismSkillId, "SkinningLootPolicy kHerbalismSkillId drifted from core SKILL_HERBALISM");
+    static_assert((uint32)SKILL_MINING == ai::kMiningSkillId, "SkinningLootPolicy kMiningSkillId drifted from core SKILL_MINING");
     static_assert((uint32)SKILL_SKINNING == ai::kSkinningSkillId, "SkinningLootPolicy kSkinningSkillId drifted from core SKILL_SKINNING");
     LootType const internalLootType = LootAccess(loot).lootType();
     uint32 gatherSkill = ai::DecideGatherSkillForLoot((uint32)internalLootType, guid.IsGameObject(),
-        guid.IsGameObject() ? GetNodeGatherSkill(ai->GetGameObject(guid)) : (uint32)SKILL_NONE);
+        guid.IsGameObject() ? ai::GetNodeGatherSkill(ai->GetGameObject(guid)) : (uint32)SKILL_NONE);
 
     uint32 itemsTaken = 0;
 
@@ -672,7 +681,8 @@ bool StoreLootAction::Execute(Event& event)
             if (!orderedProto || (orderedProto->MaxCount > 0 && bot->HasItemCount(itemid, orderedProto->MaxCount, true)))
                 continue;
         }
-        else if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
+        else if (!ai::ShouldSkipLootFilter((uint32)internalLootType, guid.IsGameObject(), gatherSkill) &&
+            !IsLootAllowed(itemQualifier, ai))
         {
             // A Working skin order needs the corpse empty before the
             // Skinning cast is legal, so kills of order mobs give up

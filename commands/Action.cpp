@@ -320,7 +320,7 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
         first != "corpse run" && first != "corpserun" && first != "learn" &&
         first != "trade" && first != "raid" && first != "flee" && first != "sap" &&
         first != "stance" && first != "rebuff" && first != "guard" && first != "free" &&
-        first != "end")
+        first != "end" && first != "use")
         return false;
 
     if (first == "raid")
@@ -430,6 +430,12 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
         if (!remainder.empty())
             return false;
         intent = first;
+        return true;
+    }
+    else if (first == "use")
+    {
+        intent = first;
+        option = remainder;
         return true;
     }
     else if (first == "engage")
@@ -1103,7 +1109,7 @@ bool HandleAction(ChatHandler* handler, char const* args)
             if (intent.empty())
                 intent = "unknown";
         }
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged|body]/pullback [seconds] [ranged|body]/end pull/engage [seconds]/come/stay/hold/follow/flee/guard/free/stance <near|tank|turnback|behind>/rebuff/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off/status]/autocc [on/off/status]/sap [on/off] [bot]/aoe [on/off/status]/loot [on/off/status]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged|body]/pullback [seconds] [ranged|body]/end pull/engage [seconds]/come/stay/hold/follow/flee/guard/free/stance <near|tank|turnback|behind>/rebuff/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off/status]/autocc [on/off/status]/sap [on/off] [bot]/aoe [on/off/status]/loot [on/off/status]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/use [bot]/raid [status/tankface/douse/custom status/custom on/custom off]");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -1128,6 +1134,8 @@ bool HandleAction(ChatHandler* handler, char const* args)
     }
     if (intent == "interrupt")
         return ExecuteInterruptAction(handler, context, requester);
+    if (intent == "use")
+        return ExecuteUseOrder(handler, requester, option, intent);
 
     std::vector<Player*> scope;
     Player* sapNamedBot = nullptr;

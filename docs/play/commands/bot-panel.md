@@ -31,7 +31,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot inv`](#bot-inv) | `<Name>` | Emits detailed inventory, equipped gear, and coin count. |
 | [`.bot professions`](#bot-professions) | `<Name>` | Emits profession skills, known recipes, and learnable recipes. |
 | [`.bot item <Name> trade`](#bot-item-trade) | None | Prompts the bot to open a direct trade window with you. |
-| [`.bot item <Name> equip`](#bot-item-equip) | `<bag> <slot>` | Equips an item from the bot's bags into gear slots. |
+| [`.bot item <Name> equip`](#bot-item-equip) | `<bag> <slot> [mainhand\|offhand\|finger1\|finger2\|trinket1\|trinket2]` | Equips an item from the bot's bags into gear slots (or a chosen hand/ring/trinket slot). |
 | [`.bot item <Name> unequip`](#bot-item-unequip) | `<bag> <slot>` | Moves an equipped item into the bot's inventory bags. |
 | [`.bot item <Name> give`](#bot-item-give) | `<bag> <slot>` | Places an inventory item into an active trade window. |
 | [`.bot behavior`](#bot-behavior) | `<Name\|scope> <key> <on\|off>` | Sets persistent bot behaviors (loot, AoE, mimic...). |
@@ -125,13 +125,13 @@ The trace is bounded: at most 20 `TBWHY|` lines per second (extra ticks and orde
 
 ### `.bot lootlog`
 
-Replays loot rows for the controllable bots in your party (owned alts and hired companions): the last 24 hours, newest piece first, up to 40 rows per reply.
+Replays loot and roll rows for every bot in your current group (owned alts, hired companions, and dungeon finder / random bots; or your own bots when ungrouped): the last 24 hours, newest piece first, up to 40 rows per reply.
 
 ```text
 .bot lootlog [cursor]
 ```
 
-Send the returned cursor back for the next page. A money row carries the copper amount; `expired` means the piece it pointed at was pruned, so start over without a cursor.
+Send the returned cursor back for the next page. A money row carries the copper amount; a `LootRoll` row carries the vote (`need`, `greed`, `disenchant`, or `pass`) and reason; `expired` means the piece it pointed at was pruned, so start over without a cursor.
 
 
 ### `.bot lease`
@@ -241,13 +241,13 @@ Place items or gold into the trade window and click accept; the companion bot ac
 
 ### `.bot item <Name> equip` <a id="bot-item-equip"></a>
 
-Instructs the bot to equip an item from its inventory bags into the appropriate equipment slot.
+Instructs the bot to equip an item from its inventory bags into the appropriate equipment slot, or into an explicit target slot (`mainhand`, `offhand`, `finger1`, `finger2`, `trinket1`, `trinket2`).
 
 ```text
-.bot item <CharacterName> equip <bag> <slot>
+.bot item <CharacterName> equip <bag> <slot> [mainhand|offhand|finger1|finger2|trinket1|trinket2]
 ```
 
-Specify the bag index and slot number as reported by `.bot inv`. On success (and when the item is no longer there after the operation), a refreshed inventory snapshot follows.
+Specify the bag index and slot number as reported by `.bot inv`. When an optional target slot is given, the server validates that the item fits that slot (one-hand weapons require dual wield for `offhand`; shields, holdables and off-hand-only weapons only fit `offhand`; two-hand and main-hand-only weapons only fit `mainhand`) and swaps any displaced item back into the bags. Player-equipped items on claimed bots, owned alts, and hired bots are pinned so automatic gear upgrades do not immediately replace or swap them. On success (and when the item is no longer there after the operation), a refreshed inventory snapshot follows.
 
 ### `.bot item <Name> unequip` <a id="bot-item-unequip"></a>
 

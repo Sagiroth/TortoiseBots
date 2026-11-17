@@ -15,6 +15,7 @@
 
 using ai::LootHistoryPolicy::DecodeLootCursor;
 using ai::LootHistoryPolicy::EncodeLootCursor;
+using ai::LootHistoryPolicy::FitLootRollWireLine;
 using ai::LootHistoryPolicy::FitLootWireLine;
 using ai::LootHistoryPolicy::kLootHistoryMaxRows;
 using ai::LootHistoryPolicy::kLootHistoryMaxWireBytes;
@@ -53,6 +54,14 @@ int main()
     CHECK(row.event == "LootMoney");
     CHECK(row.info1 == "137");
     CHECK(row.info5.empty());
+
+    std::string roll = "2026-10-27 10:00:02+00,Dudette,LootRoll,\"POINT(1 2)\",1,2,60.000000,"
+        "\"Gamemaster's Robe\",\"need:2586:for equiping as upgrade.\"";
+    CHECK(ParseLootHistoryRow(roll, row));
+    CHECK(row.event == "LootRoll");
+    CHECK(row.info1 == "Gamemaster's Robe");
+    CHECK(row.info2 == "need:2586:for equiping as upgrade.");
+    CHECK(row.info3.empty() && row.info4.empty() && row.info5.empty());
 
     std::string oldRow = "2026-10-20 10:00:00+00,Dudette,StoreLootAction,\"POINT(1 2)\",1,2,60.000000,"
         "\"Tough Jerky\",\"122\"";
@@ -99,6 +108,13 @@ int main()
     sourceName = "names";
     FitLootWireLine(itemName, sourceName, 60);
     CHECK(itemName == "short" && sourceName == "names");
+
+    std::string rollInfo2 = "greed:2586:" + std::string(220, 'r');
+    std::string rollItem = "Gamemaster's Robe";
+    FitLootRollWireLine(rollInfo2, rollItem, 60);
+    CHECK(60 + rollInfo2.size() + rollItem.size() <= kLootHistoryMaxWireBytes);
+    CHECK(rollInfo2.rfind("greed:2586:", 0) == 0);
+    CHECK(rollItem == "Gamemaster's Robe");
 
     std::cout << "test_loot_history_policy: OK" << std::endl;
     return 0;

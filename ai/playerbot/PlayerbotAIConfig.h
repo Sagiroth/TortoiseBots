@@ -167,6 +167,13 @@ public:
     uint32 levelLadderBandSize = 5;
     uint32 levelLadderMaxLevelSharePct = 10;
     uint32 levelLadderLogMinutes = 5;
+    // Lineages (AiPlayerbot.RandomBotLineage*): level 60 pool bots roll level 1 alts while the
+    // bands below 60 hold too few pool characters, so the low zones never empty.
+    bool randomBotLineage = true;
+    uint32 lineageLowBandReserve = 2;
+    uint32 lineagePerHour = 10;
+    uint32 lineagePoolCeiling = 10;
+    bool lineageJoinParentGuild = true;
     uint32 maxRandomBotInWorldTime;
     uint32 randomBotStallRelogMinutes = 45;
     uint32 minRandomBotRandomizeTime, maxRandomBotRandomizeTime;

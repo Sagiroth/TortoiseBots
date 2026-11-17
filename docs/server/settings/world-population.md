@@ -31,6 +31,11 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.LevelLadderBandSize`](#aiplayerbotlevelladderbandsize) | `5` | Number of character levels grouped into each ladder band. |
 | [`AiPlayerbot.LevelLadderMaxLevelShare`](#aiplayerbotlevelladdermaxlevelshare) | `10` | Maximum percentage share of total online bot population at level 60. |
 | [`AiPlayerbot.LevelLadderLogMinutes`](#aiplayerbotlevelladderlogminutes) | `5` | Interval in minutes between bot population ladder distribution logs. |
+| [`AiPlayerbot.RandomBotLineage`](#aiplayerbotrandombotlineage) | `1` | Level 60 pool bots roll level 1 alts when the low level bands run short. |
+| [`AiPlayerbot.LineageLowBandReserve`](#aiplayerbotlineagelowbandreserve) | `2` | Alts are rolled while the pool below 60 holds fewer than this many times its online target. |
+| [`AiPlayerbot.LineagePerHour`](#aiplayerbotlineageperhour) | `10` | Maximum lineage alts created per hour, spaced evenly. |
+| [`AiPlayerbot.LineagePoolCeiling`](#aiplayerbotlineagepoolceiling) | `10` | Safety ceiling: maximum pool characters as a multiple of the online bot count. |
+| [`AiPlayerbot.LineageJoinParentGuild`](#aiplayerbotlineagejoinparentguild) | `1` | A lineage alt joins its parent's all-bot guild when it has room. |
 | [`AiPlayerbot.RandomBotTimedLogout`](#aiplayerbotrandombottimedlogout) | `1` | Enables automatic timed logout rotation for random pool bots. |
 | [`AiPlayerbot.MaxRandomBotInWorldTime`](#aiplayerbotmaxrandombotinworldtime) | `21600` | Maximum duration in seconds a random bot stays online before session relog. |
 | [`AiPlayerbot.MinRandomBotRandomizeTime` / `MaxRandomBotRandomizeTime`](#aiplayerbotminrandombotrandomizetime--maxrandombotrandomizetime) | `21600` / `86400` | Interval range in seconds between unseeded-gear backstop sweeps. |
@@ -231,6 +236,8 @@ Newly generated random bots get a level between `RandomBotStartLevelMin` and `Ra
 
 To test specific brackets, narrow the range (for example `10` / `15`). Gear seeding starts at level 5: a bot that rolled level 1-4 keeps its level-1 outfit until it gears from loot and quests. To start all bots at level 1 and have them level naturally, set both keys to `1`.
 
+Lineage alts (see [`RandomBotLineage`](#aiplayerbotrandombotlineage)) always start at level 1, whatever these keys say: the range only populates a fresh world.
+
 </details>
 
 ### `AiPlayerbot.LevelLadder`
@@ -288,6 +295,61 @@ Interval in minutes between log messages reporting active bot population distrib
 Emits a periodic summary table in the server log showing how many bots are currently online in each level band and how closely the ladder matches target quotas.
 
 Values below 1 are clamped to a 1-minute cadence.
+
+</details>
+
+### `AiPlayerbot.RandomBotLineage`
+Level 60 pool bots roll level 1 alts when the level bands below 60 run short of pool characters, so the low zones never empty and no pool reset is needed.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Once a minute the server counts every pool character below level 60 (online or not). While that count is below `LineageLowBandReserve` times the level ladder's online target for those bands, the level 60 with the smallest lineage rolls an alt: a new level 1 character of its faction, in a class the line does not have yet, with a new name and nothing from the parent. The 60 stays in the pool. The online bot count does not change, so this costs no CPU. Nothing is ever deleted; creation stops at `LineagePoolCeiling`. See [Lineages](../bot-pool.md#lineages-level-60s-roll-new-level-1-alts).
+
+</details>
+
+### `AiPlayerbot.LineageLowBandReserve`
+How many pool characters below level 60 the lineages keep in stock, as a multiple of the level ladder's online target for those bands.
+**Default:** `2` · **Values:** integer multiple (`0` never rolls) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With 1,000 bots online and level 60 capped at 10 %, the bands below 60 want 900 online, so the default keeps 1,800 pool characters below 60. Lower means slower database growth but thinner low zones between relogs; higher means busier low zones and faster growth.
+
+</details>
+
+### `AiPlayerbot.LineagePerHour`
+Maximum lineage alts created per hour.
+**Default:** `10` · **Values:** count per hour (`0` stops new alts) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Alts are spaced evenly (one every 3600 / value seconds) rather than created in a burst, so a fresh realm where many bots reach 60 at once does not spawn hundreds of characters in a day. The spacing uses the last creation time from the lineage table, so a restart does not reset it.
+
+</details>
+
+### `AiPlayerbot.LineagePoolCeiling`
+Safety ceiling for the pool, as a multiple of the online bot count. At or above it no lineage alt is created.
+**Default:** `10` · **Values:** integer multiple (minimum `1`) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With 1,000 bots online the default allows 10,000 pool characters, roughly 3 GB of character data. Reaching it only stops new alts: nothing is deleted. The server log says so once and the dashboard's Server panel shows "ceiling reached".
+
+</details>
+
+### `AiPlayerbot.LineageJoinParentGuild`
+A lineage alt joins its parent's guild.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Only when the parent's guild has no real player's character in it and is below `AiPlayerbot.GuildMaxBotLimit`. An alt never lands in a player's guild unasked. The alt joins at the lowest rank.
 
 </details>
 

@@ -281,6 +281,8 @@ type BotProfile struct {
 	// Pet is the current hunter pet or warlock demon (character_pet, not stabled);
 	// nil when the character has none. Values are as last saved.
 	Pet *PetInfo `json:"pet,omitempty"`
+	// Lineage is the character's line of lineage alts; nil when it has none.
+	Lineage *LineageInfo `json:"lineage,omitempty"`
 }
 
 type PetInfo struct {

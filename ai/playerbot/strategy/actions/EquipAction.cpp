@@ -62,9 +62,11 @@ bool EquipAction::PinPlayerEquippedItemIfClaimed(PlayerbotAI* ai, Player* reques
     if (!bot || !IsItemCurrentlyEquipped(bot, item))
         return false;
     bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
+    bool const isOwnedOrHired = !sRandomBotFacade.IsRandomBot(bot) ||
+        TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
     bool const isOwner = (requester == ai->GetMaster()) ||
         TortoiseBots::ClaimLifecycle::Instance().IsClaimedByPlayer(bot->GetGUIDLow(), requester->GetGUIDLow());
-    if (!TortoiseBots::ShouldPinPlayerEquippedItem(isClaimed, isOwner))
+    if (!TortoiseBots::ShouldPinPlayerEquippedItem(isClaimed, isOwner, isOwnedOrHired))
         return false;
     if (!SetForceItemUsageIfChanged(ai, item, ForceItemUsage::FORCE_USAGE_EQUIP, false))
         return false;
@@ -870,7 +872,9 @@ bool EquipUpgradesAction::Execute(Event& event)
             && oh->GetProto()->Class == ITEM_CLASS_WEAPON
             && mh->GetProto()->InventoryType != INVTYPE_2HWEAPON
             && mh->GetProto()->InventoryType != INVTYPE_WEAPONMAINHAND
-            && oh->GetProto()->InventoryType != INVTYPE_WEAPONOFFHAND)
+            && oh->GetProto()->InventoryType != INVTYPE_WEAPONOFFHAND
+            && AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", mh->GetProto()->ItemId, ForceItemUsage::FORCE_USAGE_NONE) != ForceItemUsage::FORCE_USAGE_EQUIP
+            && AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", oh->GetProto()->ItemId, ForceItemUsage::FORCE_USAGE_NONE) != ForceItemUsage::FORCE_USAGE_EQUIP)
         {
             uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
 

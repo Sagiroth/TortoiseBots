@@ -653,6 +653,7 @@ static BotCommandEntry const botCommands[] = {
     {"blessing", HandleBlessing, "blessing <bot|party|raid> <class> <blessing|auto> | status", {}, AlwaysVisible},
     {"choice", HandleChoice, "choice <bot|party|raid> <aura|aspect|curse|poison_mh|poison_oh|sting|pet> <value|auto> | status", {}, AlwaysVisible},
     {"focus", HandleFocus, "focus <bot|party> <mark|clear|status>", {}, AlwaysVisible},
+    {"use", HandleUse, "use [botName]", {}, AlwaysVisible},
     {"strategy", HandleStrategy, "strategy <+/-/~><strategy name> [role or botName] | strategy reset", {}, AlwaysVisible},
     {"help", HandleHelp, "help", {"h"}, AlwaysVisible},
 };

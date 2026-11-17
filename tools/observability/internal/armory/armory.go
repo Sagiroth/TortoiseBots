@@ -550,6 +550,7 @@ func (s *Service) GetBotProfile(guid uint32) (*BotProfile, error) {
 		return nil, err
 	}
 	profile.Pet = pet
+	profile.Lineage = s.lineage(guid)
 
 	return &profile, nil
 }
