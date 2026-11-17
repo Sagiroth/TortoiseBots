@@ -51,4 +51,13 @@ namespace ai
     {
         return internalLootType == kSkinningLootType;
     }
+
+    // Whether a loot window skips the IsLootAllowed filter: only a skinned
+    // corpse. A game object opened by a lock (chest, quest "mud", herb, ore)
+    // also arrives as LOOT_SKINNING, and passing it through took a quest item
+    // the bot's master still needed (one item per object for the whole group).
+    inline bool SkipsLootFilter(uint32_t internalLootType, bool targetIsGameObject)
+    {
+        return !targetIsGameObject && IsSkinningLoot(internalLootType);
+    }
 }

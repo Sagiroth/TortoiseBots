@@ -532,7 +532,7 @@ bool ShouldLootObject::Calculate()
 		ItemQualifier ltemQualifier(lItem);
         // #403: skins arrive on the wire as LOOT_PICKPOCKETING (core rewrites LOOT_SKINNING for the
         // 1.12 client), so the wire type can never identify them. The server-side loot_type still can.
-        if (!IsSkinningLoot((uint32)lootAccess.lootType()) && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
+        if (!SkipsLootFilter((uint32)lootAccess.lootType(), object->IsGameObject()) && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
             continue;
 
         return true;

@@ -679,7 +679,7 @@ bool StoreLootAction::Execute(Event& event)
             if (!orderedProto || (orderedProto->MaxCount > 0 && bot->HasItemCount(itemid, orderedProto->MaxCount, true)))
                 continue;
         }
-        else if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
+        else if (!ai::SkipsLootFilter((uint32)internalLootType, guid.IsGameObject()) && !IsLootAllowed(itemQualifier, ai))
         {
             // A Working skin order needs the corpse empty before the
             // Skinning cast is legal, so kills of order mobs give up

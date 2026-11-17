@@ -58,6 +58,15 @@ int main()
     CHECK(DecideGatherSkillForLoot(6, true, 0) == kNoGatherSkill);
     std::cout << "  [PASS] node loot keeps the lock skill, also under the skinning type\n";
 
+    // 5. Only a skinned corpse skips the loot filter. A lock-opened game
+    // object (quest chest, herb, ore) carries the skinning type too and must
+    // still go through it, or a bot takes its master's quest item.
+    CHECK(ai::SkipsLootFilter(6, false));
+    CHECK(!ai::SkipsLootFilter(6, true));
+    CHECK(!ai::SkipsLootFilter(1, false));
+    CHECK(!ai::SkipsLootFilter(1, true));
+    std::cout << "  [PASS] only a skinned corpse skips the loot filter\n";
+
     std::cout << "skinning-loot policy: OK\n";
     return 0;
 }
