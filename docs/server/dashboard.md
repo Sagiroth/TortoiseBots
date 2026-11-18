@@ -37,7 +37,15 @@ Go Observability Daemon (tools/observability)
 
 The dashboard is a separate small program that runs next to your server. Every daily release has a ready file for Windows (`tortoise-observability-windows-amd64.exe`) and Linux (`tortoise-observability-linux-amd64`).
 
-What you need before you start:
+### Automatic start with `mangosd` (easiest)
+
+1. Download the file for your system from the [latest release](https://github.com/Sagiroth/TortoiseBots/releases/latest) and put it in the same folder as `mangosd` (on Linux, run `chmod +x tortoise-observability-linux-amd64`).
+2. Start `mangosd`. With telemetry and `AiPlayerbot.ObservabilityAutoStart` on (both on by default), the server starts the dashboard on its own using your `mangosd.conf` database login, writes its output to `dashboard.log` next to the file, and stops it when `mangosd` shuts down.
+3. Open `http://localhost:8095` in your browser and sign in with a GM account (rank 2 or higher).
+
+If the file is somewhere else, set `AiPlayerbot.ObservabilityBin` in `aiplayerbot.conf`. If something is already listening on port `8095`, `mangosd` leaves it alone and skips starting a second copy.
+
+What you need before you start (for manual or script setup):
 
 - Your server running (database and `mangosd`).
 - A game account with GM rank 2 or higher. You sign in to the dashboard with the same name and password you use in the game.

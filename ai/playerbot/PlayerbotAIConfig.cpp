@@ -1424,6 +1424,8 @@ bool PlayerbotAIConfig::Initialize()
     randomBotRaidNearby = config.GetBoolDefault("AiPlayerbot.RandomBotRaidNearby", true);
     randomBotGuildNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGuildNearby", true);
     observability = config.GetBoolDefault("AiPlayerbot.Observability", true);
+    observabilityAutoStart = config.GetBoolDefault("AiPlayerbot.ObservabilityAutoStart", true);
+    observabilityBin = config.GetStringDefault("AiPlayerbot.ObservabilityBin", "");
     observabilityPort = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.ObservabilityPort", 9195));
     observabilityHost = config.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
     observabilityDungeonMobs = config.GetBoolDefault("AiPlayerbot.ObservabilityDungeonMobs", true);

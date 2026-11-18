@@ -201,6 +201,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotAIAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotRuntimeFacade.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/ObservabilityEmitter.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/DashboardLauncher.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/GuildOrderStore.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/GuildOrderAccess.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/GuildOrderDelivery.cpp"

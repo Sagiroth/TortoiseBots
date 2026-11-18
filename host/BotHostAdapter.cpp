@@ -15,6 +15,7 @@
 #include "../runtime/BattlegroundQueueService.h"
 #include "../runtime/BotLfgService.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/DashboardLauncher.h"
 #include "../runtime/CombatMonitorService.h"
 #include "../runtime/RunTrace.h"
 #include "../runtime/WhyTrace.h"
@@ -170,6 +171,7 @@ void BotHostAdapter::OnStartup()
     if (sPlayerbotAIConfig.updateCheck)
         UpdateCheck::Instance().Start();
     ObservabilityEmitter::Instance().Initialize();
+    DashboardLauncher::Instance().Start();
     // The dashboard's Commanders tab: the standing remote-commander bindings.
     ObservabilityEmitter::Instance().SetCommanderProvider(
         [](std::vector<CommanderTelemetry::BindingRef>& out) { BotCommands::CollectCommanderTelemetry(out); });
@@ -290,6 +292,7 @@ void BotHostAdapter::OnShutdown()
     WhyTraceService::Instance().Shutdown();
     DecisionCaptureService::Instance().Shutdown();
     ObservabilityEmitter::Instance().Shutdown();
+    DashboardLauncher::Instance().Stop();
     BattlegroundQueueService::Instance().Shutdown();
     BotCommandQueue::Instance().Clear();
     BotCommands::ClearRemoteCommanders();
