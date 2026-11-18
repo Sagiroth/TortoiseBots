@@ -83,9 +83,12 @@ int main()
         CHECK(EliteCampDangerous(true, 30, 31));
         CHECK(EliteCampDangerous(true, 33, 31));
         CHECK(EliteCampDangerous(true, 29, 31));
-        CHECK(!EliteCampDangerous(true, 28, 31));
+        CHECK(EliteCampDangerous(true, 22, 31));
+        CHECK(!EliteCampDangerous(true, 21, 31));
+        CHECK(EliteCampDangerous(true, 55, 60));
+        CHECK(!EliteCampDangerous(true, 50, 60));
         CHECK(!EliteCampDangerous(false, 33, 31));
-        std::cout << "  [PASS] same-band-or-above elite camps bar solo pool bots only\n";
+        std::cout << "  [PASS] elites under 10 levels below bar solo pool bots only\n";
     }
 
     std::cout << "All point-danger gate checks PASSED!\n";

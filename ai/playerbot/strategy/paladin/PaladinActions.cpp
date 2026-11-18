@@ -495,6 +495,23 @@ Unit* CastBlessingOnPartyAction::GetTarget()
             return member;
     }
 
+    // Pets come after every player. Greater blessings never reach pets.
+    if (!greater)
+    {
+        for (Player* member : order)
+        {
+            Pet* pet = member->GetPet();
+            if (!pet || !pet->IsInWorld() || !pet->IsAlive())
+                continue;
+            if (sServerFacade.getDistance2d(pet, bot) > 30.0f)
+                continue;
+            if (GetBlessingForTarget(pet).empty())
+                continue;
+            if (sServerFacade.IsWithinLOSInMap(bot, pet))
+                return pet;
+        }
+    }
+
     return nullptr;
 }
 
@@ -576,7 +593,9 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
     }
 
     std::string chosenBlessing = "";
-    std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+    std::vector<std::string> possibleBlessings = target->IsPlayer()
+        ? GetPossibleBlessingsForTarget(target)
+        : std::vector<std::string>{ "blessing of might", "blessing of kings" };
     for (const std::string& blessing : possibleBlessings)
     {
         // Don't cast greater salvation on possible tank classes
