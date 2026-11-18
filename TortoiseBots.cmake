@@ -139,6 +139,51 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
       DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/character")
   endif()
 
+  # The dashboard program comes from the latest release, fetched once into the
+  # build folder, checked against the release checksum and installed next to
+  # mangosd so it starts with the server. No network: a warning, the build goes on.
+  option(TORTOISEBOTS_DASHBOARD_DOWNLOAD "Download the observability dashboard program" ON)
+  if(TORTOISEBOTS_DASHBOARD_DOWNLOAD)
+    if(WIN32)
+      set(_tb_dash_name "tortoise-observability-windows-amd64.exe")
+    else()
+      set(_tb_dash_name "tortoise-observability-linux-amd64")
+    endif()
+    set(_tb_dash_url "https://github.com/TortoiseBots/TortoiseBots/releases/latest/download")
+    set(_tb_dash_dir "${CMAKE_BINARY_DIR}/tortoise-observability")
+    if(NOT EXISTS "${_tb_dash_dir}/${_tb_dash_name}")
+      message(STATUS "TortoiseBots: downloading the dashboard program (${_tb_dash_name})")
+      file(DOWNLOAD "${_tb_dash_url}/tortoise-observability-sha256.txt" "${_tb_dash_dir}/download/sha256.txt"
+        STATUS _tb_dash_status TIMEOUT 60)
+      list(GET _tb_dash_status 0 _tb_dash_code)
+      set(_tb_dash_hash "")
+      if(_tb_dash_code EQUAL 0)
+        file(STRINGS "${_tb_dash_dir}/download/sha256.txt" _tb_dash_line REGEX " \\*?${_tb_dash_name}$")
+        string(REGEX MATCH "^[0-9a-fA-F]+" _tb_dash_hash "${_tb_dash_line}")
+        file(DOWNLOAD "${_tb_dash_url}/${_tb_dash_name}" "${_tb_dash_dir}/download/${_tb_dash_name}"
+          STATUS _tb_dash_status TIMEOUT 300)
+        list(GET _tb_dash_status 0 _tb_dash_code)
+      endif()
+      set(_tb_dash_ok FALSE)
+      if(_tb_dash_code EQUAL 0 AND NOT _tb_dash_hash STREQUAL "")
+        file(SHA256 "${_tb_dash_dir}/download/${_tb_dash_name}" _tb_dash_actual)
+        string(TOLOWER "${_tb_dash_hash}" _tb_dash_hash)
+        if(_tb_dash_actual STREQUAL _tb_dash_hash)
+          file(COPY "${_tb_dash_dir}/download/${_tb_dash_name}" DESTINATION "${_tb_dash_dir}"
+            FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+          set(_tb_dash_ok TRUE)
+        endif()
+      endif()
+      file(REMOVE_RECURSE "${_tb_dash_dir}/download")
+      if(NOT _tb_dash_ok)
+        message(WARNING "TortoiseBots: could not download the dashboard program; put ${_tb_dash_name} next to mangosd by hand (see docs/server/dashboard.md)")
+      endif()
+    endif()
+    if(EXISTS "${_tb_dash_dir}/${_tb_dash_name}")
+      install(PROGRAMS "${_tb_dash_dir}/${_tb_dash_name}" DESTINATION "${BIN_DIR}")
+    endif()
+  endif()
+
   set(TORTOISEBOTS_HOST_SRC
     "${TORTOISEBOTS_ROOT}/host/Module.cpp"
     "${TORTOISEBOTS_ROOT}/host/ModuleLog.cpp"
@@ -379,6 +424,17 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
       CMANGOS=1)
     target_compile_definitions("${TORTOISEBOTS_TARGET}" PRIVATE
       "TORTOISEBOTS_BUILD_VERSION=\"${TORTOISEBOTS_BUILD_VERSION}\"")
+    # A server run straight from the build folder finds the downloaded
+    # dashboard there.
+    if(WIN32)
+      set(_tb_dash_built "${CMAKE_BINARY_DIR}/tortoise-observability/tortoise-observability-windows-amd64.exe")
+    else()
+      set(_tb_dash_built "${CMAKE_BINARY_DIR}/tortoise-observability/tortoise-observability-linux-amd64")
+    endif()
+    if(EXISTS "${_tb_dash_built}")
+      target_compile_definitions("${TORTOISEBOTS_TARGET}" PRIVATE
+        "TORTOISEBOTS_DASHBOARD_BUILD_PATH=\"${_tb_dash_built}\"")
+    endif()
     # Same reason as the build version above: recompute in this scope. Empty
     # values tell the emitter to keep the core's own REVISION_HASH/DATE.
     tortoisebots_detect_core_revision(TORTOISEBOTS_CORE_REVISION TORTOISEBOTS_CORE_DATE)

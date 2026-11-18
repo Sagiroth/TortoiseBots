@@ -343,6 +343,10 @@ void DashboardLauncher::Worker(LaunchConfig cfg)
                 break;
             }
         }
+#ifdef TORTOISEBOTS_DASHBOARD_BUILD_PATH
+        if (binPath.empty() && IsRegularFile(TORTOISEBOTS_DASHBOARD_BUILD_PATH))
+            binPath = TORTOISEBOTS_DASHBOARD_BUILD_PATH;
+#endif
         if (binPath.empty())
         {
             TB_LOG_BASIC("TortoiseBots: observability dashboard not found next to mangosd (%s); place %s there to enable autostart",
