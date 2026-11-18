@@ -32,6 +32,8 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.ActionCountsLog`](#aiplayerbotactioncountslog) | `0` | Records cumulative action execution counts and failure rates to CSV. |
 | [`AiPlayerbot.HealerDiagnostics`](#aiplayerbothealerdiagnostics) | `0` | Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`. |
 | [`AiPlayerbot.Observability`](#aiplayerbotobservability) | `1` | Enables non-blocking UDP telemetry stream to the observability daemon. |
+| [`AiPlayerbot.ObservabilityAutoStart`](#aiplayerbotobservabilityautostart) | `1` | Automatically starts the dashboard binary alongside `mangosd` when telemetry is on. |
+| [`AiPlayerbot.ObservabilityBin`](#aiplayerbotobservabilitybin) | `""` | Optional path to the dashboard binary (empty = look next to `mangosd`). |
 | [`AiPlayerbot.ObservabilityHost`](#aiplayerbotobservabilityhost) | `127.0.0.1` | Destination host IP address or service name for UDP observability telemetry. |
 | [`AiPlayerbot.ObservabilityPort`](#aiplayerbotobservabilityport) | `9195` | Destination UDP port for the observability telemetry daemon. |
 | [`AiPlayerbot.RunTrace.Enabled`](#aiplayerbotruntraceenabled) | `0` | Opt-in run recorder (`.bot trace`): a party's run as a `bt-trace` v1 JSONL file plus a summary. |
@@ -241,6 +243,28 @@ When enabled in `modules/tortoise_bots.conf` or `aiplayerbot.conf`, the server e
 Telemetry feeds the live [Observability Dashboard](../dashboard.md), including real-time bot locations, combat engagements, level-up milestones, deaths, and dungeon runs without writing excessive logs to disk.
 
 Because UDP emission is non-blocking, disabling or losing connection to the daemon never blocks the game server tick.
+
+</details>
+
+### `AiPlayerbot.ObservabilityAutoStart`
+Automatically starts the observability dashboard binary alongside `mangosd` when telemetry is enabled.
+**Default:** `1` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When both `AiPlayerbot.Observability` and `AiPlayerbot.ObservabilityAutoStart` are `1`, `mangosd` launches the dashboard binary in the background on startup (unless port `8095` is already in use), passes the database settings from `mangosd.conf`, writes dashboard output to `dashboard.log` next to the binary, and stops it when `mangosd` shuts down.
+
+</details>
+
+### `AiPlayerbot.ObservabilityBin`
+Optional path to the observability dashboard binary.
+**Default:** `""` · **Values:** file path (empty = look next to `mangosd`) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When empty, `mangosd` looks in its own executable folder for `tortoise-observability-windows-amd64.exe` / `tortoise-observability.exe` on Windows or `tortoise-observability-linux-amd64` / `tortoise-observability` on Linux. Set this to override the path.
 
 </details>
 

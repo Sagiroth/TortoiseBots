@@ -14,6 +14,10 @@ AiPlayerbot.Enabled = 1
 
 # Enable Observability telemetry UDP emitter for the dashboard (default 1)
 AiPlayerbot.Observability = 1
+# Auto-start the dashboard binary when mangosd starts (needs Observability = 1; stops with mangosd).
+AiPlayerbot.ObservabilityAutoStart = 1
+# Optional path to the dashboard binary; empty = look next to mangosd (tortoise-observability-windows-amd64.exe / -linux-amd64).
+AiPlayerbot.ObservabilityBin = ""
 AiPlayerbot.ObservabilityPort = 9195
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1)
 AiPlayerbot.ObservabilityDungeonMobs = 1

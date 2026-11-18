@@ -374,7 +374,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         }
 
         // Elite camps: same data-only gate as the idle fallback below — a
-        // mob standing next to a same-band-or-above elite is skipped for a
+        // mob standing next to a near-level elite is skipped for a
         // solo masterless pool bot before it becomes the best candidate
         // (the elite social-aggros into the "fair" fight). Candidate-gated
         // like the fallback (only a mob nearer than the current best pays
@@ -545,7 +545,7 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
             ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());
         if (highestNear != 0 && ai::PointDangerous((int)highestNear, bot->GetLevel()))
             continue;
-        // Elite camps: skip a mob camped next to a same-band-or-above
+        // Elite camps: skip a mob camped next to a near-level
         // rank-1 elite for a solo masterless pool bot (fair-fight losses).
         // Groups and real-player-mastered bots keep today's behaviour.
         if (ai::EliteCampDangerApplies(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),

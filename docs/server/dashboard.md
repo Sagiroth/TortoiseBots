@@ -37,7 +37,19 @@ Go Observability Daemon (tools/observability)
 
 The dashboard is a separate small program that runs next to your server. Every daily release has a ready file for Windows (`tortoise-observability-windows-amd64.exe`) and Linux (`tortoise-observability-linux-amd64`).
 
-What you need before you start:
+### Automatic start with `mangosd` (easiest)
+
+Nothing to do: building the module downloads the dashboard program from the latest release and installs it next to `mangosd`.
+
+1. Build and install the server as usual (`cmake --install`). A server started straight from the build folder finds the program too.
+2. Start `mangosd`. With telemetry and `AiPlayerbot.ObservabilityAutoStart` on (both on by default), the server starts the dashboard on its own using your `mangosd.conf` database login, writes its output to `dashboard.log` next to the program, and stops it when `mangosd` shuts down.
+3. Open `http://localhost:8095` in your browser and sign in with a GM account (rank 2 or higher).
+
+If the build had no internet, it prints a warning and goes on: download the file for your system from the [latest release](https://github.com/TortoiseBots/TortoiseBots/releases/latest) and put it in the same folder as `mangosd` (on Linux, run `chmod +x tortoise-observability-linux-amd64`). To skip the download, configure the build with `-DTORTOISEBOTS_DASHBOARD_DOWNLOAD=OFF`.
+
+If the file is somewhere else, set `AiPlayerbot.ObservabilityBin` in `aiplayerbot.conf`. If something is already listening on port `8095`, `mangosd` leaves it alone and skips starting a second copy.
+
+What you need before you start (for manual or script setup):
 
 - Your server running (database and `mangosd`).
 - A game account with GM rank 2 or higher. You sign in to the dashboard with the same name and password you use in the game.

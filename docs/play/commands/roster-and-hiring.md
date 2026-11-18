@@ -367,7 +367,7 @@ An **alt-bot** is one of your own alts that plays on its own, like a pool bot, w
 | Does | Does not |
 | :--- | :--- |
 | Quest, grind, travel by flight path and boat, rest, gather, fish | Use the auction house, mail, trade or a guild bank (so it never walks to a capital for the auction house) |
-| Sell grey items and white items it does not need (never soulbound, equipped or better-than-white); only those count when it decides to walk to a vendor | Sell or destroy items on its own (an explicit `.bot destroy` style command of yours still works) |
+| Sell grey items and white items it does not need (never soulbound, equipped, trade goods or better-than-white); only those count when it decides to walk to a vendor | Sell or destroy items on its own (an explicit `.bot destroy` style command of yours still works) |
 | Equip upgrades it finds (the old piece goes to its bags) | Need on loot (it rolls Greed or Pass at most) |
 | Leave an instance when it is alone in it (and keeps 10 quest-log slots free) | Abandon quests it did not take itself |
 | | Buy mounts, bags or talent resets |

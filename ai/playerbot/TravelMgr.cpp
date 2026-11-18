@@ -3236,7 +3236,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         uint32 const highestNear = position.GetHighestHostileLevelNear(ai::POINT_DANGER_RADIUS_YD, botTeam);
         if (highestNear != 0 && ai::PointDangerous((int)highestNear, info.GetLevel()))
             return false;
-        // Elite camps: a same-band-or-above rank-1 spawn within the radius
+        // Elite camps: a near-level rank-1 spawn within the radius
         // bars the point for a solo masterless pool bot (fair-fight losses:
         // 31% of fair deaths by rank-1 killers at 2.5-4x vanilla DPS).
         // Groups and real-player-mastered bots keep today's behaviour.
