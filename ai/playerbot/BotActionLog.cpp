@@ -66,9 +66,22 @@ static void MakeDirIdempotent(const char* path)
 #endif
 }
 
+// The bots/ folder under LogsDir, or empty when LogsDir is not set.
+static std::string ConfiguredBotLogDir()
+{
+    std::string const logsDir = sPlayerbotAIConfig.logsDirPath();
+    return logsDir.empty() ? std::string() : logsDir + "bots";
+}
+
 void BotActionLog::EnsureLogDir()
 {
-    // mangosd's CWD depends on how it was launched. The typical live-server
+    std::string const configured = ConfiguredBotLogDir();
+    if (!configured.empty())
+    {
+        MakeDirIdempotent(configured.c_str());
+        return;
+    }
+    // Without LogsDir, mangosd's CWD depends on how it was launched. The typical live-server
     // layout puts it in bin/ (so logs/ is at ../logs), but CMake test-runs
     // launch it from the build dir where logs/ is adjacent. Try both;
     // MakeDirIdempotent silently ignores EEXIST.
@@ -101,8 +114,9 @@ std::string BotActionLog::BuildPath(Player* bot, uint32 seq)
 
     uint32 sessionId = bot->GetSession() ? bot->GetSession()->GetAccountId() : 0u;
 
+    std::string const configured = ConfiguredBotLogDir();
     std::ostringstream oss;
-    oss << "../logs/bots/"
+    oss << (configured.empty() ? std::string("../logs/bots") : configured) << "/"
         << bot->GetName() << "_acc" << sessionId << "_" << tsBuf;
     if (seq)
         oss << "-" << seq;   // a rotation in the same second as the file it follows
@@ -577,6 +591,12 @@ namespace fs = std::filesystem;
 
 static fs::path ResolveBotLogDir()
 {
+    std::string const configured = ConfiguredBotLogDir();
+    if (!configured.empty())
+    {
+        std::error_code ec;
+        return fs::is_directory(configured, ec) ? fs::path(configured) : fs::path();
+    }
     // Same two layouts as EnsureLogDir/Open: bin/ as the working directory
     // ("../logs") or the layout root ("logs").
     const char* roots[] = { "../logs/bots", "logs/bots", nullptr };
