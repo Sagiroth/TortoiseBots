@@ -336,18 +336,20 @@ inline bool AltBotMayUseEconomy(bool isAutonomous)
 // soulbound or equipped items. Gate in SellAction: the parse resolves to a
 // quality-filtered list and Sell() vetoes soulbound/equipped pieces.
 // Qualities: 0 poor, 1 common, 2 uncommon, 3 rare, 4 epic, 5 legendary.
-inline bool AltBotMayVendorItem(uint32_t quality, bool isSoulbound, bool isEquipped)
+// Trade goods (crafted parts, cloth, bars) stay: the player may have made or
+// handed them over to keep.
+inline bool AltBotMayVendorItem(uint32_t quality, bool isSoulbound, bool isEquipped, bool isTradeGoods)
 {
-    if (isSoulbound || isEquipped)
+    if (isSoulbound || isEquipped || isTradeGoods)
         return false;
     return quality <= 1;
 }
 
 // The vendor-trip need counts only stock the sale would actually take, so an
 // autonomous alt holding greens is never sent to a vendor that sells nothing.
-inline bool AltBotItemCountsForVendorNeed(bool isAutonomous, uint32_t quality, bool isSoulbound, bool isEquipped)
+inline bool AltBotItemCountsForVendorNeed(bool isAutonomous, uint32_t quality, bool isSoulbound, bool isEquipped, bool isTradeGoods)
 {
-    return !isAutonomous || AltBotMayVendorItem(quality, isSoulbound, isEquipped);
+    return !isAutonomous || AltBotMayVendorItem(quality, isSoulbound, isEquipped, isTradeGoods);
 }
 
 // B10 second half: repairs from its own gold. The repair path is

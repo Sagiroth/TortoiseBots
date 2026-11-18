@@ -72,9 +72,12 @@ bool SellAction::Execute(Event& event)
     bool const allOrNothing = event.GetSource() == "rpg action" && ShouldSellValue::CantAffordNextSpell(ai);
 
     bool const isClaimed = TortoiseBots::ClaimLifecycle::Instance().IsClaimed(bot->GetGUIDLow());
-    // Issue #872: an autonomous alt vendors only greys and unneeded whites
-    // (B10), never soulbound or equipped items.
-    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid());
+    // A player's character selling on its own (an autonomous alt, or an
+    // always-online alt outside the alt service) vendors only greys and
+    // unneeded whites, never soulbound, equipped or trade goods. Commanded
+    // sales keep their own filter.
+    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()) ||
+        (!sRandomBotFacade.IsRandomBot(bot) && event.GetSource() == "rpg action");
 
     for (std::list<Item*>::iterator i = items.begin(); i != items.end(); ++i)
     {
@@ -98,7 +101,8 @@ bool SellAction::Execute(Event& event)
                     equipped = true;
                     break;
                 }
-            if (!TortoiseBots::AltBotMayVendorItem(quality, item && item->IsSoulBound(), equipped))
+            if (!TortoiseBots::AltBotMayVendorItem(quality, item && item->IsSoulBound(), equipped,
+                    proto && proto->Class == ITEM_CLASS_TRADE_GOODS))
                 continue;
         }
 
@@ -223,11 +227,11 @@ std::list<Item*> SellAction::VendorSaleStock(PlayerbotAI* ai, bool includeAH)
             return true;
         if (!TortoiseBots::MayClaimedBotAutoVendor(bot->GetLevel(), proto->Quality, isClaimed))
             return true;
-        // An autonomous alt sells only greys and unneeded whites, never a
-        // soulbound or equipped piece (AltBotPolicy): not stock either.
+        // A player's character sells only what AltBotMayVendorItem allows:
+        // the rest is not stock either.
         return !TortoiseBots::AltBotItemCountsForVendorNeed(
-            TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()),
-            proto->Quality, item->IsSoulBound(), item->IsEquipped());
+            TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()) || !sRandomBotFacade.IsRandomBot(bot),
+            proto->Quality, item->IsSoulBound(), item->IsEquipped(), proto->Class == ITEM_CLASS_TRADE_GOODS);
     });
 
     return stock;

@@ -188,19 +188,22 @@ static void TestProtections()
     assert(AltBotMayUseEconomy(true) == false);
     assert(AltBotMayUseEconomy(false) == true);
     // B10: greys and whites sell; soulbound/equipped never do.
-    assert(AltBotMayVendorItem(0, false, false) == true);
-    assert(AltBotMayVendorItem(1, false, false) == true);
-    assert(AltBotMayVendorItem(2, false, false) == false);
-    assert(AltBotMayVendorItem(0, true, false) == false);
-    assert(AltBotMayVendorItem(1, false, true) == false);
+    assert(AltBotMayVendorItem(0, false, false, false) == true);
+    assert(AltBotMayVendorItem(1, false, false, false) == true);
+    assert(AltBotMayVendorItem(2, false, false, false) == false);
+    assert(AltBotMayVendorItem(0, true, false, false) == false);
+    assert(AltBotMayVendorItem(1, false, true, false) == false);
+    // Trade goods (Copper Bolts, Copper Tube) are never vendored.
+    assert(AltBotMayVendorItem(1, false, false, true) == false);
     // The vendor need counts what the sale may take; companions count all.
-    assert(AltBotItemCountsForVendorNeed(true, 0, false, false) == true);
-    assert(AltBotItemCountsForVendorNeed(true, 1, false, false) == true);
-    assert(AltBotItemCountsForVendorNeed(true, 2, false, false) == false);
-    assert(AltBotItemCountsForVendorNeed(true, 0, true, false) == false);
-    assert(AltBotItemCountsForVendorNeed(true, 1, false, true) == false);
-    assert(AltBotItemCountsForVendorNeed(false, 2, false, false) == true);
-    assert(AltBotItemCountsForVendorNeed(false, 4, true, false) == true);
+    assert(AltBotItemCountsForVendorNeed(true, 0, false, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(true, 1, false, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(true, 2, false, false, false) == false);
+    assert(AltBotItemCountsForVendorNeed(true, 0, true, false, false) == false);
+    assert(AltBotItemCountsForVendorNeed(true, 1, false, true, false) == false);
+    assert(AltBotItemCountsForVendorNeed(false, 2, false, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(false, 4, true, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(true, 1, false, false, true) == false);
     // B10: repair is paid without the gold cheat.
     assert(AltBotRepairIsPaid(false) == true);
     assert(AltBotRepairIsPaid(true) == false);

@@ -56,7 +56,7 @@ TortoiseBots fills the realm with bots and lets you take some of them along: you
 
 - It keeps playing while you are logged out, until the server restarts ([`AiPlayerbot.AltBotsLogoutWithOwner`](../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) = `1` logs it out with you).
 - When it stops, it whispers you what it did: levels, quests, deaths, gold.
-- It plays carefully with your character: no auction house, mail, trade or guild bank; its own automation never destroys items, and it sells only grey and unneeded white items.
+- It plays carefully with your character: no auction house, mail, trade or guild bank; its own automation never destroys items, and it sells only grey and unneeded white items, and never trade goods such as crafted parts or cloth.
 - Hardcore characters never become alt-bots.
 - This is off by default. The server switches it on with [`AiPlayerbot.AltBots`](../server/settings/party.md#aiplayerbotaltbots) = `1`; while it is off, the alt just stands where you left it.
 
