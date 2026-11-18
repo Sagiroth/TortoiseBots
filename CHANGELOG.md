@@ -196,6 +196,25 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.29.0 (2026-11-18)
+
+### Classes & Combat
+- Paladins now actually cast Consecration in combat instead of waiting forever for a step that never finishes. [#1653](https://github.com/Sagiroth/TortoiseBots/pull/1653)
+- Bots now remove debuffs that never wear off on their own, such as Mother's Milk in Lower Blackrock Spire. [#1653](https://github.com/Sagiroth/TortoiseBots/pull/1653)
+- Paladins now bless hunter and warlock pets as well as players. [#1655](https://github.com/Sagiroth/TortoiseBots/pull/1655)
+- Solo bots now treat elites as dangerous from further away, so they stop dying to the dragonkin in Burning Steppes. [#1655](https://github.com/Sagiroth/TortoiseBots/pull/1655)
+
+### Groups & Dungeons
+- Dungeon runs no longer flood your chat with route messages. [#1653](https://github.com/Sagiroth/TortoiseBots/pull/1653)
+
+### World & Economy
+- Bots selling goods for you no longer vendor trade items like Copper Bolts and Copper Tube. [#1655](https://github.com/Sagiroth/TortoiseBots/pull/1655)
+
+### Dashboard
+- The dashboard now starts by itself along with the server. [#1655](https://github.com/Sagiroth/TortoiseBots/pull/1655)
+
+---
+
 ## v1.28.2 (2026-11-17)
 
 ### World & Bots
