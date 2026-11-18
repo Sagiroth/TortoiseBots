@@ -60,8 +60,9 @@ namespace ai
     // Elite camps: a rank-1 Turtle custom at the bot's own level deals
     // 2.5-4x a vanilla normal's DPS (fair-fight losses: 31% of fair deaths
     // by rank-1 killers at median 68% killer HP), so the level margin alone
-    // never bars the camp. A same-band-or-above elite spawn within the
-    // danger radius bars the point the way an over-cap normal does. Groups
+    // never bars the camp. An elite spawn within the danger radius that is
+    // less than ELITE_SAFE_LEVELS_BELOW levels below the bot bars the point
+    // the way an over-cap normal does. Groups
     // and bots with a real player master keep today's behaviour (their
     // players decide); the callers pass masterlessRandom and in-group down.
     // inGroup covers hired-companion groups: the pool's can-fight-elite
@@ -78,8 +79,13 @@ namespace ai
     // pool bot step away, and no mob this close to it is picked to grind.
     constexpr float ROAMING_ELITE_AVOID_YD = 30.0f;
 
+    // An elite stays a threat until it is this many levels below the bot:
+    // a level-60 bot still dies to the level-55-58 dragonkin elites on the
+    // Burning Steppes Terror Wing Path.
+    constexpr int ELITE_SAFE_LEVELS_BELOW = 10;
+
     inline bool EliteCampDangerous(bool eliteSpawnNear, int eliteLevelMax, std::uint32_t botLevel)
     {
-        return eliteSpawnNear && eliteLevelMax >= (int)botLevel - 2;
+        return eliteSpawnNear && eliteLevelMax > (int)botLevel - ELITE_SAFE_LEVELS_BELOW;
     }
 }

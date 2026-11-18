@@ -200,6 +200,8 @@ public:
     // Observability telemetry UDP emitter (module-only). Zero/empty means
     // "not set here"; the emitter then falls back to the module config.
     bool observability = false;
+    bool observabilityAutoStart = true;
+    std::string observabilityBin;
     uint32 observabilityPort = 0;
     std::string observabilityHost;
     // Issue #1101: the DUNGEON_MOBS datagram (mobs per dungeon run); only acts while observability is on.

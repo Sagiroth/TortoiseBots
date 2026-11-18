@@ -369,6 +369,40 @@ Unit* FindBlessingCandidate(PlayerbotAI* ai, Player* bot, bool greaterOnly)
         }
     }
 
+    // Pets after every player, single blessings only (same as the action).
+    if (greaterOnly)
+        return nullptr;
+    auto CouldBlessPet = [&](Pet* pet)
+    {
+        for (char const* blessing : kBlessings)
+        {
+            std::string const base(blessing);
+            if (ai->HasMyAura(base, pet) || ai->HasMyAura("greater " + base, pet))
+                return false;
+        }
+        for (char const* blessing : { "blessing of might", "blessing of kings" })
+        {
+            std::string const base(blessing);
+            if (ai->GetAiObjectContext()->GetValue<uint32>("spell id", base)->Get() &&
+                !ai->HasAura(base, pet) && !ai->HasAura("greater " + base, pet))
+                return true;
+        }
+        return false;
+    };
+    for (std::list<Player*>* bucket : { &healers, &tanks, &others })
+    {
+        for (Player* member : *bucket)
+        {
+            Pet* pet = member->GetPet();
+            if (!pet || !pet->IsInWorld() || !pet->IsAlive())
+                continue;
+            if (sServerFacade.getDistance2d(pet, bot) > 30.0f)
+                continue;
+            if (CouldBlessPet(pet) && sServerFacade.IsWithinLOSInMap(bot, pet))
+                return pet;
+        }
+    }
+
     return nullptr;
 }
 
