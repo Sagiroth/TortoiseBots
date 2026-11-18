@@ -12,7 +12,7 @@ import subprocess
 import time
 from collections import defaultdict
 
-STATE_FILE = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker-penqle/data/icons/activity-state.json"
+STATE_FILE = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker/data/icons/activity-state.json"
 
 CLASS_MAP = {
     1: "warrior",
@@ -32,7 +32,7 @@ def run_db_query(db_name, query):
         "mariadb", "-umangos", "-pmangos", db_name,
         "-N", "-B", "-e", query
     ]
-    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker-penqle"
+    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker"
     res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
     return res.stdout
 
@@ -109,7 +109,7 @@ def load_quest_rewards(bot_stats):
 def process_loot_log(items_db, chars, name_to_guid, bot_stats):
     print("Streaming /opt/turtle/logs/loot.log...")
     cmd = ["docker", "compose", "exec", "-T", "mangosd", "cat", "/opt/turtle/logs/loot.log"]
-    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker-penqle"
+    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker"
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, text=True, bufsize=2097152)
 
     item_re = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([^:]+):(\d+) (?:\[[^\]]*\] )?(?:loots|wins (?:need|greed) roll for) (\d+)x(\d+)')
@@ -202,7 +202,7 @@ def process_loot_log(items_db, chars, name_to_guid, bot_stats):
 def process_deaths_csv(chars, name_to_guid, bot_stats):
     print("Streaming /opt/turtle/logs/deaths.csv...")
     cmd = ["docker", "compose", "exec", "-T", "mangosd", "cat", "/opt/turtle/logs/deaths.csv"]
-    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker-penqle"
+    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker"
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, text=True, bufsize=1048576)
 
     total_deaths = 0
@@ -228,7 +228,7 @@ def process_deaths_csv(chars, name_to_guid, bot_stats):
 def process_trades_log(chars, name_to_guid, bot_stats):
     print("Streaming /opt/turtle/logs/trades.log...")
     cmd = ["docker", "compose", "exec", "-T", "mangosd", "cat", "/opt/turtle/logs/trades.log"]
-    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker-penqle"
+    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker"
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, text=True, bufsize=1048576)
 
     trade_re = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} (?:\[([^\]]+)\]:? )?(?:Player )?([^:]+):(\d+)')
@@ -293,7 +293,7 @@ def process_trades_log(chars, name_to_guid, bot_stats):
 def process_bot_events_csv(name_to_guid, bot_stats):
     print("Streaming /opt/turtle/logs/bot_events.csv...")
     cmd = ["docker", "compose", "exec", "-T", "mangosd", "cat", "/opt/turtle/logs/bot_events.csv"]
-    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker-penqle"
+    cwd = "/mnt/pny-ssd/Tortoise WoW Projects/tortoise-docker"
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, text=True, bufsize=1048576)
 
     giveup_events = {
