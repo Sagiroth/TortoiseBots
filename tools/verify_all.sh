@@ -145,8 +145,8 @@ python3 tools/check_decision_trail.py --self-test
 echo "✓ Decision trail self-test verified."
 
 DBC_PATH="${DBC_PATH:-}"
-if [[ -z "${DBC_PATH}" && -d "../tortoise-docker-penqle/data/dbc" ]]; then
-    DBC_PATH="../tortoise-docker-penqle/data/dbc"
+if [[ -z "${DBC_PATH}" && -d "../tortoise-docker/data/dbc" ]]; then
+    DBC_PATH="../tortoise-docker/data/dbc"
 fi
 
 if [[ -n "${DBC_PATH}" && -d "${DBC_PATH}" ]]; then
@@ -156,7 +156,7 @@ if [[ -n "${DBC_PATH}" && -d "${DBC_PATH}" ]]; then
     echo "✓ Talent presets verified."
 else
     echo ""
-    echo "ℹ Skipping talent presets check (no DBC_PATH or ../tortoise-docker-penqle/data/dbc not found)."
+    echo "ℹ Skipping talent presets check (no DBC_PATH or ../tortoise-docker/data/dbc not found)."
 fi
 
 CORE_PATH="${1:-}"
