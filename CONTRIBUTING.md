@@ -103,15 +103,17 @@ will be sent back.
 
 ## Licence of contributions
 
-TortoiseBots is licensed under **AGPL-3.0-or-later** (see [`LICENSE`](LICENSE)
-and [`NOTICE.md`](NOTICE.md)). By opening a pull request or otherwise
-submitting a contribution, you agree that:
+TortoiseBots is licensed under **AGPL-3.0-or-later OR GPL-2.0-or-later** (see
+[`LICENSE`](LICENSE), [`LICENSE-GPL-2.0`](LICENSE-GPL-2.0) and
+[`NOTICE.md`](NOTICE.md)). By opening a pull request or otherwise submitting a
+contribution, you agree that:
 
-- your contribution is licensed under AGPL-3.0-or-later, the same terms as the
-  rest of the project;
+- your contribution is licensed under AGPL-3.0-or-later OR GPL-2.0-or-later,
+  the same terms as the rest of the project;
 - you wrote it yourself, or you have the right to submit it under these terms;
 - code copied or ported from another project (porting is welcome) keeps its original copyright and licence notice, is
-  compatible with AGPL-3.0, and its source repository and commit are named in
+  compatible with AGPL-3.0 (code from an AGPL-only donor stays AGPL-only),
+  and its source repository and commit are named in
   the pull request (a new donor project also goes in
   [`docs/developers/licensing-audit.md`](docs/developers/licensing-audit.md)).
 

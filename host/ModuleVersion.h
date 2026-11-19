@@ -67,7 +67,7 @@ inline std::string CoreRevisionDate()
 // AGPL-3.0 section 5(d); modified versions must keep displaying it.
 constexpr char const* kModuleAuthor = "Sagiroth";
 constexpr char const* kModuleSourceUrl = "https://github.com/Sagiroth/TortoiseBots";
-constexpr char const* kModuleLicence = "AGPL-3.0";
+constexpr char const* kModuleLicence = "AGPL-3.0 or GPL-2.0+";
 constexpr char const* kAddonSourceUrl = "https://github.com/Sagiroth/TortoiseBotsManager";
 
 // Addon protocol levels sent as TBM:PROTO, separate from release numbers:
