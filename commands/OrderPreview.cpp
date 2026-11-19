@@ -166,7 +166,7 @@ bool PreviewVendorUnlimited(uint32_t itemId)
 // Usable check PlaceSubOrders runs per roster member, over the same
 // guild_member roster, capped at the same per-tick planner budget. Reads
 // only live guildmates; the preview never queues anything.
-bool PreviewGuildHasMaker(Player* self, uint32_t guildId, uint32_t itemId)
+bool PreviewGuildHasMaker(Player* self, uint32_t guildId, uint32_t itemId, bool makerOnly)
 {
     if (!self || !guildId || !itemId)
         return false;
@@ -193,7 +193,8 @@ bool PreviewGuildHasMaker(Player* self, uint32_t guildId, uint32_t itemId)
             break;
         ++evals;
         bool canMake = false, canFarm = false, gathers = false;
-        if (GuildOrders::SubOrderCandidateUsable(bot, itemId, canMake, canFarm, gathers))
+        if (GuildOrders::SubOrderCandidateUsable(bot, itemId, canMake, canFarm, gathers) &&
+            (canMake || !makerOnly))
             return true;
     } while (result->NextRow());
     return false;
@@ -381,11 +382,12 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
             GuildOrders::CollectBaseReagents(itemId, outputMissing, recipeFor, held))
             needs.push_back({ need.itemId, need.count });
     }
-    // Per-row sourcing in ladder order (bank, AH, self, sub-order): the same
+    // Per-row sourcing in ladder order (bank, AH, maker sub-order, farm): the same
     // lanes RefreshGuildOrderSupply walks, read as one pass over cached
     // lookups. A vendor-unlimited row is bought at a shop, never farmed or
-    // delegated; a row the bot can farm or make itself never becomes a
-    // sub-order; the rest is what the player must send.
+    // delegated; a guild maker takes a row before the bot farms it, and a
+    // farmer only when the bot cannot farm it; the rest is what the player
+    // must send.
     // Only base reagents of this craft survive in the tick set, like the
     // give path filters: anything else was never the bot's to source. The
     // walk uses zero stock so the set names the craft's full base list,
@@ -434,6 +436,9 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
         maxDepth = GuildOrders::kSubOrderDefaultDepth;
     double hardestKills = 0.0;
     bool hasFarmLeg = false;
+    // A farm order only walks into the world: no bank, shop, auction house
+    // or other bot shows in its preview.
+    bool const farmOnly = type == OrderType::Farm;
     for (auto const& [needId, needCount] : needs)
     {
         if (!needId || !needCount)
@@ -447,7 +452,7 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
         row.required = needCount;
         row.inBags = PreviewBags(bot, needId);
         row.inMail = PreviewMail(bot, needId);
-        if (!ticked)
+        if (!ticked && !farmOnly)
         {
             auto bankFound = bankCache.find(needId);
             if (bankFound == bankCache.end())
@@ -461,15 +466,23 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
             rows.push_back(row);
             continue;
         }
-        if (PreviewVendorUnlimited(needId))
+        if (!farmOnly && PreviewVendorUnlimited(needId))
         {
             row.vendorCount = shortfall;
             rows.push_back(row);
             continue;
         }
-        if (PreviewAhListed(bot, needId) && sPlayerbotAIConfig.guildOrderBankWithdraw)
+        if (!farmOnly && PreviewAhListed(bot, needId) && sPlayerbotAIConfig.guildOrderBankWithdraw)
         {
             row.ahCount = shortfall;
+            rows.push_back(row);
+            continue;
+        }
+        // A guild bot that makes the material goes before the bot's own farm.
+        if (!farmOnly && sPlayerbotAIConfig.guildOrderSubOrders && maxDepth >= 2 &&
+            branch.count(needId) == 0 && PreviewGuildHasMaker(bot, guildId, needId, true))
+        {
+            row.subCount = shortfall;
             rows.push_back(row);
             continue;
         }
@@ -487,13 +500,9 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
             rows.push_back(row);
             continue;
         }
-        if (sPlayerbotAIConfig.guildOrderSubOrders && maxDepth >= 2 && branch.count(needId) == 0 &&
-            PreviewGuildHasMaker(bot, guildId, needId))
-        {
+        if (!farmOnly && sPlayerbotAIConfig.guildOrderSubOrders && maxDepth >= 2 &&
+            branch.count(needId) == 0 && PreviewGuildHasMaker(bot, guildId, needId, false))
             row.subCount = shortfall;
-            rows.push_back(row);
-            continue;
-        }
         rows.push_back(row);
     }
     uint32_t minutes = PreviewMinutesForKills(hardestKills, hasFarmLeg);
