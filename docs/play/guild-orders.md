@@ -36,7 +36,7 @@ Example: 20 Copper Ore from a bot:
 
 | Order | What the bot does |
 | :--- | :--- |
-| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item. Works the nearest planned zone on its own continent that it can walk to. A zone with no reachable spots is left alone for a while. Never takes from the guild bank, never buys and never asks another bot: when it cannot farm the item the order ends as `cant` (or `noskill`). |
+| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item. Works the nearest planned zone on its own continent that it can walk to. A zone with no reachable spots is left alone for a while. Never takes from the guild bank, never buys and never asks another bot: when it cannot farm the item the order ends as `cant` (or `noskill`). An item every shop sells is refused with `nosource`. |
 | Buy | Checks its bags and mailbox, then buys on the auction house (guild gold first within your cap, then its own gold). Farms whatever is still missing. Bought items arrive by mail. Needs [`AiPlayerbot.GuildOrderPlayerBuy`](../server/settings/guild-orders.md#aiplayerbotguildorderplayerbuy) = 1 (off by default): a player's Buy order is refused without it. |
 | Craft | Gets each missing material (see below), crafts what it can itself, and asks other guild bots to make or farm the rest. |
 
