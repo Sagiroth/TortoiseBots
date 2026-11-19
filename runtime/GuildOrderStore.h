@@ -108,7 +108,12 @@ void NoteEnchantReplaceConfirmed(uint32_t botGuidLow);
 // parent bot, the row goes live to the root giver. Called from a bot's
 // map-thread action; only the lock is touched there, the world thread does
 // the player and planner work in Update.
-bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
+// makerOnly: only a guild bot that makes the item may take it; when none
+// does, the parent farms the item itself instead of asking the player.
+bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, bool makerOnly = false);
+// The parent's maker-only request for the item found no maker (or the
+// maker failed): the ladder lets the parent farm it.
+bool MakerSubOrderMissed(uint32_t parentBotGuidLow, uint32_t itemId);
 // The parent's sub-order for the item finished with its delivery in the
 // guild bank and no row for the item still runs. True once per delivery:
 // the call marks the rows handed over.

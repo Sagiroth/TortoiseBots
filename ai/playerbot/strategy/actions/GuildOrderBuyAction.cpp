@@ -66,12 +66,21 @@ void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord
         ((order.type == OrderType::Craft && IsUnlimitedVendorItem(order.supplyItemId)) ||
         (plan.verdict == OrderReason::None && !plan.zones.empty()));
     options.subAttempted = order.type == OrderType::Enchant;
+    options.makerSubAttempted = order.type != OrderType::Craft ||
+        MakerSubOrderMissed(order.botGuidLow, order.supplyItemId);
     SupplyStep next = NextSupplyStep(options);
     if (next == SupplyStep::Sub)
     {
-        if (RequestSupply(order.botGuidLow, order.supplyItemId, order.supplyCount))
+        if (RequestSupply(order.botGuidLow, order.supplyItemId, order.supplyCount,
+                SubOrderMakerOnly(options)))
         {
             SetSupply(order.botGuidLow, SupplyStep::Sub, order.supplyItemId,
+                order.supplyCount, SupplyStep::None, reason);
+            return;
+        }
+        if (SubOrderMakerOnly(options))
+        {
+            SetSupply(order.botGuidLow, SupplyStep::Farm, order.supplyItemId,
                 order.supplyCount, SupplyStep::None, reason);
             return;
         }
@@ -414,6 +423,28 @@ bool GuildOrderBuyAction::Execute(Event& event)
     }
     AuctionListing const& best = candidates[pick];
 
+    bool const bankGoldAllowed = sPlayerbotAIConfig.guildOrderBankGold &&
+        TortoiseBots::GuildOrders::BotRankMayWithdrawGold(bot->GetRank(), true);
+    // Guild gold pays first: one banker trip per leg tops up the whole
+    // visit, so several listings never mean several trips. A refused top-up
+    // falls back to the bot's own gold below.
+    uint32_t const visitCost = static_cast<uint32_t>(
+        std::min<uint64_t>(PlannedAuctionVisitCost(candidates, missing), UINT32_MAX));
+    uint32_t const guildFirst = GuildGoldFirstTopUp(visitCost, heldGuildGold, capRemaining);
+    int const guildFirstItem = AI_VALUE2(int, "manual int", "order buy guild first item");
+    if (guildFirstItem != int(itemId) &&
+        GoldTopUpAllowed(best.auctionId, uint32_t(AI_VALUE2(int, "manual int", "order buy gold tried")),
+            guildFirst, bankGoldAllowed) &&
+        uint64_t(cash) + guildFirst <= uint32_t(INT32_MAX))
+    {
+        ahLock.unlock();
+        SET_AI_VALUE2(int, "manual int", "order buy guild first item", int(itemId));
+        SET_AI_VALUE2(int, "manual int", "order buy gold tried", int(best.auctionId));
+        SetSupply(botGuidLow, SupplyStep::Bank, itemId, missing, SupplyStep::AuctionHouse,
+            OrderReason::None, guildFirst);
+        return false;
+    }
+
     if (best.buyout > cash)
     {
         uint32_t shortfall = best.buyout - cash;
@@ -424,9 +455,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
         // again; the bank may have funds by then.
         int triedAuction = AI_VALUE2(int, "manual int", "order buy gold tried");
         // The core refuses bank gold below the officer rank: no banker trip.
-        if (GoldTopUpAllowed(best.auctionId, uint32_t(triedAuction), cappedShortfall,
-            sPlayerbotAIConfig.guildOrderBankGold &&
-                TortoiseBots::GuildOrders::BotRankMayWithdrawGold(bot->GetRank(), true)) &&
+        if (GoldTopUpAllowed(best.auctionId, uint32_t(triedAuction), cappedShortfall, bankGoldAllowed) &&
             cappedShortfall >= shortfall && shortfall > 0 &&
             uint64_t(cash) + shortfall <= uint32_t(INT32_MAX))
         {
@@ -456,8 +485,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     if (bought)
     {
         sPlayerbotAIConfig.logEvent(ai, "GuildAhBuy", proto ? proto->Name1 : "item", std::to_string(itemId));
-        uint32_t guildUsed = best.buyout > ownedGold ? best.buyout - ownedGold : 0;
-        ConsumeGuildGoldHeld(botGuidLow, std::min(guildUsed, heldGuildGold));
+        ConsumeGuildGoldHeld(botGuidLow, GuildGoldSpent(best.buyout, heldGuildGold));
         NoteSupplyGain(botGuidLow, itemId, best.count);
         NoteSupplyProgress(botGuidLow);
         SET_AI_VALUE2(int, "manual int", "order buy gold tried", 0);
@@ -470,7 +498,10 @@ bool GuildOrderBuyAction::Execute(Event& event)
             SetSupply(botGuidLow, SupplyStep::AuctionHouse, itemId, missing - best.count,
                 stored->supplyReturnStep, stored->reason);
         else
+        {
+            SET_AI_VALUE2(int, "manual int", "order buy guild first item", 0);
             SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
+        }
     }
     else
     {

@@ -27,8 +27,8 @@ Before you start, you need three things:
 Example: 20 Copper Ore from a bot:
 
 1. Open the addon (`/tbm`), go to the **Guild** tab, press **Order** next to the bot. Search for "copper ore", pick the Farm order and set the amount to 20. From chat, the same order is `.bot order <BotName> farm <item link or id> 20`.
-2. Before you press Send, the window shows a preview of what the bot will do: what it already has, what it will farm and where, what it may buy, what it asks other guild bots for, what you must send, a rough time and the gold cap. From chat, the same preview is `.bot order <BotName> preview farm <item link or id> 20`.
-3. The bot checks its own bags and mailbox, looks at the auction house, then walks to a nearby zone it can reach and farms ore until it has 20.
+2. Before you press Send, the window shows a preview of what the bot will do: what it already has, what it will farm and where, a rough time and, for craft orders, what it may buy, what it asks other guild bots for, what you must send and the gold cap. From chat, the same preview is `.bot order <BotName> preview farm <item link or id> 20`.
+3. The bot checks its own bags and mailbox, then walks to a nearby zone it can reach and farms ore until it has 20.
 4. When the 20 are together, it walks to a guild banker and deposits them into the guild bank. If the bank refuses the deposit, it mails them to the guild master instead.
 5. `.bot order list` shows the progress as `12/20` while it runs, and you get live updates as it changes. A finished order shows `done` (or `mailed`).
 
@@ -36,8 +36,8 @@ Example: 20 Copper Ore from a bot:
 
 | Order | What the bot does |
 | :--- | :--- |
-| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item. Works the nearest planned zone on its own continent that it can walk to. A zone with no reachable spots is left alone for a while. |
-| Buy | Checks its bags and mailbox, then buys on the auction house (own gold first, guild gold within your cap). Farms whatever is still missing. Bought items arrive by mail. Needs [`AiPlayerbot.GuildOrderPlayerBuy`](../server/settings/guild-orders.md#aiplayerbotguildorderplayerbuy) = 1 (off by default): a player's Buy order is refused without it. |
+| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item. Works the nearest planned zone on its own continent that it can walk to. A zone with no reachable spots is left alone for a while. Never takes from the guild bank, never buys and never asks another bot: when it cannot farm the item the order ends as `cant` (or `noskill`). An item every shop sells is refused with `nosource`. |
+| Buy | Checks its bags and mailbox, then buys on the auction house (guild gold first within your cap, then its own gold). Farms whatever is still missing. Bought items arrive by mail. Needs [`AiPlayerbot.GuildOrderPlayerBuy`](../server/settings/guild-orders.md#aiplayerbotguildorderplayerbuy) = 1 (off by default): a player's Buy order is refused without it. |
 | Craft | Gets each missing material (see below), crafts what it can itself, and asks other guild bots to make or farm the rest. |
 
 Recipe tools stay available as long as [`AiPlayerbot.CraftToolsAlways`](../server/settings/guild-orders.md#aiplayerbotcrafttoolsalways) is on (the default). A missing tool (Arclight Spanner, Blacksmith Hammer and the like) appears in the bags when the bot crafts. Bots never sell or auction tools.
@@ -72,9 +72,19 @@ An order on a fish sends the bot to a fishing spot in the planned zone. The bot 
 
 ## Where the bot gets items
 
-For the ordered item itself, the bot checks its own bags and mailbox, then farms it when it has the skill to. It goes to the auction house only when it cannot farm it (a buy order starts there on purpose). It never takes the finished item from the guild bank: the bank holds crafting materials.
+For a farm order, the bot checks its own bags and mailbox, then goes out and farms. Nothing else: no guild bank, no auction house, no shop, no other bot. A buy order starts at the auction house on purpose and farms the rest. Neither ever takes the finished item from the guild bank: the bank holds crafting materials.
 
-For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing, skipped when the guild has no bank), then making it itself (crafting, then gathering or farming, or buying it from a shop), then the auction house, then asking another guild bot, and finally your need list (see below). The bot spends gold at the auction house only when it cannot make or farm the material.
+For each missing crafting material, the bot works down a fixed list:
+1. Its own bags and mailbox.
+2. The guild bank (only the count still missing, skipped when the guild has no bank).
+3. Crafting it itself, when it knows the recipe for that material.
+4. The auction house.
+5. Another guild bot that can make it.
+6. Farming or gathering it itself.
+7. When the bot cannot farm it: another guild bot that can farm it.
+8. Your need list (see below).
+
+At the auction house the bot pays with guild gold first (within your cap), then with its own gold.
 
 Some materials every shop sells without limit (Empty Vial is one: the exact list comes from the vendor data). For those the bot skips the guild bank and the auction house and walks to a shop instead, paying with its own gold. It never asks another bot for those. If it cannot buy them, they land on your need list.
 
@@ -98,7 +108,7 @@ For the auction house step the bot picks one auction house and walks there.
   - The recipe has a long cooldown (transmutes, Mooncloth).
 - The Professions view marks each recipe `ok` or with the reason; the search shows the same verdict.
 - **Hours:** optional whole hours 1-24. No hours given (or `inf`) means no time limit. When the time runs out, the bot still brings what it has to the guild bank (or mails it to the guild master). The order ends as `cant` with reason `timeout`.
-- **Guild gold cap:** add `gold=<copper>` after the other options. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
+- **Guild gold cap:** add `gold=<copper>` after the other options. The bot spends guild gold first, up to the cap, then its own gold. Omit it for no cap; `gold=0` prevents guild gold use.
 - **Materials I bring:** add `bring=<item>,<item>` after the other options on a craft order (or its preview). Tick the base materials you will deliver yourself: the bot never buys, withdraws, farms or delegates them, and the rest of each ticked material lands on your need list. Unticked materials work as before.
 - **Search:** each order type lists only what fits it.
   - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables. Enchant: permanent enchants the bot knows.
@@ -124,11 +134,11 @@ Hours count worked time only, like the zone clock below.
 
 ## Sub-orders
 
-When the bot cannot get a material itself, it asks another guild bot to make or farm it.
+When a craft material is not in the bank or on the auction house, the bot first asks another guild bot that can make it. If no one can, it farms the material itself; only a material it cannot farm goes to a guild bot that can farm it. Farm orders never ask other bots.
 - A craft order missing several materials asks for several at once, each on its own sub-order row. Each delivery is collected from the guild bank as it arrives.
 - Sub-orders show indented under the parent in the addon and deliver into the guild bank like normal orders (up to 3 levels deep). The status line shows what the parent itself works on while sub-orders show their own steps.
 - Cancelling a parent cancels its whole branch, but a bot already carrying its share detaches and still delivers it. Whatever the bots already gathered still reaches the guild bank.
-- If a sub-order fails, its item goes on the parent's need list: a craft order keeps working on the rest instead of failing, while a farm or buy order waits for the item. Hand a sub-order to a different bot with `reassign` (same permission as giving orders); only bots without a running or watched (`stocked`) order of their own qualify.
+- If a sub-order fails, its item goes on the parent's need list: a craft order keeps working on the rest instead of failing, while a buy order waits for the item. When the failed sub-order was the "make it" request for a material the bot can farm, the bot farms it itself instead. Hand a sub-order to a different bot with `reassign` (same permission as giving orders); only bots without a running or watched (`stocked`) order of their own qualify.
 
 ## Need list
 
