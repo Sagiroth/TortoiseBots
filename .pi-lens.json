@@ -1,4 +1,4 @@
 {
-  "ignore": ["ai/**", "tortoise-wow/**", "tortoise-docker-penqle/**", "runtime/Stubs.cpp", "runtime/PlayerbotAIAdapter.cpp"],
+  "ignore": ["ai/**", "tortoise-wow/**", "tortoise-docker/**", "runtime/Stubs.cpp", "runtime/PlayerbotAIAdapter.cpp"],
   "exclude": ["ai/**"]
 }

@@ -47,7 +47,7 @@ Full rules and rationale: [`docs/developers/architecture.md`](docs/developers/ar
 
 No donor checkouts are kept locally any more; look mod-playerbots code up online. **Harvest behaviour, not architecture**: understand the donor behaviour, reimplement it inside the module, test it, record provenance. Never vendor a donor tree or expand host coupling to ease a port.
 
-Lookup order: gameplay/class AI/CC/movement → mod-playerbots; sessions/lifecycle → the current core; Turtle spells/talents/items → core data (DBCs in `../tortoise-docker-penqle/data/dbc`, world DB).
+Lookup order: gameplay/class AI/CC/movement → mod-playerbots; sessions/lifecycle → the current core; Turtle spells/talents/items → core data (DBCs in `../tortoise-docker/data/dbc`, world DB).
 
 ## Working rules
 
@@ -63,7 +63,7 @@ Lookup order: gameplay/class AI/CC/movement → mod-playerbots; sessions/lifecyc
 Use the smallest check that proves the change, and never report runtime behaviour you only read in code.
 
 - Docs/config text only: `bash tools/verify_all.sh` (OKF, surface, wiring, unit and decision-trail tests; ~30 s with 12 parallel test jobs) and `git diff --check`.
-- Module C++: one cached build after the batch is coherent — the Docker dev loop in `../tortoise-docker-penqle` (`./dev/build-playerbots`, then `./dev/restart-server`; it builds the live `TortoiseBots` checkout). Read that repo's README first; never run destructive Docker/DB commands unless asked.
+- Module C++: one cached build after the batch is coherent — the Docker dev loop in `../tortoise-docker` (`./dev/build-playerbots`, then `./dev/restart-server`; it builds the live `TortoiseBots` checkout). Read that repo's README first; never run destructive Docker/DB commands unless asked.
 - Runtime: the smallest relevant check (server boots, module loads, bot enters world and acts, clean logout/shutdown, no DB/session errors in the log).
 - Core-seam or build-gating change: module build while iterating, full module ON/OFF matrix before handing over.
 
