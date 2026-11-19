@@ -90,7 +90,7 @@ optional: every feature stays free and open for everyone.
 
 ## 📜 License & Provenance
 
-Original TortoiseBots work is licensed under **AGPL-3.0-or-later** ([`LICENSE`](LICENSE)). If you distribute it, or run a modified version on a server players connect to, you must publish the full source of that version under the same licence. Contributions are accepted under the same terms. Donor code keeps its own notices (GPL-2.0-or-later / AGPL-3.0 lineages). See [`NOTICE.md`](NOTICE.md) and [`docs/developers/licensing-audit.md`](docs/developers/licensing-audit.md).
+Original TortoiseBots work is dual-licensed under **AGPL-3.0-or-later** ([`LICENSE`](LICENSE)) **or GPL-2.0-or-later** ([`LICENSE-GPL-2.0`](LICENSE-GPL-2.0)), your choice; a few donor-derived files stay AGPL-only. Contributions are accepted under the same terms. Donor code keeps its own notices (GPL-2.0-or-later / AGPL-3.0 lineages). See [`NOTICE.md`](NOTICE.md) and [`docs/developers/licensing-audit.md`](docs/developers/licensing-audit.md).
 
 **Disclaimer:**
 +
