@@ -12,24 +12,42 @@ collapsed into a blanket "GPL-2.0" label without checking the exact variant.
 
 Original TortoiseBots work — code, SQL, configuration, documentation, tools and
 addons written for this repository — is copyright © Sagiroth and the
-TortoiseBots contributors, and is licensed under the **GNU Affero General Public
-License, version 3 or (at your option) any later version (AGPL-3.0-or-later)**.
-The full text is in [`LICENSE`](LICENSE).
+TortoiseBots contributors, and is dual-licensed: you may use it under
+**either**
 
-In practice: anyone who distributes TortoiseBots or a modified version, **or
-runs a modified version on a server that players connect to**, must offer those
-users the complete corresponding source code of that version under the same
-licence (AGPL-3.0 sections 5, 6 and 13). Closed-source forks and private
-modified servers without published source are not permitted.
+* the **GNU Affero General Public License, version 3 or any later version
+  (AGPL-3.0-or-later)** — full text in [`LICENSE`](LICENSE), **or**
+* the **GNU General Public License, version 2 or any later version
+  (GPL-2.0-or-later)** — full text in [`LICENSE-GPL-2.0`](LICENSE-GPL-2.0).
+
+SPDX: `AGPL-3.0-or-later OR GPL-2.0-or-later`. The GPL option exists so the
+code can be shared with GPL-2.0-or-later projects such as TrinityCore-based
+cores.
+
+### Files that stay AGPL-3.0-or-later only
+
+The dual licence covers only work whose authors agreed to it (see
+[`CONTRIBUTORS.md`](CONTRIBUTORS.md)). These stay **AGPL-3.0-or-later only**
+until they are rewritten or their authors agree:
+
+* code ported from AGPL-3.0 donors (the `Shyalya/tortoise-wow` baseline,
+  `jrad7/mod-dungeon-clear`, `T-imothy/tortoise-wow` data, the Tortoise core);
+  these files name their donor in the header or in
+  [`docs/developers/licensing-audit.md`](docs/developers/licensing-audit.md);
+* contributions by authors still marked `pending` in `CONTRIBUTORS.md`.
+
+Before moving a file into a GPL-2.0-or-later project, check its header and
+`git log` for the above.
 
 ### Contributions
 
 Every contribution submitted to this repository (pull request, patch, commit,
 or file attached to an issue) is licensed by its author under
-AGPL-3.0-or-later, the same terms as the project ("inbound = outbound"). By
-submitting a contribution you confirm that you wrote it or otherwise have the
-right to license it under these terms. Code taken from another project must
-keep its original notice and be compatible with AGPL-3.0 — see
+AGPL-3.0-or-later OR GPL-2.0-or-later, the same terms as the project ("inbound
+= outbound"). By submitting a contribution you confirm that you wrote it or
+otherwise have the right to license it under these terms. Code taken from
+another project must keep its original notice and be compatible with AGPL-3.0;
+code from an AGPL-only donor stays AGPL-only — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md#licence-of-contributions).
 Contributors confirm their consent by adding themselves to
 [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
@@ -64,7 +82,8 @@ TortoiseBots is created and maintained by **Sagiroth**
 The module shows this attribution as its Appropriate Legal Notice (AGPL-3.0
 section 5(d)): in the worldserver startup log, in a login message to every
 player, and from `.bot version` / `.bot about`. Under AGPL-3.0 section 7(b), for
-original TortoiseBots work, the following additional term applies:
+original TortoiseBots work used under the AGPL option, the following additional
+term applies (under the GPL-2.0 option it is a request, not a condition):
 
 > Modified versions, forks, repacks and bundles must preserve these author
 > attributions and the source link, and must not remove or hide them from
