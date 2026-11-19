@@ -196,6 +196,21 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.29.1 (2026-11-19)
+
+### Guild Orders
+- Bots given a farm order now go straight out and farm, instead of visiting the auction house or guild bank first. [#1661](https://github.com/Sagiroth/TortoiseBots/pull/1661)
+- Craft orders now look for materials from the auction house and other guild bots before farming them. [#1661](https://github.com/Sagiroth/TortoiseBots/pull/1661)
+- Guild orders now use guild gold before other funds. [#1661](https://github.com/Sagiroth/TortoiseBots/pull/1661)
+
+### Server Owners
+- Bot action logs now go into the folder set by `LogsDir` in mangosd.conf, so they sit with your other bot logs; leave it empty to keep the old location. [#1659](https://github.com/Sagiroth/TortoiseBots/pull/1659)
+
+### Behind the scenes
+- Updated developer tooling and notes to match a renamed local dev folder. [#1657](https://github.com/Sagiroth/TortoiseBots/pull/1657)
+
+---
+
 ## v1.29.0 (2026-11-18)
 
 ### Classes & Combat
