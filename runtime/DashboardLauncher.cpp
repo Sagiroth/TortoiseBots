@@ -302,7 +302,7 @@ uint16_t DashboardLauncher::ConfiguredHttpPort()
     // aiplayerbot.conf keeps the default, so an edit in either file takes effect.
     int port = static_cast<int>(sPlayerbotAIConfig.observabilityHttpPort);
     if (port == kDefaultHttpPort)
-        port = sConfig.GetIntDefault("AiPlayerbot.ObservabilityHttpPort", kDefaultHttpPort);
+        port = sConfig.GetIntDefault("AiPlayerbot.ObservabilityHttpPort", 8095);
     if (port <= 0 || port > 65535)
         port = kDefaultHttpPort;
     return static_cast<uint16_t>(port);
