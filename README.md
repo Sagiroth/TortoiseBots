@@ -7,7 +7,7 @@
 
 # TortoiseBots
 
-An independent, native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow), `main` branch). This is an unofficial, community-driven project, not affiliated with Turtle WoW or Blizzard Entertainment.
+An independent, native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow), `main` branch). This is an unofficial, community-driven project made for educational purposes, not affiliated with Turtle WoW or Blizzard Entertainment.
 
 TortoiseBots delivers native AI companions through a decoupled C++ architecture: bot AI, combat strategies, and lifecycle management live entirely within this module, while bots run as headless sessions with no game client and character state stays cleanly owned by the core. The core compiles and runs cleanly without the module.
 
