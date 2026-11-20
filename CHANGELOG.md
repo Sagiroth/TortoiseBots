@@ -196,6 +196,13 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.29.3 (2026-11-20)
+
+### Dashboard
+- The bot dashboard now uses the correct port, so it opens reliably again. [#1669](https://github.com/Sagiroth/TortoiseBots/pull/1669)
+
+---
+
 ## v1.29.2 (2026-11-20)
 
 ### Dashboard
