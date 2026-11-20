@@ -36,6 +36,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.ObservabilityBin`](#aiplayerbotobservabilitybin) | `""` | Optional path to the dashboard binary (empty = look next to `mangosd`). |
 | [`AiPlayerbot.ObservabilityHost`](#aiplayerbotobservabilityhost) | `127.0.0.1` | Destination host IP address or service name for UDP observability telemetry. |
 | [`AiPlayerbot.ObservabilityPort`](#aiplayerbotobservabilityport) | `9195` | Destination UDP port for the observability telemetry daemon. |
+| [`AiPlayerbot.ObservabilityHttpPort`](#aiplayerbotobservabilityhttpport) | `8095` | Web port of the auto-started dashboard (next free port when another program uses it). |
 | [`AiPlayerbot.RunTrace.Enabled`](#aiplayerbotruntraceenabled) | `0` | Opt-in run recorder (`.bot trace`): a party's run as a `bt-trace` v1 JSONL file plus a summary. |
 | [`AiPlayerbot.RunTrace.IntervalMs`](#aiplayerbotruntraceintervalms) | `500` | Milliseconds between two frames of a run trace. |
 | [`AiPlayerbot.RunTrace.GmOnly`](#aiplayerbotruntracegmonly) | `1` | Only a GameMaster may start a run trace. |
@@ -253,7 +254,7 @@ Automatically starts the observability dashboard binary alongside `mangosd` when
 <details>
 <summary>How it works in detail</summary>
 
-When both `AiPlayerbot.Observability` and `AiPlayerbot.ObservabilityAutoStart` are `1`, `mangosd` launches the dashboard binary in the background on startup (unless port `8095` is already in use), passes the database settings from `mangosd.conf`, writes dashboard output to `dashboard.log` next to the binary, and stops it when `mangosd` shuts down.
+When both `AiPlayerbot.Observability` and `AiPlayerbot.ObservabilityAutoStart` are `1`, `mangosd` launches the dashboard binary in the background on startup on port `AiPlayerbot.ObservabilityHttpPort` (see that key for what happens when the port is busy), passes the database settings from `mangosd.conf`, writes dashboard output to `dashboard.log` next to the binary, and stops it when `mangosd` shuts down.
 
 </details>
 
@@ -289,6 +290,19 @@ Destination UDP port listened to by the observability daemon.
 <summary>How it works in detail</summary>
 
 Configures the destination UDP port for telemetry packet dispatch. Must match the listening port configured in the observability daemon service.
+
+</details>
+
+### `AiPlayerbot.ObservabilityHttpPort`
+Web port of the dashboard that `mangosd` starts: open `http://localhost:<port>/dashboard`.
+**Default:** `8095` · **Values:** TCP port (1..65535) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Before starting the dashboard, `mangosd` checks this port and the next 9. If the dashboard already answers on one of them, it is left running and no second copy starts. Otherwise the dashboard starts on the first port no other program uses: when Docker or another web server holds `8095`, it ends up on `8096`. The server log (`started observability dashboard ... -> http://localhost:<port>/dashboard`) and the message GMs get at login show the port actually in use. If all 10 ports are taken, the log says so and the dashboard does not start.
+
+Read from `aiplayerbot.conf`; `tortoise_bots.conf` counts only while `aiplayerbot.conf` keeps `8095`. Only the auto-started dashboard uses it: a dashboard started by hand takes `--http-port` or `HTTP_PORT`.
 
 </details>
 

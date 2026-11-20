@@ -99,6 +99,50 @@ void TestEnvironmentAndArgs()
     assert(BuildArgs(false).empty());
 }
 
+void TestChooseHttpPort()
+{
+    {
+        // Configured port free: use it.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t) { return PortState::Free; });
+        assert(c.port == 8095 && !c.alreadyRunning);
+    }
+    {
+        // Our dashboard already on the configured port: reuse, do not start another.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t p) { return p == 8095 ? PortState::Dashboard : PortState::Free; });
+        assert(c.port == 8095 && c.alreadyRunning);
+    }
+    {
+        // Another program (e.g. Docker) on 8095: take the next free port.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t p) { return p == 8095 ? PortState::Foreign : PortState::Free; });
+        assert(c.port == 8096 && !c.alreadyRunning);
+    }
+    {
+        // A dashboard left on a fallback port wins over a free configured port.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t p) { return p == 8097 ? PortState::Dashboard : PortState::Free; });
+        assert(c.port == 8097 && c.alreadyRunning);
+    }
+    {
+        // Every port in the span taken by others: no port.
+        int probes = 0;
+        PortChoice c = ChooseHttpPort(8095, [&probes](uint16_t) { ++probes; return PortState::Foreign; });
+        assert(c.port == 0 && !c.alreadyRunning);
+        assert(probes == kHttpPortSpan);
+    }
+    {
+        // The span stops at the top of the port range.
+        PortChoice c = ChooseHttpPort(65535, [](uint16_t) { return PortState::Foreign; });
+        assert(c.port == 0);
+    }
+    {
+        // 0 means the default port.
+        PortChoice c = ChooseHttpPort(0, [](uint16_t) { return PortState::Free; });
+        assert(c.port == 8095);
+    }
+    assert(LooksLikeDashboardMetrics("# TYPE tortoisebots_snapshots_total counter\ntortoisebots_snapshots_total 0\n"));
+    assert(!LooksLikeDashboardMetrics("HTTP/1.1 200 OK\r\n\r\n<html>Docker</html>"));
+    assert(!LooksLikeDashboardMetrics(""));
+}
+
 } // namespace
 
 int main()
@@ -106,6 +150,7 @@ int main()
     TestParseDbInfo();
     TestPaths();
     TestEnvironmentAndArgs();
+    TestChooseHttpPort();
     std::cout << "test_dashboard_autostart_policy: ALL PASSED\n";
     return 0;
 }
