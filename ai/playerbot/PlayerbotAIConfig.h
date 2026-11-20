@@ -203,6 +203,7 @@ public:
     bool observabilityAutoStart = true;
     std::string observabilityBin;
     uint32 observabilityPort = 0;
+    uint32 observabilityHttpPort = 8095;
     std::string observabilityHost;
     // Issue #1101: the DUNGEON_MOBS datagram (mobs per dungeon run); only acts while observability is on.
     bool observabilityDungeonMobs = true;

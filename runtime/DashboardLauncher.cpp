@@ -39,6 +39,8 @@ namespace {
 
 constexpr uint16_t kDefaultHttpPort = 8095;
 constexpr int kPortProbeTimeoutMs = 150;
+constexpr int kHttpProbeTimeoutMs = 1000;
+constexpr size_t kHttpProbeMaxBytes = 512 * 1024;
 
 #ifdef _WIN32
 constexpr bool kIsWindows = true;
@@ -79,12 +81,23 @@ std::string GetExecutableDir()
 #endif
 }
 
-bool IsPortListening(uint16_t port)
+#ifdef _WIN32
+using SocketHandle = SOCKET;
+constexpr SocketHandle kNoSocket = INVALID_SOCKET;
+void CloseSocket(SocketHandle s) { closesocket(s); }
+#else
+using SocketHandle = int;
+constexpr SocketHandle kNoSocket = -1;
+void CloseSocket(SocketHandle s) { close(s); }
+#endif
+
+// Connects to 127.0.0.1:port within kPortProbeTimeoutMs; returns a blocking socket or kNoSocket.
+SocketHandle ConnectLoopback(uint16_t port)
 {
 #ifdef _WIN32
     SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET)
-        return false;
+        return kNoSocket;
 
     u_long nonBlocking = 1;
     ioctlsocket(sock, FIONBIO, &nonBlocking);
@@ -95,10 +108,10 @@ bool IsPortListening(uint16_t port)
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int rc = connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-    bool listening = false;
+    bool connected = false;
     if (rc == 0)
     {
-        listening = true;
+        connected = true;
     }
     else if (WSAGetLastError() == WSAEWOULDBLOCK)
     {
@@ -112,15 +125,24 @@ bool IsPortListening(uint16_t port)
             int err = 0;
             int errLen = sizeof(err);
             if (getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &errLen) == 0 && err == 0)
-                listening = true;
+                connected = true;
         }
     }
-    closesocket(sock);
-    return listening;
+    if (!connected)
+    {
+        closesocket(sock);
+        return kNoSocket;
+    }
+    u_long blocking = 0;
+    ioctlsocket(sock, FIONBIO, &blocking);
+    DWORD timeoutMs = kHttpProbeTimeoutMs;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<char const*>(&timeoutMs), sizeof(timeoutMs));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<char const*>(&timeoutMs), sizeof(timeoutMs));
+    return sock;
 #else
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
-        return false;
+        return kNoSocket;
 
     int flags = fcntl(sock, F_GETFL, 0);
     if (flags >= 0)
@@ -132,10 +154,10 @@ bool IsPortListening(uint16_t port)
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int rc = connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-    bool listening = false;
+    bool connected = false;
     if (rc == 0)
     {
-        listening = true;
+        connected = true;
     }
     else if (errno == EINPROGRESS)
     {
@@ -147,12 +169,66 @@ bool IsPortListening(uint16_t port)
             int err = 0;
             socklen_t errLen = sizeof(err);
             if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &errLen) == 0 && err == 0)
-                listening = true;
+                connected = true;
         }
     }
-    close(sock);
-    return listening;
+    if (!connected)
+    {
+        close(sock);
+        return kNoSocket;
+    }
+    if (flags >= 0)
+        fcntl(sock, F_SETFL, flags);
+    timeval tv{};
+    tv.tv_sec = kHttpProbeTimeoutMs / 1000;
+    tv.tv_usec = (kHttpProbeTimeoutMs % 1000) * 1000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    return sock;
 #endif
+}
+
+// Free when nothing accepts the connection; Dashboard when GET /metrics shows our
+// marker; Foreign for anything else (another web server, a silent service).
+DashboardAutostartPolicy::PortState ProbePort(uint16_t port)
+{
+    using DashboardAutostartPolicy::PortState;
+
+    SocketHandle sock = ConnectLoopback(port);
+    if (sock == kNoSocket)
+        return PortState::Free;
+
+    static char const kRequest[] = "GET /metrics HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    int const requestLen = static_cast<int>(sizeof(kRequest) - 1);
+#ifdef _WIN32
+    bool sent = send(sock, kRequest, requestLen, 0) == requestLen;
+#elif defined(MSG_NOSIGNAL)
+    bool sent = send(sock, kRequest, static_cast<size_t>(requestLen), MSG_NOSIGNAL) == requestLen;
+#else
+    bool sent = send(sock, kRequest, static_cast<size_t>(requestLen), 0) == requestLen;
+#endif
+
+    std::string response;
+    if (sent)
+    {
+        char buf[4096];
+        while (response.size() < kHttpProbeMaxBytes)
+        {
+#ifdef _WIN32
+            int got = recv(sock, buf, static_cast<int>(sizeof(buf)), 0);
+#else
+            ssize_t got = recv(sock, buf, sizeof(buf), 0);
+#endif
+            if (got <= 0)
+                break;
+            response.append(buf, static_cast<size_t>(got));
+            if (DashboardAutostartPolicy::LooksLikeDashboardMetrics(response))
+                break;
+        }
+    }
+    CloseSocket(sock);
+
+    return DashboardAutostartPolicy::LooksLikeDashboardMetrics(response) ? PortState::Dashboard : PortState::Foreign;
 }
 
 std::string ReadConfigPair(char const* dottedKey, char const* plainKey)
@@ -220,6 +296,24 @@ std::vector<char> BuildWindowsEnvBlock(std::vector<DashboardAutostartPolicy::Lau
 
 } // namespace
 
+uint16_t DashboardLauncher::ConfiguredHttpPort()
+{
+    // aiplayerbot.conf first; the world config (tortoise_bots.conf) counts only while
+    // aiplayerbot.conf keeps the default, so an edit in either file takes effect.
+    int port = static_cast<int>(sPlayerbotAIConfig.observabilityHttpPort);
+    if (port == kDefaultHttpPort)
+        port = sConfig.GetIntDefault("AiPlayerbot.ObservabilityHttpPort", kDefaultHttpPort);
+    if (port <= 0 || port > 65535)
+        port = kDefaultHttpPort;
+    return static_cast<uint16_t>(port);
+}
+
+uint16_t DashboardLauncher::HttpPort() const
+{
+    uint16_t const port = m_httpPort.load();
+    return port ? port : ConfiguredHttpPort();
+}
+
 DashboardLauncher& DashboardLauncher::Instance()
 {
     static DashboardLauncher instance;
@@ -249,7 +343,8 @@ void DashboardLauncher::Start()
     if (cfg.binOverride.empty())
         cfg.binOverride = sConfig.GetStringDefault("AiPlayerbot.ObservabilityBin", "");
     cfg.udpPort = sPlayerbotAIConfig.observabilityPort ? sPlayerbotAIConfig.observabilityPort : 9195;
-    cfg.httpPort = kDefaultHttpPort;
+    cfg.httpPort = ConfiguredHttpPort();
+    m_httpPort.store(cfg.httpPort);
     cfg.loginDbRaw = ReadConfigPair("LoginDatabase.Info", "LoginDatabaseInfo");
     cfg.charDbRaw = ReadConfigPair("CharacterDatabase.Info", "CharacterDatabaseInfo");
     cfg.worldDbRaw = ReadConfigPair("WorldDatabase.Info", "WorldDatabaseInfo");
@@ -358,12 +453,27 @@ void DashboardLauncher::Worker(LaunchConfig cfg)
     if (m_stopping.load())
         return;
 
-    if (IsPortListening(cfg.httpPort))
+    uint16_t const configuredPort = cfg.httpPort;
+    auto const choice = DashboardAutostartPolicy::ChooseHttpPort(configuredPort, &ProbePort);
+    if (choice.port == 0)
     {
-        TB_LOG_BASIC("TortoiseBots: observability dashboard already listening on port %u; skipping autostart",
-            static_cast<unsigned>(cfg.httpPort));
+        sLog.outError("TortoiseBots: ports %u-%u are all used by other programs; dashboard not started. "
+            "Set AiPlayerbot.ObservabilityHttpPort in aiplayerbot.conf to a free port.",
+            static_cast<unsigned>(configuredPort),
+            static_cast<unsigned>(configuredPort + DashboardAutostartPolicy::kHttpPortSpan - 1));
         return;
     }
+    m_httpPort.store(choice.port);
+    if (choice.alreadyRunning)
+    {
+        TB_LOG_BASIC("TortoiseBots: observability dashboard already running -> http://localhost:%u/dashboard; skipping autostart",
+            static_cast<unsigned>(choice.port));
+        return;
+    }
+    if (choice.port != configuredPort)
+        TB_LOG_BASIC("TortoiseBots: port %u is used by another program; dashboard uses port %u instead",
+            static_cast<unsigned>(configuredPort), static_cast<unsigned>(choice.port));
+    cfg.httpPort = choice.port;
 
     if (m_stopping.load())
         return;
