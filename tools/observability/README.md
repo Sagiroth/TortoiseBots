@@ -162,7 +162,9 @@ python3 tools/observability/scripts/gen_zone_maps.py --data "<WoW>/Data" --out t
 
 `--out` defaults to `tools/observability/maps/`, which is where
 `run-dashboard.sh` / `run-dashboard.ps1` put the binary. The binary serves
-`maps/` next to itself; point it elsewhere with `--maps-dir` / `MAPS_DIR`
+`maps/` next to itself; for the copy `mangosd` starts, the server install
+(`cmake --install`) copies `tools/observability/maps/*.webp` into `maps/` next
+to `mangosd` (configure again after generating them). Point it elsewhere with `--maps-dir` / `MAPS_DIR`
 (e.g. a mounted folder in a container). Without the art the map tab still works:
 a note replaces the picture and the bot dots stay on the same 1002x668 canvas.
 The page asks for a continent or zone picture only when the Map tab draws it (the

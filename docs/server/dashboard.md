@@ -280,4 +280,4 @@ python3 tools/observability/scripts/gen_zone_maps.py \
   --out tools/observability/maps
 ```
 
-The `--out` path feeds the Map tab. Commander map views use the folder configured via `--map-dir` or the `TBDASH_MAP_DIR` environment variable. If map images are absent, the Map tab displays a note instead of the picture while bot position markers continue to function normally.
+The `--out` path feeds the Map tab. The dashboard reads the `maps` folder next to its own program, so with the automatic start the pictures must sit in a `maps` folder next to `mangosd`: building and installing the server (`cmake --install`) copies `tools/observability/maps` there, or copy the folder by hand. If the Map tab still shows no picture, `dashboard.log` names the folder it looked in (`[Map] No zone maps in ...`). Commander map views use the folder configured via `--map-dir` or the `TBDASH_MAP_DIR` environment variable. If map images are absent, the Map tab displays a note instead of the picture while bot position markers continue to function normally.
