@@ -183,6 +183,12 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
       install(PROGRAMS "${_tb_dash_dir}/${_tb_dash_name}" DESTINATION "${BIN_DIR}")
     endif()
   endif()
+  # Zone maps the player generated from their own client (gen_zone_maps.py) go
+  # next to mangosd too: the autostarted dashboard serves maps/ next to itself.
+  if(EXISTS "${TORTOISEBOTS_ROOT}/tools/observability/maps")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/tools/observability/maps/"
+      DESTINATION "${BIN_DIR}/maps" FILES_MATCHING PATTERN "*.webp")
+  endif()
 
   set(TORTOISEBOTS_HOST_SRC
     "${TORTOISEBOTS_ROOT}/host/Module.cpp"
