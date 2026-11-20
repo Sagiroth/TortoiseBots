@@ -196,6 +196,17 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.29.2 (2026-11-20)
+
+### Dashboard
+- Zone maps show again in the dashboard's Map tab when the server starts it, because setup now copies your generated map pictures to the folder it reads. [#1667](https://github.com/Sagiroth/TortoiseBots/pull/1667)
+
+### Behind the scenes
+- TortoiseBots is now available under either AGPL-3.0-or-later or GPL-2.0-or-later, with updated project documents, a new contributor consent table, and the new licence shown by `.bot about`. [#1662](https://github.com/Sagiroth/TortoiseBots/pull/1662) [#1663](https://github.com/Sagiroth/TortoiseBots/pull/1663)
+- The README now says the project is unofficial and made for educational purposes. [#1665](https://github.com/Sagiroth/TortoiseBots/pull/1665)
+
+---
+
 ## v1.29.1 (2026-11-19)
 
 ### Guild Orders
