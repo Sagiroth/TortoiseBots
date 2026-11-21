@@ -86,6 +86,17 @@ namespace ai
 		bool IsActive() override;
 	};
 
+    class ProtPaladinSealTrigger : public Trigger
+    {
+    public:
+        ProtPaladinSealTrigger(PlayerbotAI* ai, std::string const& name, bool wisdom)
+            : Trigger(ai, name, 1), wisdom(wisdom) {}
+        bool IsActive() override;
+
+    private:
+        bool wisdom;
+    };
+
     // Opt-in Judgement upkeep (AiPlayerbot.PaladinJudgementUpkeep): the
     // owner of Judgement of Wisdom / Light on the group's boss or elite
     // swaps to the matching Seal and judges as the debuff runs out. One

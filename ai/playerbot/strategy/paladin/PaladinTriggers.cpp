@@ -4,6 +4,7 @@
 #include "PaladinActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/DungeonPlanMgr.h"
 #include "runtime/policy/class/JudgementUpkeepPolicy.h"
 
 using namespace ai;
@@ -103,6 +104,7 @@ JudgementUpkeepState ReadJudgementUpkeep(PlayerbotAI* ai, Player* bot, bool want
     bool const eliteOrBoss = info && (info->rank == CREATURE_ELITE_ELITE || info->rank == CREATURE_ELITE_RAREELITE ||
         info->rank == CREATURE_ELITE_WORLDBOSS);
     bool const inInstance = bot->GetMap() && bot->GetMap()->IsDungeon();
+    bool const inFiveMan = inInstance && !bot->GetMap()->IsRaid();
     if (!eliteOrBoss && !inInstance)
         return state;
 
@@ -157,7 +159,8 @@ JudgementUpkeepState ReadJudgementUpkeep(PlayerbotAI* ai, Player* bot, bool want
     if (!IsJudgementUpkeepTarget(true, eliteOrBoss, tankTarget && inInstance, (uint8)target->GetHealthPercent()))
         return state;
 
-    state.kind = JudgementKindFor(bot->GetObjectGuid().GetRawValue(), paladins, paladinCount);
+    bool const tankMayOwnWisdom = sPlayerbotAIConfig.protPaladinDungeonWisdom && inFiveMan;
+    state.kind = JudgementKindFor(bot->GetObjectGuid().GetRawValue(), paladins, paladinCount, tankMayOwnWisdom);
     if (state.kind == JudgementKind::None)
         return state;
 
@@ -184,8 +187,42 @@ bool JudgementUpkeepTrigger::IsActive()
 
     // A Seal step fires only for the owner of its own debuff.
     JudgementKind const mine = step == Step::SealWisdom ? JudgementKind::Wisdom : JudgementKind::Light;
+    bool const refillEmptySlot = !ai->IsTank(bot);
     return state.kind == mine &&
-        ShouldCastUpkeepSeal(state.kind, state.anySealUp, state.wantedSealUp, state.needsRefresh, state.judgementReady);
+        ShouldCastUpkeepSeal(state.kind, state.anySealUp, state.wantedSealUp, state.needsRefresh, state.judgementReady, refillEmptySlot);
+}
+
+bool ProtPaladinSealTrigger::IsActive()
+{
+    using namespace TortoiseBots;
+    if (!AI_VALUE2(bool, "combat", "self target"))
+        return false;
+
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    Creature* const creature = target && target->IsCreature() ? static_cast<Creature*>(target) : nullptr;
+    bool const targetIsBoss = creature &&
+        (creature->IsWorldBoss() || ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry()));
+    bool const inFiveMan = bot->IsInWorld() && bot->GetMap() && bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid();
+    bool const lowMana = AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana;
+    bool const knowsWisdom = ai->HasSpell("seal of wisdom");
+
+    ProtPaladinSeal const wanted = ProtPaladinWantedSeal(
+        sPlayerbotAIConfig.protPaladinDungeonWisdom, inFiveMan, targetIsBoss, lowMana, knowsWisdom);
+
+    if (wisdom)
+    {
+        if (wanted != ProtPaladinSeal::Wisdom)
+            return false;
+        if (lowMana)
+            return !ai->HasAura("seal of wisdom", bot);
+    }
+    else
+    {
+        if (wanted != ProtPaladinSeal::Righteousness)
+            return false;
+    }
+
+    return !ai->HasAnyAuraOf(bot, "seal of justice", "seal of command", "seal of righteousness", "seal of light", "seal of wisdom", NULL);
 }
 
 bool BlessingTrigger::IsActive()
