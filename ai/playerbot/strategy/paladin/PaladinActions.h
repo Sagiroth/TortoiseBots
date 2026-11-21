@@ -109,6 +109,37 @@ namespace ai
 		CastHolyStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "holy strike") {}
 	};
 
+	class CastHolyStrikeInReachAction : public CastHolyStrikeAction
+	{
+	public:
+		CastHolyStrikeInReachAction(PlayerbotAI* ai) : CastHolyStrikeAction(ai) {}
+		bool isUseful() override
+		{
+			Unit* target = GetTarget();
+			return target && bot->CanReachWithMeleeAutoAttack(target) && CastHolyStrikeAction::isUseful();
+		}
+	protected:
+		std::string GetReachActionName() override { return ""; }
+	};
+
+	class CastHolyMeleeAttackAction : public Action
+	{
+	public:
+		CastHolyMeleeAttackAction(PlayerbotAI* ai) : Action(ai, "holy melee attack") {}
+		bool isUseful() override
+		{
+			Unit* target = AI_VALUE(Unit*, "current target");
+			return target && sServerFacade.IsAlive(target) && bot->CanReachWithMeleeAutoAttack(target);
+		}
+		bool Execute(Event&) override
+		{
+			Unit* target = AI_VALUE(Unit*, "current target");
+			if (!target || !sServerFacade.IsAlive(target))
+				return false;
+			return bot->Attack(target, true);
+		}
+	};
+
 	class CastBulwarkAction : public CastMeleeSpellAction
 	{
 	public:

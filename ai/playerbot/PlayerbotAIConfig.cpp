@@ -1473,6 +1473,7 @@ bool PlayerbotAIConfig::Initialize()
     hunterCarveInReachOnly = config.GetBoolDefault("AiPlayerbot.HunterCarveInReachOnly", false);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     protPaladinDungeonWisdom = config.GetBoolDefault("AiPlayerbot.ProtPaladinDungeonWisdom", true);
+    holyPaladinMeleeWeave = config.GetBoolDefault("AiPlayerbot.HolyPaladinMeleeWeave", false);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
     dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", true);
     // Startup-only on purpose (not in LoadDungeonRunKeys): the key shapes the reaction engine's trigger list, which
