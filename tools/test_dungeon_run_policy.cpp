@@ -37837,6 +37837,84 @@ static void TestBossStepDoesNotSkipOnFruitlessPullsOrOutOfReach()
     }
 }
 
+static void TestPlayerPauseResumeKeepsNearestRoutePoint()
+{
+    // 1. A player pause where the lead bot moves > kRouteSpotYd while paused (so CheckRoute drops
+    // routeKnown) must NOT walk back to the entrance before an earlier MoveDirect hole on resume.
+    {
+        DungeonPlan plan;
+        plan.steps = {
+            Step(PlanStepKind::Move, 0),
+            Step(PlanStepKind::MoveDirect, 30),
+            Step(PlanStepKind::Move, 60),
+            Step(PlanStepKind::Move, 120),
+            Step(PlanStepKind::Move, 180),
+            Step(PlanStepKind::Pull, 210),
+        };
+        Run r = Start(&plan, 5);
+        NoteCheckpoint(r, 4); // reached step 5 (x=180), past the MoveDirect at step 2 (x=30)
+        r.leadSeen = true;
+        r.leadLastX = 180.0f;
+        PausePlayer(r, "paused by .bot run pause");
+        CHECK(Resume(r));
+        // Lead bot moved 30 yd backward (to x=150) while paused -> CheckRoute drops routeKnown.
+        Facts f = Party(150.0f);
+        Tick(r, f);
+        // Must NOT target step 0 (before MoveDirect at x=30); should walk to step 4 (x=180) or stay near x=150..180.
+        CHECK(r.walkBack);
+        CHECK(r.walkBackIdx == 4);
+        CHECK(CheckpointKnown(r));
+    }
+
+    // 2. If the player actually walked the lead bot back to the first move point while paused,
+    // StartWalkBack still crosses the MoveDirect hole from the entrance.
+    {
+        DungeonPlan plan;
+        plan.steps = {
+            Step(PlanStepKind::Move, 0),
+            Step(PlanStepKind::MoveDirect, 30),
+            Step(PlanStepKind::Move, 60),
+            Step(PlanStepKind::Move, 180),
+            Step(PlanStepKind::Pull, 210),
+        };
+        Run r = Start(&plan, 4);
+        NoteCheckpoint(r, 3);
+        r.leadSeen = true;
+        r.leadLastX = 180.0f;
+        PausePlayer(r, "paused by .bot run pause");
+        CHECK(Resume(r));
+        Facts f = Party(2.0f); // back at the entrance (x=0)
+        Tick(r, f);
+        CHECK(r.walkBack);
+        CHECK(r.walkBackIdx == 0);
+        CHECK(!CheckpointKnown(r));
+    }
+
+    // 3. Even without MoveDirect, a failed ReplayWalkBack point must NOT restart at step 0 (the entrance)
+    // when step 0 is far from the lead bot.
+    {
+        DungeonPlan plan;
+        plan.steps = {
+            Step(PlanStepKind::Move, 0),
+            Step(PlanStepKind::Move, 120),
+            Step(PlanStepKind::Move, 180),
+            Step(PlanStepKind::Pull, 210),
+        };
+        Run r = Start(&plan, 3);
+        r.walkBack = true;
+        r.walkBackDirect = false;
+        r.walkBackIdx = r.walkBackStart = 2; // nearest point (x=180)
+        EnterPhase(r, Phase::Begin);
+        Facts f = Party(175.0f); // no approachKnown -> noWay on step 2
+        f.approachRead = true;
+        f.approachKnown = false;
+        Tick(r, f);
+        // Must pass step 2 rather than restarting at step 0 (x=0, 175 yd away).
+        CHECK(!r.walkBackRestarted);
+        CHECK(r.walkBackIdx != 0);
+    }
+}
+
 int main()
 {
     TestZgC3HopDipsIntoThePool();
@@ -38884,6 +38962,7 @@ int main()
     TestRaidTrashSwarmLatchedAfterThreeTries();
     TestHopUnitReachable();
     TestBossStepDoesNotSkipOnFruitlessPullsOrOutOfReach();
+    TestPlayerPauseResumeKeepsNearestRoutePoint();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

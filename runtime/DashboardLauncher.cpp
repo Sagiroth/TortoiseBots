@@ -29,6 +29,7 @@ extern char** environ;
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <vector>
@@ -62,6 +63,17 @@ bool IsDirectory(std::string const& path)
         return false;
     std::error_code ec;
     return std::filesystem::is_directory(std::filesystem::path(path), ec) && !ec;
+}
+
+bool IsRunningInContainer()
+{
+#ifdef _WIN32
+    return false;
+#else
+    std::error_code ec;
+    return (std::filesystem::exists(std::filesystem::path("/.dockerenv"), ec) && !ec) ||
+           (std::filesystem::exists(std::filesystem::path("/run/.containerenv"), ec) && !ec);
+#endif
 }
 
 std::string GetExecutableDir()
@@ -502,8 +514,13 @@ void DashboardLauncher::Worker(LaunchConfig cfg)
         std::filesystem::create_directories(std::filesystem::path(iconCacheDir), ec);
     }
 
+    char const* envHttpHost = std::getenv("HTTP_HOST");
+    std::string const existingHttpHost = envHttpHost ? envHttpHost : "";
+    bool const inContainer = IsRunningInContainer();
+    std::string const httpHost = DashboardAutostartPolicy::EffectiveHttpHost(inContainer, existingHttpHost);
+
     auto const envVars = DashboardAutostartPolicy::BuildEnvironment(
-        loginDb, charDb, worldDb, cfg.udpPort, cfg.httpPort, dbcDir, iconCacheDir);
+        loginDb, charDb, worldDb, cfg.udpPort, cfg.httpPort, dbcDir, iconCacheDir, inContainer, existingHttpHost);
     auto const args = DashboardAutostartPolicy::BuildArgs(loginDb.password.empty());
 
 #ifdef _WIN32
@@ -664,8 +681,8 @@ void DashboardLauncher::Worker(LaunchConfig cfg)
     m_childPid = static_cast<int>(pid);
 #endif
 
-    TB_LOG_BASIC("TortoiseBots: started observability dashboard (%s) -> http://localhost:%u/dashboard (log: %s)",
-        binPath.c_str(), static_cast<unsigned>(cfg.httpPort), logPath.c_str());
+    TB_LOG_BASIC("TortoiseBots: started observability dashboard (%s, bind %s) -> http://localhost:%u/dashboard (log: %s)",
+        binPath.c_str(), httpHost.c_str(), static_cast<unsigned>(cfg.httpPort), logPath.c_str());
 }
 
 } // namespace TortoiseBots

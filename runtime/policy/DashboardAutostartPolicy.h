@@ -135,6 +135,13 @@ inline std::string DbcDirFromDataDir(std::string const& dataDir, std::string con
     return JoinPath(base, "dbc", isWindows);
 }
 
+inline std::string EffectiveHttpHost(bool inContainer, std::string const& existingHttpHost = "")
+{
+    if (!existingHttpHost.empty())
+        return existingHttpHost;
+    return inContainer ? "0.0.0.0" : "127.0.0.1";
+}
+
 inline std::vector<LaunchEnv> BuildEnvironment(
     DbInfo const& login,
     DbInfo const& character,
@@ -142,7 +149,9 @@ inline std::vector<LaunchEnv> BuildEnvironment(
     uint32_t udpPort,
     uint16_t httpPort,
     std::string const& dbcDir,
-    std::string const& iconCacheDir)
+    std::string const& iconCacheDir,
+    bool inContainer = false,
+    std::string const& existingHttpHost = "")
 {
     std::vector<LaunchEnv> env;
     env.push_back({"DB_HOST", login.host});
@@ -156,6 +165,9 @@ inline std::vector<LaunchEnv> BuildEnvironment(
     env.push_back({"UDP_PORT", std::to_string(udpPort ? udpPort : 9195)});
     env.push_back({"UDP_HOST", "127.0.0.1"});
     env.push_back({"HTTP_PORT", std::to_string(httpPort ? httpPort : 8095)});
+    // Inside a container only published ports are reachable, so bind all interfaces unless HTTP_HOST is already set.
+    if (existingHttpHost.empty() && inContainer)
+        env.push_back({"HTTP_HOST", "0.0.0.0"});
     if (!iconCacheDir.empty())
         env.push_back({"ICON_CACHE_DIR", iconCacheDir});
     if (!dbcDir.empty())

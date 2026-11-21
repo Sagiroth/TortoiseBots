@@ -13458,6 +13458,33 @@ inline void StartWalkBack(Run& r, const Facts& f)
     }
     if (last == r.step)
         return;
+    // A player pause drops routeKnown if the lead bot moves more than kRouteSpotYd while paused;
+    // if it did not return to the run's first move point, keep the last reached checkpoint (or
+    // the nearest point on the same stretch) so resume does not send the party back to the entrance.
+    if (!CheckpointKnown(r) && r.pausedByPlayer && r.checkpoint != static_cast<std::size_t>(-1) &&
+        r.checkpoint < r.step)
+    {
+        std::size_t firstMove = static_cast<std::size_t>(-1);
+        for (std::size_t i = r.startStep; i < r.step; ++i)
+            if (IsRunMovePoint(r, i))
+            {
+                firstMove = i;
+                break;
+            }
+        const PlanStep& cp = r.plan->steps[r.checkpoint];
+        float const toCp = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, cp.x, cp.y, cp.z);
+        bool const atStart = firstMove != static_cast<std::size_t>(-1) &&
+            ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.plan->steps[firstMove].x, r.plan->steps[firstMove].y,
+                r.plan->steps[firstMove].z) <= kSeeYd &&
+            toCp > kSeeYd;
+        if (!atStart)
+        {
+            std::size_t const nearest = NearestMovePoint(r, f);
+            std::size_t const restored = (nearest != static_cast<std::size_t>(-1) && nearest >= r.startStep &&
+                nearest < r.checkpoint && !DirectStepOnWay(r, nearest)) ? nearest : r.checkpoint;
+            NoteCheckpoint(r, restored);
+        }
+    }
     const PlanStep& p = r.plan->steps[last];
     float const toLast = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
     // The holes first: on a folded route the spot a lead bot comes back at can
@@ -14162,7 +14189,12 @@ inline bool WalkBack(Run& r, const Facts& f, std::uint32_t dt, std::string& orde
             // the route allows (ReplayFloor: the checkpoint when known, else
             // the plan's first point), once.
             std::size_t const first = FirstReplayPoint(r);
-            if (!r.walkBackRestarted && r.walkBackIdx == r.walkBackStart && first != static_cast<std::size_t>(-1) &&
+            bool const firstNearLead = first != static_cast<std::size_t>(-1) &&
+                ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.plan->steps[first].x, r.plan->steps[first].y,
+                    r.plan->steps[first].z) <=
+                    ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.plan->steps[r.walkBackIdx].x,
+                        r.plan->steps[r.walkBackIdx].y, r.plan->steps[r.walkBackIdx].z) + kSeeYd;
+            if (!r.walkBackRestarted && r.walkBackIdx == r.walkBackStart && firstNearLead &&
                 first < r.walkBackIdx)
             {
                 r.walkBackRestarted = true;

@@ -68,15 +68,15 @@ void ProtectionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         NextAction::array(0, new NextAction("bulwark of the righteous", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "medium mana",
-        NextAction::array(0, new NextAction("seal of wisdom", ACTION_HIGH + 1), NULL)));
+        "prot seal of wisdom",
+        NextAction::array(0, new NextAction("seal of wisdom", ACTION_NORMAL + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "exorcism",
         NextAction::array(0, new NextAction("exorcism", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "seal",
+        "prot seal of righteousness",
         NextAction::array(0, new NextAction("seal of righteousness", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(

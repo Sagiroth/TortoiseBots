@@ -243,6 +243,8 @@ namespace ai
                 creators["judgement of light"] = [](PlayerbotAI* ai) { return new JudgementOfLightTrigger(ai); };
                 creators["seal"] = [](PlayerbotAI* ai) { return new SealTrigger(ai); };
                 creators["seal in melee"] = [](PlayerbotAI* ai) { return new SealInMeleeTrigger(ai); };
+                creators["prot seal of wisdom"] = [](PlayerbotAI* ai) { return new ProtPaladinSealTrigger(ai, "prot seal of wisdom", true); };
+                creators["prot seal of righteousness"] = [](PlayerbotAI* ai) { return new ProtPaladinSealTrigger(ai, "prot seal of righteousness", false); };
                 creators["judgement upkeep seal of wisdom"] = [](PlayerbotAI* ai) { return new JudgementUpkeepTrigger(ai, "judgement upkeep seal of wisdom", JudgementUpkeepTrigger::Step::SealWisdom); };
                 creators["judgement upkeep seal of light"] = [](PlayerbotAI* ai) { return new JudgementUpkeepTrigger(ai, "judgement upkeep seal of light", JudgementUpkeepTrigger::Step::SealLight); };
                 creators["judgement upkeep"] = [](PlayerbotAI* ai) { return new JudgementUpkeepTrigger(ai, "judgement upkeep", JudgementUpkeepTrigger::Step::Judge); };
@@ -309,7 +311,10 @@ namespace ai
                 creators["hammer of justice on enemy"] = [](PlayerbotAI* ai) { return new HammerOfJusticeOnEnemyTrigger(ai); };
                 creators["blessing of sacrifice"] = [](PlayerbotAI* ai) { return new BlessingOfSacrificeTrigger(ai); };
                 creators["crusader strike"] = [](PlayerbotAI* ai) { return new CrusaderStrikeTrigger(ai); };
+                creators["crusader strike without holy strike"] = [](PlayerbotAI* ai) { return new CrusaderStrikeWithoutHolyStrikeTrigger(ai); };
                 creators["holy strike"] = [](PlayerbotAI* ai) { return new HolyStrikeTrigger(ai); };
+                creators["holy melee weave reach"] = [](PlayerbotAI* ai) { return new HolyMeleeWeaveReachTrigger(ai); };
+                creators["holy melee weave attack"] = [](PlayerbotAI* ai) { return new HolyMeleeWeaveAttackTrigger(ai); };
                 creators["bulwark of the righteous"] = [](PlayerbotAI* ai) { return new BulwarkTrigger(ai); };
                 // Tortoise Holy Paladin Daybreak target-prioritization:
                 creators["party member has daybreak"] = [](PlayerbotAI* ai) { return new PartyMemberHasDaybreakTrigger(ai); };
@@ -377,6 +382,8 @@ namespace ai
                 creators["crusader strike"] = [](PlayerbotAI* ai) { return new CastCrusaderStrikeAction(ai); };
                 creators["crusader strike in reach"] = [](PlayerbotAI* ai) { return new CastCrusaderStrikeInReachAction(ai); };
                 creators["holy strike"] = [](PlayerbotAI* ai) { return new CastHolyStrikeAction(ai); };
+                creators["holy strike in reach"] = [](PlayerbotAI* ai) { return new CastHolyStrikeInReachAction(ai); };
+                creators["holy melee attack"] = [](PlayerbotAI* ai) { return new CastHolyMeleeAttackAction(ai); };
                 creators["bulwark of the righteous"] = [](PlayerbotAI* ai) { return new CastBulwarkAction(ai); };
                 creators["retribution aura"] = [](PlayerbotAI* ai) { return new CastRetributionAuraAction(ai); };
                 creators["shadow resistance aura"] = [](PlayerbotAI* ai) { return new CastShadowResistanceAuraAction(ai); };

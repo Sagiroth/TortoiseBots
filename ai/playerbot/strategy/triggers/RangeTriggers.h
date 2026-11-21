@@ -12,6 +12,7 @@
 #include "playerbot/MagmaHazardPolicy.h"
 #include "playerbot/WorldPosition.h"
 #include "host/ModuleLog.h"
+#include "runtime/policy/class/HolyMeleeWeavePolicy.h"
 #include <ctime>
 
 namespace ai
@@ -75,6 +76,24 @@ namespace ai
                 if (bot->GetClass() != CLASS_HUNTER && !isVictim && bot->GetGroup() &&
                     bot->CanReachWithMeleeAutoAttack(target))
                 {
+                    if (sPlayerbotAIConfig.holyPaladinMeleeWeave && bot->GetClass() == CLASS_PALADIN && ai->IsHeal(bot))
+                    {
+                        TortoiseBots::HolyMeleeWeaveInput weave;
+                        weave.enabled = true;
+                        weave.isHolyPaladin = true;
+                        weave.inGroup = bot->GetGroup()->GetMembersCount() >= 2;
+                        weave.hasTarget = true;
+                        weave.targetAlive = sServerFacade.IsAlive(target);
+                        weave.targetIsPlayer = target->IsPlayer();
+                        weave.targetIsRaidBoss = isBoss;
+                        weave.targetEngaged = target->IsInCombat();
+                        weave.selfHealthPct = AI_VALUE2(uint8, "health", "self target");
+                        weave.partyMemberToHealPct = AI_VALUE2(uint8, "health", "party member to heal");
+                        weave.mediumHealthPct = static_cast<uint8_t>(sPlayerbotAIConfig.mediumHealth);
+                        if (TortoiseBots::HolyMeleeWeaveAllowed(weave))
+                            return false;
+                    }
+
                     // A party healer holds its ground here while a groupmate
                     // needs a real heal (below medium health): Flee() runs up
                     // to twice the flee range in the open world, out of heal
