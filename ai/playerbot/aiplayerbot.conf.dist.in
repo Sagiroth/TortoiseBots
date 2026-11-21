@@ -1492,6 +1492,16 @@ AiPlayerbot.HunterCarveInReachOnly = 0
 # 1 - keep Judgement of Wisdom / Light up on the boss (Default)
 AiPlayerbot.PaladinJudgementUpkeep = 1
 
+# Holy Paladin melee-weave.
+# When enabled, a grouped Holy Paladin bot whose groupmates are all at or above
+# AiPlayerbot.MediumHealth walks into melee of the tank's target (never solo
+# and never on a raid boss), keeps Seal of Wisdom up, auto-attacks, and uses
+# Holy Strike on cooldown (falling back to Crusader Strike only if Holy Strike
+# is unknown). Healing and moving into heal range still take priority.
+# 0 - stay at range and heal; cast Crusader Strike only if already in reach (Default)
+# 1 - walk into melee to weave Holy Strike and Seal of Wisdom
+AiPlayerbot.HolyPaladinMeleeWeave = 0
+
 # Onyxia whelps and eggs.
 # In Onyxia's Lair, while Onyxia is airborne (phase 2), bots that are
 # AoE-capable ranged DPS (mage, warlock, hunter, and ranged shaman and druid

@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GroupMembers.h"
 #include "runtime/policy/class/JudgementUpkeepPolicy.h"
+#include "runtime/policy/class/HolyMeleeWeavePolicy.h"
 
 using namespace ai;
 
@@ -540,4 +541,59 @@ bool ExorcismTrigger::IsActive()
     }
 
     return false;
+}
+
+namespace
+{
+bool ReadHolyMeleeWeaveAllowed(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    using namespace TortoiseBots;
+    HolyMeleeWeaveInput in;
+    in.enabled = sPlayerbotAIConfig.holyPaladinMeleeWeave;
+    in.isHolyPaladin = bot->GetClass() == CLASS_PALADIN && ai->IsHeal(bot);
+    Group* group = bot->GetGroup();
+    in.inGroup = group && group->GetMembersCount() >= 2;
+    in.hasTarget = target != nullptr;
+    if (target)
+    {
+        in.targetAlive = sServerFacade.IsAlive(target);
+        in.targetIsPlayer = target->IsPlayer();
+        if (Creature* creature = ai->GetCreature(target->getObjectGuid()))
+            in.targetIsRaidBoss = creature->IsWorldBoss();
+        in.targetEngaged = target->IsInCombat();
+    }
+    AiObjectContext* context = ai->GetAiObjectContext();
+    in.selfHealthPct = AI_VALUE2(uint8, "health", "self target");
+    in.partyMemberToHealPct = AI_VALUE2(uint8, "health", "party member to heal");
+    in.mediumHealthPct = static_cast<uint8_t>(sPlayerbotAIConfig.mediumHealth);
+    return HolyMeleeWeaveAllowed(in);
+}
+} // namespace
+
+bool CrusaderStrikeWithoutHolyStrikeTrigger::IsActive()
+{
+    if (TortoiseBots::PickHolyMeleeStrike(
+            sPlayerbotAIConfig.holyPaladinMeleeWeave,
+            ai->HasSpell("holy strike"),
+            true) != TortoiseBots::HolyMeleeStrikePick::CrusaderStrikeFallback)
+        return false;
+    return CrusaderStrikeTrigger::IsActive();
+}
+
+bool HolyMeleeWeaveReachTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!ReadHolyMeleeWeaveAllowed(ai, bot, target))
+        return false;
+    return !bot->CanReachWithMeleeAutoAttack(target) || !bot->IsWithinLOSInMap(target, true);
+}
+
+bool HolyMeleeWeaveAttackTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!ReadHolyMeleeWeaveAllowed(ai, bot, target))
+        return false;
+    if (!bot->CanReachWithMeleeAutoAttack(target))
+        return false;
+    return bot->GetVictim() != target || !bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING);
 }

@@ -104,4 +104,5 @@ Bots learn pre-set talent orders at 5-level checkpoints (levels 10–60):
 
 ## Class settings
 
+- [`AiPlayerbot.HolyPaladinMeleeWeave`](../server/settings/class-behaviour.md#aiplayerbotholypaladinmeleeweave): Controls whether grouped Holy paladins walk into melee of non-raid-boss targets to weave *Holy Strike* and *Seal of Wisdom* when no urgent heal is needed.
 - [`AiPlayerbot.PaladinJudgementUpkeep`](../server/settings/class-behaviour.md#aiplayerbotpaladinjudgementupkeep): Controls whether paladins coordinate to maintain Judgement of Wisdom and Judgement of Light on bosses and elite targets.

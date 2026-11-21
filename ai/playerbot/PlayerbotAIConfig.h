@@ -804,6 +804,8 @@ public:
     bool hunterCarveInReachOnly;
     // Paladin bots keep Judgement of Wisdom / Light up on the boss in groups (opt-in).
     bool paladinJudgementUpkeep;
+    // Holy paladin bots in groups walk into melee to weave Holy Strike and Seal of Wisdom (opt-in).
+    bool holyPaladinMeleeWeave;
     // Onyxia phase 2 whelp duty for AoE ranged DPS and egg-cave avoidance (opt-in).
     bool onyxiaWhelpsAndEggs;
     bool dungeonTactics;

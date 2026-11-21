@@ -25,6 +25,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.EnableOffSpecStrategies`](#aiplayerbotenableoffspecstrategies) | `1` | Gives hybrid bots their off-spec kit by default: healers deal damage, DPS specs off-heal. |
 | [`AiPlayerbot.HunterCarveInReachOnly`](#aiplayerbothuntercarveinreachonly) | `0` | Survival hunters cast Carve only on a target already in melee reach, never walking in for it. |
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
+| [`AiPlayerbot.HolyPaladinMeleeWeave`](#aiplayerbotholypaladinmeleeweave) | `0` | Grouped Holy paladins walk into melee of non-raid-boss targets to weave Holy Strike and Seal of Wisdom when no urgent heal is needed. |
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
 | [`AiPlayerbot.SapApproachAvoidPack`](#aiplayerbotsapapproachavoidpack) | `0` | Makes rogues sneak round a pack to Sap the marked mob, or skip the Sap when there is no safe way in. |
@@ -85,6 +86,19 @@ A hunter that knows Aspect of the Viper switches to it during combat when its ma
 
 Once its mana recovers to 60% or higher, the hunter switches back to Aspect of the Hawk. Between 20% and 60% mana, the hunter maintains its current aspect to avoid unnecessary aspect flipping.
 Player-assigned aspect strategies (such as Aspect of the Hawk, Monkey, Cheetah, Pack, Beast or Wild) are never overridden, and hunters running Aspect of the Cheetah or Pack are left undisturbed. When set to `0`, Aspect of the Viper remains a manual player action and the bot remains in Aspect of the Hawk.
+
+</details>
+
+### `AiPlayerbot.HolyPaladinMeleeWeave`
+Makes grouped Holy paladin bots walk into melee of non-raid-boss targets to weave *Holy Strike* and *Seal of Wisdom* when no group member needs an urgent heal.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- When set to `0` (default), Holy paladins stay at casting range and only cast *Crusader Strike* if an enemy is already in melee reach.
+- When set to `1`, a grouped Holy paladin whose groupmates (and self) are all at or above `AiPlayerbot.MediumHealth` walks into melee of the tank's engaged target, keeps *Seal of Wisdom* up, auto-attacks, and casts *Holy Strike* on cooldown (falling back to *Crusader Strike* only if *Holy Strike* is unknown).
+- Never walks into melee when solo or against a raid/world boss, and healing or moving into heal range always takes priority over melee-weaving.
 
 </details>
 
