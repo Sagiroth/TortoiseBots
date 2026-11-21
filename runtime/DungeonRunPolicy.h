@@ -13479,9 +13479,9 @@ inline void StartWalkBack(Run& r, const Facts& f)
             toCp > kSeeYd;
         if (!atStart)
         {
-            std::size_t const near = NearestMovePoint(r, f);
-            std::size_t const restored = (near != static_cast<std::size_t>(-1) && near >= r.startStep &&
-                near < r.checkpoint && !DirectStepOnWay(r, near)) ? near : r.checkpoint;
+            std::size_t const nearest = NearestMovePoint(r, f);
+            std::size_t const restored = (nearest != static_cast<std::size_t>(-1) && nearest >= r.startStep &&
+                nearest < r.checkpoint && !DirectStepOnWay(r, nearest)) ? nearest : r.checkpoint;
             NoteCheckpoint(r, restored);
         }
     }
