@@ -26,6 +26,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.HunterCarveInReachOnly`](#aiplayerbothuntercarveinreachonly) | `0` | Survival hunters cast Carve only on a target already in melee reach, never walking in for it. |
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
+| [`AiPlayerbot.ProtPaladinDungeonWisdom`](#aiplayerbotprotpaladindungeonwisdom) | `1` | Keeps Seal of Wisdom on Protection paladin tanks for 5-man trash and backfills Judgement of Wisdom. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
 | [`AiPlayerbot.SapApproachAvoidPack`](#aiplayerbotsapapproachavoidpack) | `0` | Makes rogues sneak round a pack to Sap the marked mob, or skip the Sap when there is no safe way in. |
 | [`AiPlayerbot.WarlockPetBySpec`](#aiplayerbotwarlockpetbyspec) | `1` | Selects warlock demon summons based on active talent specialization. |
@@ -99,11 +100,25 @@ In a group, paladin bots coordinate to maintain debuffs on bosses, elite targets
 - Retribution paladins prioritize Judgement of Wisdom.
 - Holy paladins prioritize Judgement of Light.
 - If two paladins of the same specialization are present, the second takes the alternate debuff so two paladins never judge the same debuff. A third non-tank paladin maintains none.
-- Protection paladins serving as tanks never own a group judgement (keeps its own Seal for threat generation).
+- Protection paladins serving as tanks never own a group judgement (keeps its own Seal for threat generation), except in 5-man dungeons with [`AiPlayerbot.ProtPaladinDungeonWisdom`](#aiplayerbotprotpaladindungeonwisdom) enabled when no non-tank paladin can own Judgement of Wisdom.
 
 Paladins refresh their assigned judgement when ~4 seconds remain on the target debuff. Healers only judge while their mana is at least 50% and no group member is below medium health. Paladins require at least medium mana to judge. Judgements are never cast on targets below 25% health or on enemy players. A still-fresh Judgement (whoever applied it, including a player paladin) is left alone until ~4 s remain.
 
 When set to `0`, paladins use their default individual rotations without group coordination.
+
+</details>
+
+### `AiPlayerbot.ProtPaladinDungeonWisdom`
+Protection paladin tanks use Seal of Wisdom on 5-man dungeon trash and backfill Judgement of Wisdom when no other paladin in the dungeon group owns it.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- In 5-man dungeons (never raids or open world solo), a Protection paladin keeps Seal of Wisdom up on trash to avoid running out of mana for Consecration and cleanses.
+- On dungeon bosses, the tank still uses Seal of Righteousness for threat unless mana falls below `AiPlayerbot.MediumMana`.
+- When `AiPlayerbot.PaladinJudgementUpkeep` is also enabled and no non-tank paladin in the 5-man group can own Judgement of Wisdom, the Protection tank maintains Judgement of Wisdom on its target.
+- When set to `0`, Protection paladins use Seal of Righteousness by default everywhere above medium mana and never own a group judgement.
 
 </details>
 
