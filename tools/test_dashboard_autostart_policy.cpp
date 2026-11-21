@@ -94,6 +94,27 @@ void TestEnvironmentAndArgs()
     assert(!hasPass);
     assert(hasLogin && hasChar && hasWorld);
 
+    auto findEnv = [](std::vector<LaunchEnv> const& v, std::string const& k) -> std::string {
+        for (auto const& kv : v)
+            if (kv.key == k)
+                return kv.value;
+        return "";
+    };
+
+    // Bare host keeps the 127.0.0.1 default (HTTP_HOST not overridden).
+    assert(findEnv(env, "HTTP_HOST").empty());
+    assert(EffectiveHttpHost(false, "") == "127.0.0.1");
+
+    // Container binds 0.0.0.0 so published ports are reachable from the host.
+    auto containerEnv = BuildEnvironment(login, ch, world, 9195, 8095, "/opt/dbc", "/opt/.icon-cache", true, "");
+    assert(findEnv(containerEnv, "HTTP_HOST") == "0.0.0.0");
+    assert(EffectiveHttpHost(true, "") == "0.0.0.0");
+
+    // Explicit HTTP_HOST in the environment is preserved even inside a container.
+    auto presetEnv = BuildEnvironment(login, ch, world, 9195, 8095, "/opt/dbc", "/opt/.icon-cache", true, "127.0.0.1");
+    assert(findEnv(presetEnv, "HTTP_HOST").empty());
+    assert(EffectiveHttpHost(true, "127.0.0.1") == "127.0.0.1");
+
     auto argsEmptyPass = BuildArgs(true);
     assert(argsEmptyPass.size() == 1 && argsEmptyPass[0] == "-db-pass=");
     assert(BuildArgs(false).empty());
