@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-// Opt-in Holy Paladin melee-weaving (AiPlayerbot.HolyPaladinMeleeWeave,
-// default 0). When enabled, a grouped Holy Paladin whose groupmates are all
+// Holy Paladin melee-weaving (AiPlayerbot.HolyPaladinMeleeWeave,
+// default 1). When enabled, a grouped Holy Paladin whose groupmates are all
 // at or above the medium-health threshold (nothing more urgent than the
 // light-heal band) walks into melee of the tank's target, keeps Seal of
 // Wisdom up, auto-attacks, and casts Holy Strike on cooldown (falling back
