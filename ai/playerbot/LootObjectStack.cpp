@@ -13,6 +13,7 @@
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/policy/hire/HireLootPolicy.h"
 #include "../../runtime/RemoteCommanderTasks.h"
+#include "../../runtime/GuildOrderStore.h"
 #include "playerbot/GuildOrderSources.h"
 
 using namespace ai;
@@ -479,7 +480,17 @@ bool LootObject::IsLootPossible(Player* bot)
     // and they are also the only ones that reached this point without any capacity test: body loot
     // got one above. Queue them only when the bot has somewhere to put the loot.
     if ((skillId != SKILL_NONE || guid.IsGameObject()) && !HasBagRoomForLoot(ai, bot))
+    {
+        if (bot->GetGuildId())
+        {
+            std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+                TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+            if (order && order->state == TortoiseBots::GuildOrders::OrderState::Working &&
+                order->itemId && bot->GetItemCount(order->itemId) > 0)
+                TortoiseBots::GuildOrders::NoteBagsFull(bot->GetGUIDLow());
+        }
         return false;
+    }
     // Bone Chew Toy piles never queue even if ActivateToQuest says yes:
     // Refresh (the open path) already refuses them, and this Add path would
     // otherwise re-queue the same junk pile every sweep.

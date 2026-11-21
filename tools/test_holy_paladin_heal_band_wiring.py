@@ -118,9 +118,10 @@ class HolyPaladinHealBandWiringTest(unittest.TestCase):
         self.assertIn('"seal in melee"', CONTEXT.read_text())
 
     def test_ret_prot_keep_bare_seal(self):
-        for path, cls in ((RET, "RetributionPaladinStrategy"), (PROT, "ProtectionPaladinStrategy")):
+        for path, cls, seal in ((RET, "RetributionPaladinStrategy", "seal"),
+                                (PROT, "ProtectionPaladinStrategy", "prot seal of righteousness")):
             combat = rows(method_body(path, cls, "InitCombatTriggers"))
-            self.assertTrue(any(trigger == "seal" for trigger, _, _ in combat), path.name)
+            self.assertTrue(any(trigger == seal for trigger, _, _ in combat), path.name)
 
     def test_heal_bands_unchanged(self):
         combat = rows(method_body(STRATEGY, "HolyPaladinStrategy", "InitCombatTriggers"))

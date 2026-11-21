@@ -21,6 +21,7 @@
 #include "Player.h"
 #include "WorldSession.h"
 #include "Chat.h"
+#include "../runtime/DashboardLauncher.h"
 #include "../runtime/ObservabilityEmitter.h"
 #include "ModuleLog.h"
 #include "ModuleVersion.h"
@@ -140,7 +141,8 @@ void BotPlayerAdapter::OnLogin(Player* player)
                 latestAddon.c_str(), kAddonSourceUrl);
         if (player->GetSession()->GetSecurity() >= SEC_DEVELOPER && sObservabilityEmitter.IsEnabled())
         {
-            ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Observability dashboard active: http://localhost:8095/dashboard");
+            ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Observability dashboard active: http://localhost:%u/dashboard",
+                static_cast<unsigned>(DashboardLauncher::Instance().HttpPort()));
         }
     }
     BotManager::Instance().OnPlayerLogin(player);

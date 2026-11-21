@@ -47,7 +47,7 @@ Nothing to do: building the module downloads the dashboard program from the late
 
 If the build had no internet, it prints a warning and goes on: download the file for your system from the [latest release](https://github.com/TortoiseBots/TortoiseBots/releases/latest) and put it in the same folder as `mangosd` (on Linux, run `chmod +x tortoise-observability-linux-amd64`). To skip the download, configure the build with `-DTORTOISEBOTS_DASHBOARD_DOWNLOAD=OFF`.
 
-If the file is somewhere else, set `AiPlayerbot.ObservabilityBin` in `aiplayerbot.conf`. If something is already listening on port `8095`, `mangosd` leaves it alone and skips starting a second copy.
+If the file is somewhere else, set `AiPlayerbot.ObservabilityBin` in `aiplayerbot.conf`. If the dashboard already runs, `mangosd` does not start a second copy. If another program (for example Docker) uses port `8095`, the dashboard starts on the next free port (`8096`, `8097`, ...): the server log and the GM login message show the address. To pick the port yourself, set `AiPlayerbot.ObservabilityHttpPort` in `aiplayerbot.conf`. Inside a container (`/.dockerenv` or `/run/.containerenv`), the auto-started dashboard binds `0.0.0.0` so published ports are reachable (set `HTTP_HOST` to override).
 
 What you need before you start (for manual or script setup):
 

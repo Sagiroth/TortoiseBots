@@ -94,9 +94,74 @@ void TestEnvironmentAndArgs()
     assert(!hasPass);
     assert(hasLogin && hasChar && hasWorld);
 
+    auto findEnv = [](std::vector<LaunchEnv> const& v, std::string const& k) -> std::string {
+        for (auto const& kv : v)
+            if (kv.key == k)
+                return kv.value;
+        return "";
+    };
+
+    // Bare host keeps the 127.0.0.1 default (HTTP_HOST not overridden).
+    assert(findEnv(env, "HTTP_HOST").empty());
+    assert(EffectiveHttpHost(false, "") == "127.0.0.1");
+
+    // Container binds 0.0.0.0 so published ports are reachable from the host.
+    auto containerEnv = BuildEnvironment(login, ch, world, 9195, 8095, "/opt/dbc", "/opt/.icon-cache", true, "");
+    assert(findEnv(containerEnv, "HTTP_HOST") == "0.0.0.0");
+    assert(EffectiveHttpHost(true, "") == "0.0.0.0");
+
+    // Explicit HTTP_HOST in the environment is preserved even inside a container.
+    auto presetEnv = BuildEnvironment(login, ch, world, 9195, 8095, "/opt/dbc", "/opt/.icon-cache", true, "127.0.0.1");
+    assert(findEnv(presetEnv, "HTTP_HOST").empty());
+    assert(EffectiveHttpHost(true, "127.0.0.1") == "127.0.0.1");
+
     auto argsEmptyPass = BuildArgs(true);
     assert(argsEmptyPass.size() == 1 && argsEmptyPass[0] == "-db-pass=");
     assert(BuildArgs(false).empty());
+}
+
+void TestChooseHttpPort()
+{
+    {
+        // Configured port free: use it.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t) { return PortState::Free; });
+        assert(c.port == 8095 && !c.alreadyRunning);
+    }
+    {
+        // Our dashboard already on the configured port: reuse, do not start another.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t p) { return p == 8095 ? PortState::Dashboard : PortState::Free; });
+        assert(c.port == 8095 && c.alreadyRunning);
+    }
+    {
+        // Another program (e.g. Docker) on 8095: take the next free port.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t p) { return p == 8095 ? PortState::Foreign : PortState::Free; });
+        assert(c.port == 8096 && !c.alreadyRunning);
+    }
+    {
+        // A dashboard left on a fallback port wins over a free configured port.
+        PortChoice c = ChooseHttpPort(8095, [](uint16_t p) { return p == 8097 ? PortState::Dashboard : PortState::Free; });
+        assert(c.port == 8097 && c.alreadyRunning);
+    }
+    {
+        // Every port in the span taken by others: no port.
+        int probes = 0;
+        PortChoice c = ChooseHttpPort(8095, [&probes](uint16_t) { ++probes; return PortState::Foreign; });
+        assert(c.port == 0 && !c.alreadyRunning);
+        assert(probes == kHttpPortSpan);
+    }
+    {
+        // The span stops at the top of the port range.
+        PortChoice c = ChooseHttpPort(65535, [](uint16_t) { return PortState::Foreign; });
+        assert(c.port == 0);
+    }
+    {
+        // 0 means the default port.
+        PortChoice c = ChooseHttpPort(0, [](uint16_t) { return PortState::Free; });
+        assert(c.port == 8095);
+    }
+    assert(LooksLikeDashboardMetrics("# TYPE tortoisebots_snapshots_total counter\ntortoisebots_snapshots_total 0\n"));
+    assert(!LooksLikeDashboardMetrics("HTTP/1.1 200 OK\r\n\r\n<html>Docker</html>"));
+    assert(!LooksLikeDashboardMetrics(""));
 }
 
 } // namespace
@@ -106,6 +171,7 @@ int main()
     TestParseDbInfo();
     TestPaths();
     TestEnvironmentAndArgs();
+    TestChooseHttpPort();
     std::cout << "test_dashboard_autostart_policy: ALL PASSED\n";
     return 0;
 }

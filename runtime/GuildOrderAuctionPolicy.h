@@ -188,6 +188,23 @@ inline std::size_t PickAuctionListing(std::vector<AuctionListing> const& listing
     return cover != kNoAuctionListing ? cover : partial;
 }
 
+// What one visit is expected to spend: the listings it would buy one after
+// another until the miss is covered or nothing fits.
+inline uint64_t PlannedAuctionVisitCost(std::vector<AuctionListing> listings, uint32_t missing)
+{
+    uint64_t cost = 0;
+    while (missing)
+    {
+        std::size_t const pick = PickAuctionListing(listings, missing);
+        if (pick == kNoAuctionListing)
+            break;
+        cost += listings[pick].buyout;
+        missing = listings[pick].count >= missing ? 0 : missing - listings[pick].count;
+        listings.erase(listings.begin() + std::ptrdiff_t(pick));
+    }
+    return cost;
+}
+
 // Per-reagent memory of the auction leg: what stops a hand-off from bouncing
 // straight back to the same counter.
 struct AuctionLegCycle

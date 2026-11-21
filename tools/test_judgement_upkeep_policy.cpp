@@ -34,9 +34,9 @@ static JudgementPaladin P(uint64_t id, bool healer, bool wisdom = true, bool lig
     return p;
 }
 
-static JudgementKind Kind(uint64_t self, const std::vector<JudgementPaladin>& group)
+static JudgementKind Kind(uint64_t self, const std::vector<JudgementPaladin>& group, bool tankMayOwnWisdom = false)
 {
-    return JudgementKindFor(self, group.data(), group.size());
+    return JudgementKindFor(self, group.data(), group.size(), tankMayOwnWisdom);
 }
 
 static void TestOwnership()
@@ -116,6 +116,69 @@ static void TestTankNeverOwns()
     CHECK(Kind(1, protRetRet) == JudgementKind::None);
     CHECK(Kind(2, protRetRet) == JudgementKind::Wisdom);
     CHECK(Kind(3, protRetRet) == JudgementKind::Light);
+}
+
+static void TestTankDungeonWisdom()
+{
+    // Lone Protection tank in a 5-man dungeon with the flag on: owns Wisdom if known.
+    CHECK(Kind(1, { P(1, false, true, true, true) }, true) == JudgementKind::Wisdom);
+    CHECK(Kind(1, { P(1, false, false, true, true) }, true) == JudgementKind::None);
+
+    // Tank + Retribution (knows Wisdom): Retribution owns Wisdom, tank owns None.
+    std::vector<JudgementPaladin> protRet = { P(1, false, true, true, true), P(2, false) };
+    CHECK(Kind(1, protRet, true) == JudgementKind::None);
+    CHECK(Kind(2, protRet, true) == JudgementKind::Wisdom);
+
+    // Tank + Retribution (lacks Wisdom, has Light): Retribution takes Light, tank backfills Wisdom.
+    std::vector<JudgementPaladin> protRetNoWis = { P(1, false, true, true, true), P(2, false, false, true) };
+    CHECK(Kind(1, protRetNoWis, true) == JudgementKind::Wisdom);
+    CHECK(Kind(2, protRetNoWis, true) == JudgementKind::Light);
+
+    // Tank + Holy (both seals): Holy owns Light, tank backfills Wisdom.
+    std::vector<JudgementPaladin> protHoly = { P(1, false, true, true, true), P(2, true) };
+    CHECK(Kind(1, protHoly, true) == JudgementKind::Wisdom);
+    CHECK(Kind(2, protHoly, true) == JudgementKind::Light);
+
+    // Tank + Holy (Wisdom only): Holy backfills Wisdom, tank owns None.
+    std::vector<JudgementPaladin> protHolyWis = { P(1, false, true, true, true), P(2, true, true, false) };
+    CHECK(Kind(1, protHolyWis, true) == JudgementKind::None);
+    CHECK(Kind(2, protHolyWis, true) == JudgementKind::Wisdom);
+
+    // Tank + Retribution + Holy: non-tanks own both, tank owns None.
+    std::vector<JudgementPaladin> trio = { P(1, false, true, true, true), P(2, false), P(3, true) };
+    CHECK(Kind(1, trio, true) == JudgementKind::None);
+    CHECK(Kind(2, trio, true) == JudgementKind::Wisdom);
+    CHECK(Kind(3, trio, true) == JudgementKind::Light);
+
+    // Two tanks: lowest guid tank owns Wisdom, second tank owns None.
+    std::vector<JudgementPaladin> twoTanks = { P(5, false, true, true, true), P(3, false, true, true, true) };
+    CHECK(Kind(3, twoTanks, true) == JudgementKind::Wisdom);
+    CHECK(Kind(5, twoTanks, true) == JudgementKind::None);
+
+    // Tank that prefers SoR on bosses does not refill an empty slot with SoW mid-cycle.
+    CHECK(!ShouldCastUpkeepSeal(JudgementKind::Wisdom, false, false, false, false, false));
+    CHECK(ShouldCastUpkeepSeal(JudgementKind::Wisdom, false, false, true, true, false));
+    CHECK(ShouldCastUpkeepSeal(JudgementKind::Wisdom, true, false, true, true, false));
+}
+
+static void TestProtWantedSeal()
+{
+    // Level < 18 (does not know Seal of Wisdom): always Righteousness.
+    CHECK(ProtPaladinWantedSeal(true, true, false, true, false) == ProtPaladinSeal::Righteousness);
+    CHECK(ProtPaladinWantedSeal(true, true, false, false, false) == ProtPaladinSeal::Righteousness);
+
+    // Low mana: always Wisdom regardless of zone or boss.
+    CHECK(ProtPaladinWantedSeal(true, true, true, true, true) == ProtPaladinSeal::Wisdom);
+    CHECK(ProtPaladinWantedSeal(true, false, false, true, true) == ProtPaladinSeal::Wisdom);
+    CHECK(ProtPaladinWantedSeal(false, true, false, true, true) == ProtPaladinSeal::Wisdom);
+
+    // 5-man dungeon with flag on: Wisdom on trash, Righteousness on boss.
+    CHECK(ProtPaladinWantedSeal(true, true, false, false, true) == ProtPaladinSeal::Wisdom);
+    CHECK(ProtPaladinWantedSeal(true, true, true, false, true) == ProtPaladinSeal::Righteousness);
+
+    // Raids / solo (not 5-man) or flag off: Righteousness above medium mana.
+    CHECK(ProtPaladinWantedSeal(true, false, false, false, true) == ProtPaladinSeal::Righteousness);
+    CHECK(ProtPaladinWantedSeal(false, true, false, false, true) == ProtPaladinSeal::Righteousness);
 }
 
 static void TestSealAvailability()
@@ -242,6 +305,8 @@ int main()
 {
     TestOwnership();
     TestTankNeverOwns();
+    TestTankDungeonWisdom();
+    TestProtWantedSeal();
     TestSealAvailability();
     TestTarget();
     TestAffordable();
