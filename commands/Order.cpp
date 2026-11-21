@@ -22,6 +22,7 @@
 #include "../runtime/RandomBotAccountRegistry.h"
 #include "../runtime/AhBotSellerAccount.h"
 #include "../ai/playerbot/GuildOrderSources.h"
+#include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Group.h"
@@ -705,6 +706,14 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     if (!GuildOrders::IsOrderableItem(proto))
     {
         OrderError(handler, "bound", "That item is bound when picked up (or a quest or timed item), so the bot cannot hand it over.");
+        return true;
+    }
+
+    // A farm order never buys, and a shop item has nothing to farm.
+    if (type == OrderType::Farm && ::ai::ItemUsageValue::IsItemSoldByAnyVendor(proto) &&
+        !::ai::ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto))
+    {
+        OrderError(handler, "nosource", "Every shop sells that item: a farm order only farms.");
         return true;
     }
 

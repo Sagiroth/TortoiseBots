@@ -827,6 +827,7 @@ public:
         uint32_t count = 0;
         uint32_t nextTryMs = 0;  // world uptime ms before this request retries
         uint32_t queuedAtMs = 0; // world uptime ms the request first queued
+        bool makerOnly = false;  // only a bot that makes the item may take it
         QueuedSubOrderScan scan;
     };
 
@@ -847,11 +848,16 @@ public:
         }
     };
 
-    bool QueueSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
+    bool QueueSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, bool makerOnly)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
+        auto parent = m_orders.find(parentBotGuidLow);
+        if (parent == m_orders.end() || !itemId || !count)
             return false;
+        if (makerOnly)
+            parent->second.makerSubItems.insert(itemId);
+        else
+            parent->second.makerSubItems.erase(itemId);
         QueuedSubOrderKey key{ parentBotGuidLow, itemId };
         auto queued = m_queued.find(key);
         // Same item, higher count: keep the larger need, never shrink a
@@ -860,12 +866,14 @@ public:
         {
             if (count > queued->second.count)
                 queued->second.count = count;
+            queued->second.makerOnly = makerOnly;
             return true;
         }
         QueuedSubOrder request;
         request.parentBotGuidLow = parentBotGuidLow;
         request.itemId = itemId;
         request.count = count;
+        request.makerOnly = makerOnly;
         // Stamp the queue time once: a retry keeps it, so the clock pause a
         // queued request causes expires with the request, not with each retry.
         request.queuedAtMs = WorldTimer::getMSTime();
@@ -2312,16 +2320,51 @@ public:
         return out;
     }
 
+    void NoteMakerSubMissed(uint32_t parentBotGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto parent = m_orders.find(parentBotGuidLow);
+        if (parent == m_orders.end() || !itemId)
+            return;
+        parent->second.makerSubItems.erase(itemId);
+        parent->second.makerSubMissed.insert(itemId);
+    }
+
+    bool MakerSubOrderMissed(uint32_t parentBotGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto parent = m_orders.find(parentBotGuidLow);
+        return parent != m_orders.end() && parent->second.makerSubMissed.count(itemId) != 0;
+    }
+
     void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto parent = m_orders.find(parentBotGuidLow);
         if (parent == m_orders.end() || IsFinished(parent->second.record.state) || !itemId || !count)
             return;
+        OrderRecord& record = parent->second.record;
+        // No maker took the reagent (or the maker failed): the parent farms
+        // it itself instead of asking the player. Dropping a leg on this item
+        // makes the ladder re-plan it.
+        if (parent->second.makerSubItems.erase(itemId))
+        {
+            parent->second.makerSubMissed.insert(itemId);
+            if (record.state == OrderState::Working &&
+                (record.supplyItemId == itemId || record.supplyStep == SupplyStep::None))
+            {
+                record.supplyStep = SupplyStep::None;
+                record.supplyItemId = 0;
+                record.supplyCount = 0;
+                record.supplyGoldCount = 0;
+                record.supplyReturnStep = SupplyStep::None;
+                MarkDirtyLocked(parent->second);
+            }
+            return;
+        }
         // The failed sub-order leaves its item on the parent's need list:
         // merge with the items already waiting so parallel sub-orders that
         // fail together each keep their row.
-        OrderRecord& record = parent->second.record;
         MergeNeedItem(record.needItems, itemId, count);
         if (record.type == OrderType::Craft)
         {
@@ -2946,6 +2989,8 @@ private:
         std::string reportNeed;
         OrderStepHistory steps; // memory only: the addon's step timeline
         std::unordered_map<uint32_t, AuctionLegCycle> auctionCycles; // per reagent, memory only
+        std::unordered_set<uint32_t> makerSubItems;  // reagents offered to makers only, memory only
+        std::unordered_set<uint32_t> makerSubMissed; // reagents no maker took: farmed by the bot itself
         uint32_t auctionGoldReturnItemId = 0; // bank gold top-up returning to its auction visit
         uint32_t auctionReachStartedMs = 0; // arrived in the auctioneer's city; 0 = not yet
         uint32_t auctionLegStartedMs = 0;   // auction leg entered; bounds the travel
@@ -3399,6 +3444,11 @@ bool PlaceSubOrders(uint32_t nowMs)
             if (!evalUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
                 candidate.gathers))
                 continue;
+            if (request.makerOnly)
+            {
+                candidate.canFarm = false;
+                candidate.gathers = false;
+            }
             // A busy candidate keeps the verdicts: only a busy bot that can
             // make or farm the item makes the request worth retrying.
             candidate.queuedBusy = candidate.hasOrder;
@@ -3773,8 +3823,10 @@ bool SubOrderDelivered(uint32_t parentBotGuidLow, uint32_t itemId)
     return OrderStore::Instance().TakeDeliveredSubOrder(parentBotGuidLow, itemId);
 }
 
-bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
+bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, bool makerOnly)
 {
+    if (makerOnly && (!sPlayerbotAIConfig.guildOrderSubOrders || VendorSellsUnlimited(itemId)))
+        OrderStore::Instance().NoteMakerSubMissed(parentBotGuidLow, itemId);
     if (!sPlayerbotAIConfig.guildOrderSubOrders || !itemId || !count)
         return false;
     // A reagent any vendor sells without limit is bought by the crafter,
@@ -3799,7 +3851,7 @@ bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
     }
     if (existing)
         return true;
-    return OrderStore::Instance().QueueSubOrder(parentBotGuidLow, itemId, count);
+    return OrderStore::Instance().QueueSubOrder(parentBotGuidLow, itemId, count, makerOnly);
 }
 uint32_t BranchGoldCapRemaining(uint32_t botGuidLow)
 {
@@ -3826,6 +3878,11 @@ uint32_t BranchGoldCapRemaining(uint32_t botGuidLow)
 void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
 {
     OrderStore::Instance().NoteSubOrderFailed(parentBotGuidLow, itemId, count);
+}
+
+bool MakerSubOrderMissed(uint32_t parentBotGuidLow, uint32_t itemId)
+{
+    return OrderStore::Instance().MakerSubOrderMissed(parentBotGuidLow, itemId);
 }
 
 bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type)

@@ -16,8 +16,10 @@ int main()
     CHECK(NextSupplyStep(options) == SupplyStep::Bank);
     options.bankAttempted = true;
     CHECK(NextSupplyStep(options) == SupplyStep::AuctionHouse);
+    // The auction house comes before the bot's own farm.
     options.selfCanFarm = true;
-    CHECK(NextSupplyStep(options) == SupplyStep::Farm);
+    CHECK(NextSupplyStep(options) == SupplyStep::AuctionHouse);
+    // Crafting an intermediate itself comes before the auction house.
     options.selfCanCraft = true;
     CHECK(NextSupplyStep(options) == SupplyStep::Craft);
     // A running auction leg keeps its turn; once it ends the bot falls back.
@@ -27,10 +29,24 @@ int main()
     CHECK(NextSupplyStep(options) == SupplyStep::Craft);
     options.auctionHouseLive = false;
     options.selfCanCraft = false;
+    // A farmable item goes to a maker first (maker-only), then the own farm.
+    CHECK(NextSupplyStep(options) == SupplyStep::Sub);
+    CHECK(SubOrderMakerOnly(options));
+    options.makerSubAttempted = true;
+    CHECK(NextSupplyStep(options) == SupplyStep::Farm);
+    // Not farmable: any guild bot may take it, then the need list.
     options.selfCanFarm = false;
     CHECK(NextSupplyStep(options) == SupplyStep::Sub);
+    CHECK(!SubOrderMakerOnly(options));
     options.subAttempted = true;
     CHECK(NextSupplyStep(options) == SupplyStep::Need);
+    // No delegation at all (enchant reagents): a farmable item is farmed.
+    options = SupplyOptions{};
+    options.bankAttempted = true;
+    options.auctionHouseAttempted = true;
+    options.selfCanFarm = true;
+    options.subAttempted = true;
+    CHECK(NextSupplyStep(options) == SupplyStep::Farm);
     // The mailbox leg walks for the supply item, never the order item.
     CHECK(SupplyMailItemId(SupplyStep::Bags, 123, 456) == 123);
     CHECK(SupplyMailItemId(SupplyStep::Bank, 123, 456) == 456);
@@ -75,6 +91,15 @@ int main()
     CHECK(GuildGoldShortfall(500, 300, 100, 200) == 100);
     CHECK(GuildGoldShortfall(300, 300, 100, 200) == 0);
     CHECK(GuildGoldShortfall(500, 300, 100, 50) == 50);
+    // Guild gold first: top up the whole visit within the cap.
+    CHECK(GuildGoldFirstTopUp(500, 0, UINT32_MAX) == 500);
+    CHECK(GuildGoldFirstTopUp(500, 200, UINT32_MAX) == 300);
+    CHECK(GuildGoldFirstTopUp(500, 600, UINT32_MAX) == 0);
+    CHECK(GuildGoldFirstTopUp(500, 0, 100) == 100);
+    CHECK(GuildGoldFirstTopUp(500, 0, 0) == 0);
+    CHECK(GuildGoldSpent(300, 500) == 300);
+    CHECK(GuildGoldSpent(300, 100) == 100);
+    CHECK(GuildGoldSpent(300, 0) == 0);
 
     return failures ? 1 : 0;
 }

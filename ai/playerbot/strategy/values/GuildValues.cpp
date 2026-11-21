@@ -516,23 +516,38 @@ public:
         {
             canFarm_ = IsUnlimitedVendorItem(candidate_.itemId) &&
                 order_.reason != OrderReason::NoSource;
+            verdict_ = canFarm_ ? OrderReason::None : OrderReason::NoSource;
             return canFarm_;
         }
         if (IsUnlimitedVendorItem(candidate_.itemId))
+        {
             canFarm_ = order_.reason != OrderReason::NoSource;
+            verdict_ = canFarm_ ? OrderReason::None : OrderReason::NoSource;
+        }
         // The farm leg gave up on this item (no zone of the plan yielded a
         // spot): the plan still lists zones, so the recorded verdict alone
         // stops a retry without planning again.
         else if (order_.supplyItemId == candidate_.itemId &&
             order_.supplyStep == SupplyStep::Farm && order_.reason == OrderReason::NoSource)
+        {
             canFarm_ = false;
+            verdict_ = OrderReason::NoSource;
+        }
         else
         {
             TortoiseBots::GuildOrders::SourcePlan farm =
                 ai::PlanGuildOrderSources(bot_, candidate_.itemId, OrderType::Farm);
             canFarm_ = farm.verdict == OrderReason::None && !farm.zones.empty();
+            verdict_ = canFarm_ ? OrderReason::None :
+                (farm.verdict == OrderReason::None ? OrderReason::NoSource : farm.verdict);
         }
         return canFarm_;
+    }
+    // Why the bot cannot farm the item (None while it can).
+    OrderReason Verdict()
+    {
+        CanFarm();
+        return verdict_;
     }
 private:
     Player* bot_ = nullptr;
@@ -540,7 +555,16 @@ private:
     SupplyCandidate const& candidate_;
     bool planned_ = false;
     bool canFarm_ = false;
+    OrderReason verdict_ = OrderReason::None;
 };
+
+// Only a craft order offers its reagents to a maker before farming them:
+// the other order types never delegate a farmable item.
+bool MakerSubAttempted(OrderRecord const& order, uint32_t itemId)
+{
+    return order.type != OrderType::Craft ||
+        TortoiseBots::GuildOrders::MakerSubOrderMissed(order.botGuidLow, itemId);
+}
 
 SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplySnapshot* snapshot, FarmableVerdict* farmable);
@@ -577,6 +601,12 @@ SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCan
         return SupplyStep::Need;
     if (candidate.craft)
         return SupplyStep::Craft;
+    FarmableVerdict localVerdict(bot, order, candidate);
+    FarmableVerdict& verdict = farmable ? *farmable : localVerdict;
+    // A farm order is the bot's own trip into the world: no bank, no auction
+    // house, no other bot. None tells the caller the order cannot run.
+    if (order.type == OrderType::Farm && candidate.itemId == order.itemId)
+        return verdict.CanFarm() ? SupplyStep::Farm : SupplyStep::None;
     SupplySnapshot local;
     SupplySnapshot& snap = snapshot ? *snapshot : local;
     if (!snap.nowMs)
@@ -588,8 +618,6 @@ SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCan
         !TortoiseBots::GuildOrders::GuildHasBank(bot->GetGuildId());
     bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
-    FarmableVerdict localVerdict(bot, order, candidate);
-    FarmableVerdict& verdict = farmable ? *farmable : localVerdict;
     // No gold of its own and none it may take from the guild: the auction
     // house leg could only walk to a city and back.
     bool const auctionUnaffordable = bot->GetMoney() == 0 &&
@@ -651,6 +679,7 @@ SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCan
         // Enchant reagents are never delegated: the auction leg hands off to
         // the need list instead of a sub-order.
         options.subAttempted = current == SupplyStep::Need || order.type == OrderType::Enchant;
+        options.makerSubAttempted = MakerSubAttempted(order, candidate.itemId);
         return TortoiseBots::GuildOrders::NextSupplyStep(options);
     }
     SupplyOptions options;
@@ -661,6 +690,7 @@ SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCan
     options.selfCanCraft = candidate.craft;
     options.selfCanFarm = verdict.CanFarm();
     options.subAttempted = order.type == OrderType::Enchant;
+    options.makerSubAttempted = MakerSubAttempted(order, candidate.itemId);
     return TortoiseBots::GuildOrders::NextSupplyStep(options);
 }
 
@@ -719,9 +749,22 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
         step = SupplyStep::Need;
     if (step == SupplyStep::Sub)
     {
-        if (TortoiseBots::GuildOrders::RequestSupply(order.botGuidLow, candidate.itemId, candidate.count))
+        bool makerOnly = false;
+        if (!MakerSubAttempted(order, candidate.itemId))
+        {
+            FarmableVerdict farmable(bot, order, candidate);
+            makerOnly = farmable.CanFarm();
+        }
+        if (TortoiseBots::GuildOrders::RequestSupply(order.botGuidLow, candidate.itemId, candidate.count,
+                makerOnly))
         {
             TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Sub,
+                candidate.itemId, candidate.count, SupplyStep::None, order.reason);
+            return;
+        }
+        if (makerOnly)
+        {
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Farm,
                 candidate.itemId, candidate.count, SupplyStep::None, order.reason);
             return;
         }
@@ -942,6 +985,15 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
             // the bank first.
             FarmableVerdict farmable(bot, order, candidate);
             SupplyStep step = ChooseSourceStep(bot, order, candidate, &snapshot, &farmable);
+            if (order.type == OrderType::Farm)
+            {
+                if (step == SupplyStep::Farm)
+                    SetSupplyStage(ai, bot, order, candidate, step, SupplyStep::None, &snapshot);
+                else
+                    TortoiseBots::GuildOrders::SetState(order.botGuidLow,
+                        TortoiseBots::GuildOrders::StateForReason(farmable.Verdict()), farmable.Verdict());
+                return;
+            }
             // A farm or buy order never walks its own item to the bank; that
             // leg is the auction one. A counter that was already searched for
             // this item falls through to the rest of the ladder instead.
@@ -949,11 +1001,11 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
                 step = TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId) ?
                     SupplyStep::AuctionHouse :
                     TortoiseBots::GuildOrders::NextSupplyStep(
-                        SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
+                        SupplyOptions{ false, true, true, false, farmable.CanFarm(), false, true });
             SupplyStep fallback = SupplyStep::None;
             if (step == SupplyStep::AuctionHouse)
                 fallback = TortoiseBots::GuildOrders::NextSupplyStep(
-                    SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
+                    SupplyOptions{ false, true, true, false, farmable.CanFarm(), false, true });
             SetSupplyStage(ai, bot, order, candidate, step, fallback, &snapshot);
             return;
         }
@@ -1124,6 +1176,7 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     // The ladder already planned this item above: reuse the verdict instead
     // of planning it again for the auction fallback.
     fallbackOptions.selfCanFarm = farmable.CanFarm();
+    fallbackOptions.makerSubAttempted = MakerSubAttempted(current, candidate.itemId);
     SupplyStep fallback = TortoiseBots::GuildOrders::NextSupplyStep(fallbackOptions);
     SetSupplyStage(ai, bot, current, candidate, step, fallback, &snapshot);
 }

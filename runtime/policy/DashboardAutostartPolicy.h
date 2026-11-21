@@ -163,6 +163,59 @@ inline std::vector<LaunchEnv> BuildEnvironment(
     return env;
 }
 
+enum class PortState
+{
+    Free,      // nothing accepts connections
+    Dashboard, // our dashboard answers on it
+    Foreign    // another program holds it
+};
+
+// How many ports, starting at the configured one, the launcher may use.
+constexpr uint16_t kHttpPortSpan = 10;
+
+struct PortChoice
+{
+    uint16_t port = 0;           // 0 = every port in the span is held by another program
+    bool alreadyRunning = false; // our dashboard already answers on `port`
+};
+
+// The marker is a plain counter, so it is in every /metrics answer, even before the first snapshot.
+inline bool LooksLikeDashboardMetrics(std::string const& response)
+{
+    return response.find("tortoisebots_snapshots_total") != std::string::npos;
+}
+
+// A dashboard already running anywhere in the span wins over a free port: a copy left
+// on a fallback port (after a crash) still holds the telemetry UDP port, so a second
+// copy could not start.
+template <typename Probe>
+PortChoice ChooseHttpPort(uint16_t configured, Probe&& probe)
+{
+    if (configured == 0)
+        configured = 8095;
+
+    PortChoice choice;
+    uint16_t firstFree = 0;
+    for (uint32_t i = 0; i < kHttpPortSpan; ++i)
+    {
+        uint32_t const candidate = static_cast<uint32_t>(configured) + i;
+        if (candidate > 65535)
+            break;
+        uint16_t const port = static_cast<uint16_t>(candidate);
+        PortState const state = probe(port);
+        if (state == PortState::Dashboard)
+        {
+            choice.port = port;
+            choice.alreadyRunning = true;
+            return choice;
+        }
+        if (state == PortState::Free && firstFree == 0)
+            firstFree = port;
+    }
+    choice.port = firstFree;
+    return choice;
+}
+
 inline std::vector<std::string> BuildArgs(bool emptyPassword)
 {
     if (emptyPassword)

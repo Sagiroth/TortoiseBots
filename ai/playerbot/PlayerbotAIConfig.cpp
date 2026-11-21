@@ -1427,6 +1427,7 @@ bool PlayerbotAIConfig::Initialize()
     observabilityAutoStart = config.GetBoolDefault("AiPlayerbot.ObservabilityAutoStart", true);
     observabilityBin = config.GetStringDefault("AiPlayerbot.ObservabilityBin", "");
     observabilityPort = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.ObservabilityPort", 9195));
+    observabilityHttpPort = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.ObservabilityHttpPort", 8095));
     observabilityHost = config.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
     observabilityDungeonMobs = config.GetBoolDefault("AiPlayerbot.ObservabilityDungeonMobs", true);
     LoadObservabilityRaids();

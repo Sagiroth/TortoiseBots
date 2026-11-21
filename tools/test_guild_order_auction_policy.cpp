@@ -89,6 +89,14 @@ int main()
     CHECK(PickAuctionListing(none, 7) == kNoAuctionListing);
     CHECK(PickAuctionListing(listings, 0) == kNoAuctionListing);
 
+    // A visit's planned spend sums the listings it would buy in turn.
+    CHECK(PlannedAuctionVisitCost(listings, 7) == 100);
+    CHECK(PlannedAuctionVisitCost(partialsOnly, 7) == 300);
+    std::vector<AuctionListing> twoPartials{ { 31, 301, 300, 3 }, { 32, 302, 500, 5 } };
+    CHECK(PlannedAuctionVisitCost(twoPartials, 7) == 800);
+    CHECK(PlannedAuctionVisitCost(none, 7) == 0);
+    CHECK(PlannedAuctionVisitCost(listings, 0) == 0);
+
     // The leg is not re-entered for the same reagent until the rest of the
     // ladder was tried: the first visit blocks a second one, the need stage
     // earns one retry, and the retry is the last.
